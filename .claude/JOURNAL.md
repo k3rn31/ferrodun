@@ -68,14 +68,17 @@ truth when this log drifts.
   `EntityIdError` via `thiserror`. `to_bits`/`from_bits` for the
   persistence/wire seam. Bit-field extraction narrows via masked `as`; the
   `& MASK` bounds the value so clippy's `cast_possible_truncation` range
-  analysis passes with no suppression. Wired `mud-core` into the workspace
-  members.
-- **Verify:** 8 unit tests (8-byte size, per-field pack/unpack, per-field
+  analysis passes with no suppression. `TryFrom<u16>`/`TryFrom<u32>` delegate
+  to the parsed constructors for boundary ergonomics; handle types are
+  `#[must_use]`. Wired `mud-core` into the workspace members.
+- **Verify:** 11 unit tests (8-byte size, per-field pack/unpack, per-field
   bit isolation — one field max + neighbors zero, mutation-checked to fail
-  under an overlapping layout, raw-bits round-trip, out-of-range rejection
-  for tenant and generation, `next()` increment, wraparound→`None`). `cargo
-  test -p mud-core`, `cargo clippy --workspace --all-targets -D warnings`,
-  `cargo fmt --check` all green.
+  under an overlapping layout, raw-bits round-trip, golden-value persistence
+  encoding + all-fields-max→`u64::MAX` to pin the normative layout, `TryFrom`
+  parity with `new`, out-of-range rejection for tenant and generation,
+  `next()` increment, wraparound→`None`). `cargo test -p mud-core`, `cargo
+  clippy --workspace --all-targets -D warnings`, `cargo fmt --check` all
+  green.
 - **Next:** **M1-02** — per-tenant generational arena (`slotmap`-style):
   alloc with current tenant tag, resolve live handles, invalidate on slot
   reuse, cross-tenant resolution returns an error (the tenant-isolation

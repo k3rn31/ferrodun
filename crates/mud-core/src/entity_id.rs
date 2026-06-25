@@ -46,6 +46,7 @@ pub enum EntityIdError {
 /// Identifies the tenant that owns an entity (§3.11). 12 bits, so up to 4096
 /// tenants can coexist in one process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[must_use]
 pub struct TenantTag(u16);
 
 impl TenantTag {
@@ -67,8 +68,17 @@ impl TenantTag {
     }
 }
 
+impl TryFrom<u16> for TenantTag {
+    type Error = EntityIdError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
 /// Indexes a slot in a tenant's entity arena. The full 32-bit range is valid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[must_use]
 pub struct SlotIndex(u32);
 
 impl SlotIndex {
@@ -87,6 +97,7 @@ impl SlotIndex {
 /// handles to a previous occupant are detectably stale (§2.3.7.3). 20 bits, so
 /// a slot can be reused ~1M times before the counter would wrap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[must_use]
 pub struct Generation(u32);
 
 impl Generation {
@@ -119,9 +130,18 @@ impl Generation {
     }
 }
 
+impl TryFrom<u32> for Generation {
+    type Error = EntityIdError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
 /// A tenant-scoped generational handle to an entity (§2.3.1). Eight bytes; see
 /// the module docs for the bit layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[must_use]
 pub struct EntityId(u64);
 
 impl EntityId {
@@ -227,6 +247,29 @@ mod tests {
         assert_eq!(EntityId::from_bits(id.to_bits()), id);
     }
 
+    // The encoding is normative: it leaks into on-disk persistence and the
+    // wire protocol (§2.3.1.3), so pin it to a concrete bit pattern. A change
+    // to the layout that a self-consistent round-trip would miss fails here.
+    #[test]
+    fn encoding_is_stable_for_persistence() {
+        let id = EntityId::new(unwrap_tenant(1), SlotIndex::new(1), unwrap_generation(1));
+
+        assert_eq!(id.to_bits(), (1 << 52) | (1 << 20) | 1);
+    }
+
+    // Every field at its maximum packs to an all-ones word: confirms the three
+    // fields tile the full 64 bits with no padding or gaps.
+    #[test]
+    fn all_fields_max_packs_to_full_word() {
+        let id = EntityId::new(
+            unwrap_tenant(TenantTag::MAX),
+            SlotIndex::new(u32::MAX),
+            unwrap_generation(Generation::MAX),
+        );
+
+        assert_eq!(id.to_bits(), u64::MAX);
+    }
+
     #[test]
     fn tenant_tag_rejects_out_of_range() {
         assert_eq!(
@@ -239,6 +282,20 @@ mod tests {
     fn generation_rejects_out_of_range() {
         assert_eq!(
             Generation::new(Generation::MAX + 1),
+            Err(EntityIdError::GenerationOutOfRange(Generation::MAX + 1)),
+        );
+    }
+
+    #[test]
+    fn try_from_parses_like_new() {
+        assert_eq!(TenantTag::try_from(7), TenantTag::new(7));
+        assert_eq!(
+            TenantTag::try_from(TenantTag::MAX + 1),
+            Err(EntityIdError::TenantTagOutOfRange(TenantTag::MAX + 1)),
+        );
+        assert_eq!(Generation::try_from(7), Generation::new(7));
+        assert_eq!(
+            Generation::try_from(Generation::MAX + 1),
             Err(EntityIdError::GenerationOutOfRange(Generation::MAX + 1)),
         );
     }
