@@ -101,6 +101,9 @@ impl SlotIndex {
 pub struct Generation(u32);
 
 impl Generation {
+    /// The generation of a freshly allocated slot, before any reuse.
+    pub const FIRST: Self = Self(0);
+
     /// Largest representable generation.
     pub const MAX: u32 = (1 << GENERATION_BITS) - 1;
 
