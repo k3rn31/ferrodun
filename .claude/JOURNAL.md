@@ -32,3 +32,24 @@ truth when this log drifts.
   `ferrodun mudd placeholder`.
 - **Next:** **M1-01** — `EntityId` + `TenantTag` newtype with the normative
   bit layout (§2.3.1.3); first PR to create `crates/mud-core`.
+
+## 2026-06-25 — P0-02 Documentation site (MkDocs + mike)
+
+- **Spec:** PLAN P0-02 (cross-cutting Documentation track; consolidated docs
+  are M8-C). Infrastructure, not a normative spec item.
+- **Done:** Added a versioned MkDocs + Material site under `docs/`, managed
+  as a **uv project** (`pyproject.toml` + `uv.lock`, pinned mkdocs-material
+  9.7.6 / mike 2.2.0; `mkdocs.yml`, placeholder `docs/docs/index.md`).
+  Modeled on go-gremlins but with the modern `material.extensions.emoji`
+  path (the old `materialx.emoji` was removed in Material 9.4+).
+  `.github/workflows/docs.yml` uses `astral-sh/setup-uv` + `uv run` with
+  `UV_FROZEN=1`: PRs run `uv run mkdocs build --strict` (no deploy); `main`
+  deploys the `next` version; `vX.Y.Z` tags snapshot via `mike` (major/minor
+  → `latest` + default, patch → its MAJOR.MINOR line). Updated `CLAUDE.md`
+  (new "Documentation site" section: keep docs current as observable
+  features land) and `PLAN.md` (P0-02 + cross-cutting Documentation track).
+- **Verify:** `UV_FROZEN=1 uv run mkdocs build --strict` clean locally
+  against the lockfile. CI deploy and GitHub Pages serving not yet exercised
+  (needs a push to `main` and Pages set to the `gh-pages` branch).
+- **Next:** Repo owner must enable GitHub Pages → branch `gh-pages` (one
+  time) after the first `main` deploy. Then resume **M1-01**.

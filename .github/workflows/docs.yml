@@ -1,0 +1,83 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+# Build strictly from the committed lockfile; never resolve in CI.
+env:
+  UV_FROZEN: "1"
+
+defaults:
+  run:
+    working-directory: docs
+
+jobs:
+  # On pull requests, only verify the docs build cleanly — never deploy.
+  build:
+    name: Build (verify)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv run mkdocs build --strict
+
+  # On pushes to main (-> `next`) and tags (-> versioned), deploy with mike.
+  deploy:
+    name: Deploy
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Configure git identity for gh-pages commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - run: git fetch origin gh-pages --depth=1 || true
+
+      # main branch -> development docs under the `next` version.
+      - name: Deploy `next` (main)
+        if: startsWith(github.ref, 'refs/heads/')
+        run: uv run mike deploy --update-aliases --push next
+
+      # Before any release exists, point the site default at `next` so the
+      # root URL resolves; once `latest` exists, releases own the default.
+      - name: Ensure default version
+        if: startsWith(github.ref, 'refs/heads/')
+        run: |
+          if ! uv run mike list | grep -q '\[latest'; then
+            uv run mike set-default --push next
+          fi
+
+      # Parse vMAJOR.MINOR.PATCH from the tag (e.g. v1.2.3).
+      - name: Resolve version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          full="${GITHUB_REF_NAME#v}"
+          echo "FR_FULL_VERSION=$full" >> "$GITHUB_ENV"
+          echo "FR_SHORT_VERSION=$(echo "$full" | cut -d. -f1,2)" >> "$GITHUB_ENV"
+          echo "FR_PATCH_VERSION=$(echo "$full" | cut -d. -f3)" >> "$GITHUB_ENV"
+
+      # A major/minor release (patch == 0) becomes `latest` and the default.
+      - name: Deploy release as latest
+        if: startsWith(github.ref, 'refs/tags/') && env.FR_PATCH_VERSION == '0'
+        run: |
+          uv run mike deploy --update-aliases --push "$FR_SHORT_VERSION" latest
+          uv run mike set-default --push latest
+
+      # A patch release updates its MAJOR.MINOR line without moving `latest`.
+      - name: Deploy patch release
+        if: startsWith(github.ref, 'refs/tags/') && env.FR_PATCH_VERSION != '0'
+        run: uv run mike deploy --update-aliases --push "$FR_SHORT_VERSION"

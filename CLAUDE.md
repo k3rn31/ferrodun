@@ -41,6 +41,25 @@ where things stand. Format:
 
 Newest entries at the bottom. One entry per task. Keep it terse — it is a breadcrumb trail, not documentation.
 
+## Documentation site
+
+User- and builder-facing documentation lives in `docs/` (MkDocs + Material),
+published to GitHub Pages and **versioned with `mike`**: the `main` branch is
+the `next` version, and each `vX.Y.Z` tag is snapshotted to its own version.
+Markdown pages live under `docs/docs/`; navigation and theme are in
+`docs/mkdocs.yml`; the CI build/deploy is `.github/workflows/docs.yml`.
+
+**Keep the docs current as features land.** Whenever a PR adds or changes
+behavior a player, builder, or operator can observe — a command, a config key,
+a script API, a network feature, a CLI subcommand, a deployment knob — update
+or add the relevant page under `docs/docs/` (and `nav` in `mkdocs.yml`) **in
+the same PR**, and note the doc change in the journal entry. Purely internal
+changes (refactors, engine plumbing with no external surface) do not need doc
+updates. Keep the prose accurate and concise; when docs and `SPEC.md` disagree,
+`SPEC.md` wins and the docs are corrected. The toolchain is a uv project in
+`docs/` (`pyproject.toml` + `uv.lock`); verify with `uv run mkdocs build
+--strict` from `docs/`.
+
 ## Mandatory engineering rules
 
 These are hard constraints, not preferences (cf. SPEC §1.7):

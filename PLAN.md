@@ -127,6 +127,18 @@ code exists.
   - *Out of scope:* any of the spec crates beyond `mudd`. Do not pre-create
     `mud-core` et al.
 
+- **P0-02 — Documentation site (MkDocs + mike).** Versioned docs site under
+  `docs/` (MkDocs + Material), deployed to GitHub Pages via `mike`: `main`
+  publishes the `next` version, each `vX.Y.Z` tag snapshots its own version
+  (`.github/workflows/docs.yml`). Initial content is a placeholder home page.
+  Not in §5/§7.4 as an infrastructure item, but the §3.14/§11 builder-docs
+  workstream needs a home; the site is grown per the cross-cutting
+  Documentation track as features land.
+  - *Verify:* `uv run mkdocs build --strict` from `docs/` is clean (uv
+    project: `pyproject.toml` + `uv.lock`); PR CI builds, push to `main`
+    deploys `next`.
+  - *Out of scope:* real builder/GMCP/API docs content (M8-C), custom theme.
+
 ---
 
 ## M1 — Walk and talk
@@ -597,6 +609,12 @@ forgotten:
 - **Testing harness** (`mud-test`, §3.10): the in-memory `mud test` harness
   is built out as content features arrive (commands → M2, NPCs → M5, LLM
   replay → M6) and is the home for all content-feature tests (§8 rule 8).
+- **Documentation site** (`docs/`, scaffolded in P0-02): the versioned MkDocs
+  site grows as user/builder/operator-facing surface lands. Any PR that adds
+  or changes observable behavior (a command, config key, script API, network
+  feature, CLI subcommand, deployment knob) updates the relevant page under
+  `docs/docs/` in the same PR (cf. `CLAUDE.md` → Documentation site). The
+  consolidated builder/GMCP/release docs pass is M8-C.
 
 ## Open decisions to resolve before their PRs (§9)
 
