@@ -83,3 +83,61 @@ truth when this log drifts.
   alloc with current tenant tag, resolve live handles, invalidate on slot
   reuse, cross-tenant resolution returns an error (the tenant-isolation
   unit test).
+
+## 2026-06-25 — M1-02 Per-tenant generational arena
+
+- **Spec:** §2.3.1–2.3.2 (generational index), §2.3.7.3 (teardown
+  invalidates handles), §3.11.4 (tenant isolation at API boundaries) — the
+  liveness authority that mints/validates `EntityId` handles.
+- **Done:** Added `crates/mud-core/src/arena.rs` with `EntityArena` (one per
+  tenant) and `ArenaError`. Hand-rolled rather than pulling `slotmap`, to keep
+  the normative 12/32/20 bit layout and the burn-on-wraparound rule exact.
+  `EntityArena` is a non-generic liveness registry (no component payload; those
+  are separate side-tables, M1-05): `new`/`tenant`/`alloc`/`free`/`resolve`.
+  Slot liveness is `enum SlotState { Live(Generation), Free(Generation),
+  Burned }` (one `Vec<SlotState>` + a `free: Vec<SlotIndex>` stack) — `Burned`
+  carries no generation so a retired-but-non-terminal slot is unrepresentable.
+  `alloc` reuses a freed slot at its advanced generation or grows the arena;
+  slot indices minted via `u32::try_from(len)` → `Exhausted` (no `as`). `free`
+  checks tenant (`ensure_owned`) then the live generation in a single slot
+  lookup, then advances via the M1-01 `Generation::next()`: `Some` → `Free` +
+  recycle, `None` → `Burned`, never relinked (§2.3.1.3). `resolve` checks
+  tenant first (`CrossTenant`, kept distinct from `StaleHandle` per §3.11.4)
+  then slot liveness+generation, returning the validated `SlotIndex`. The
+  reuse path's free-list lookup is a guarded `// INVARIANT:` `unreachable!`
+  (not a dishonest `StaleHandle`, since `alloc` takes no handle). Added
+  `Generation::FIRST` const to `entity_id.rs`. Re-exported `EntityArena`/
+  `ArenaError` from `lib.rs`.
+- **Verify:** 8 new unit tests (tenant stamping, resolve live, freed→stale,
+  slot-reuse bumps generation, **stale handle cannot free a reused slot**
+  (mutation-side use-after-free guard), **tenant-isolation: foreign handle
+  rejected by another tenant's arena**, burn-on-generation-exhaustion via the
+  real free/alloc path cycling one slot to `Generation::MAX`, double-free,
+  out-of-range→stale). `cargo test -p mud-core` (20 tests), `cargo clippy
+  --workspace --all-targets -D warnings`, `cargo fmt --check` all green. No
+  docs-site change (internal plumbing, no observable surface).
+- **Next:** **M1-03** — core domain newtypes (`PlaceId`, `RegionId`,
+  `ArchetypeId`, `ComponentId`, plus session/account ids as M1 needs them).
+
+## 2026-06-25 — EntityKey/EntityId split (durable vs ephemeral identity)
+
+- **Spec:** §2.3.1 (new §2.3.1.4–2.3.1.6), §2.3.7.1, §2.5.3.1–2.5.3.2 — a
+  design fix, not new code. The shipped `EntityId` (M1-01) was wrongly billed
+  as the persisted + wire identity, but it is a generational arena index whose
+  slots are reused under the LRU cache (§2.5.3.2) — it cannot be durable.
+- **Done:** Split entity identity into two types. `EntityId` stays the
+  **ephemeral** in-memory arena handle (dense O(1) side-table index on the hot
+  path); a new durable **`EntityKey`** (per-tenant monotonic, DB primary key,
+  the only entity ref that leaves the World process) carries persistent
+  identity. SPEC §2.3.1 restructured; §2.3.7.1/§2.5.3 updated so the arena is a
+  cache keyed by `EntityKey` with an `EntityKey`↔`EntityId` mapping. PLAN:
+  `EntityKey` added to M1-03; mapping + key assignment scoped to M1-08/M1-09;
+  M1-09 restart test now asserts `EntityKey` (not `EntityId`) stability.
+  Corrected `entity_id.rs` doc comments + renamed the persistence test to
+  `packs_to_the_documented_bit_layout`. Kept `to_bits`/`from_bits` as an
+  internal encoding utility (the layout-tiling tests depend on them).
+- **Verify:** `cargo test -p mud-core` (20 tests), `cargo clippy --workspace
+  --all-targets -D warnings`, `cargo fmt --check` all green. Docs are SPEC/PLAN
+  only; no mkdocs surface (`EntityKey`/`EntityId` are internal).
+- **Next:** implement the `EntityKey` newtype in **M1-03**; the
+  `EntityKey`↔`EntityId` mapping, key assignment, and LRU live in **M1-09**.

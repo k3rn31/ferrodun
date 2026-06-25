@@ -379,7 +379,12 @@ inheritance system**. It is a hybrid: dense hot-component arrays plus
 a typed dynamic component bag, with composition via archetypes and
 hook tables.
 
-#### 2.3.1 EntityId
+#### 2.3.1 Entity identity
+
+Entities have **two** identifiers with distinct lifetimes: a durable
+**`EntityKey`** that is the persistent identity (§2.3.1.5), and an
+ephemeral **`EntityId`** that is the in-memory handle into the arena
+cache (§2.3.1.1–2.3.1.4).
 
 2.3.1.1 `EntityId` MUST encode three fields: a **tenant tag**, a
 **slot index** into the per-tenant arena, and a **generation
@@ -400,10 +405,36 @@ process), **32 bits slot index** (4G slots per tenant; well above
 the §2.3.4.1 10k-entity target with headroom for arena churn), and
 **20 bits generation counter** (≈1M reuses per slot before
 wraparound; wraparound MUST burn the slot rather than recycle into a
-collision). The exact field encoding is an implementation detail of
-`mud-core`, but the widths above are normative and MUST NOT be
-changed without a major-version bump because they leak into
-on-disk persistence and the wire protocol.
+collision). The field encoding is an internal `mud-core` implementation
+detail: `EntityId` is an **ephemeral in-memory handle** and is never
+persisted or sent on the wire (§2.3.1.4), so the layout MAY change
+without a version bump.
+
+2.3.1.4 `EntityId` is **ephemeral**: it is valid only within the
+lifetime of a single arena instance (§2.5.3.2). It MUST NOT be
+persisted, stored in the database, or sent on the wire. Any entity
+reference that outlives the arena — on disk, on the wire, in IPC, or in
+a correlation log — MUST use the entity's `EntityKey`.
+
+2.3.1.5 Every entity MUST also have an **`EntityKey`**: its durable
+identity and its database primary key. An `EntityKey`:
+- MUST be unique within a tenant and MUST NOT be reused for the lifetime
+  of the database, even after the entity is destroyed;
+- MUST be a per-tenant monotonic 64-bit value — tenant scoping comes
+  from the per-tenant database (§2.5.1.4) and the routing layer, not
+  from bits in the key;
+- MUST be stable across cache eviction (§2.5.3.2), World restart, and
+  engine upgrade.
+A reference held by a client or stored on disk MUST resolve to the same
+entity for as long as that entity exists.
+
+2.3.1.6 The arena (§2.5.3.2) is a cache keyed by `EntityKey`. While an
+entity is resident the arena MUST maintain a one-to-one mapping between
+its `EntityKey` and its current `EntityId`. Loading a non-resident
+entity MUST mint a fresh `EntityId` for its existing `EntityKey`;
+eviction MUST drop the `EntityId` and the mapping but MUST NOT affect
+the `EntityKey`, and a later load MAY mint a different `EntityId` for
+the same `EntityKey`.
 
 #### 2.3.2 Entity layout
 
@@ -512,7 +543,8 @@ referencing archetype from loading and MUST emit a structured error.
 
 2.3.7.1 Entity creation MUST go through an archetype-aware
 constructor that:
-- Allocates an `EntityId` with the current tenant tag.
+- Assigns a durable `EntityKey` and, while the entity is resident, an
+  `EntityId` with the current tenant tag (§2.3.1).
 - Materializes the hot-component side-tables and bag entries
   prescribed by the archetype and any explicit overrides.
 - Persists the entity per §2.5.
@@ -689,10 +721,14 @@ sole tenant boundary.
 
 #### 2.5.3 Write model
 
-2.5.3.1 The database MUST be the source of truth (cf. §1.2).
+2.5.3.1 The database MUST be the source of truth (cf. §1.2). Entities
+MUST be stored keyed by their `EntityKey` (§2.3.1.5).
 
-2.5.3.2 An in-memory `slotmap` arena MUST cache hot entities with an
-LRU eviction policy.
+2.5.3.2 An in-memory `slotmap` arena MUST cache hot entities, keyed by
+`EntityKey`, with an LRU eviction policy. Eviction MUST release the
+entity's `EntityId` handle and its `EntityKey`↔`EntityId` mapping
+(§2.3.1.6); it MUST NOT delete the entity, whose source of truth is the
+database (§2.5.3.1).
 
 2.5.3.3 A **write-through layer** MUST maintain arena/DB consistency:
 every mutation MUST go through a `MutationCommand` enum that applies
