@@ -184,21 +184,29 @@ spine.
   - *Spec:* §1.7, §2.3.1.4–2.3.1.5. *Verify:* compile-level; `EntityKey`
     (durable) and `EntityId` (ephemeral) are distinct types — misuse is a type
     error; `Option<EntityKey>` is niche-optimized to 8 bytes.
-- **M1-04 — `Place` enum (Room only) + `PlaceView`.** Static-dispatch enum
+- **M1-04 — `Place` enum (Room only) + spatial surface.** Static-dispatch enum
   with the single `Room` variant for M1 (Tile deferred to M4, §2.2.1).
-  Introduces the `PlaceId`/`RegionId` newtypes (moved from M1-03) its
-  `Place`/`PlaceView` surface uses.
-  `PlaceView`: `id`, `region`, `occupants`, `describe(viewer)`, `neighbor`,
-  `visible_places` (§2.2.2). No virtual dispatch on the surface (§2.2.5).
-  - *Spec:* §2.2. *Verify:* describe/neighbor/occupants unit tests against a
-    fixture room graph. *Out of scope:* Tile, viewer-conditional invisibility
-    beyond a trivial hook.
+  Introduces the `PlaceId`/`RegionId`/`Direction` newtypes (moved from M1-03)
+  the surface uses (`Direction` = n/e/s/w + up/down). `Place` exposes the
+  §2.2.2 surface — `id`, `region`, `describe(viewer)`, `neighbor`,
+  `visible_places` — as **inherent methods** that `match` on the variant, so
+  dispatch is static by construction (§2.2.5, no trait object). The `PlaceView`
+  *trait* is **deferred to M4**: with one variant it would be single-impl
+  (YAGNI); `Tile` gives it a genuine second implementor. `occupants()` is
+  **deferred to M1-05**: occupancy's authoritative home is the dense
+  `LocationOf` side-table (§2.3.2.2), so adding it to the static `Place` now
+  would duplicate that index (build-then-rip).
+  - *Spec:* §2.2. *Verify:* describe/neighbor/visible-places unit tests against
+    a fixture room graph. *Out of scope:* Tile + the `PlaceView` trait (M4),
+    `occupants` (M1-05), viewer-conditional invisibility beyond a trivial hook.
 - **M1-05 — Hot side-tables (M1 subset).** Dense `LocationOf` and
   `Inventory` tables only — the two M1 needs. `Position`, `Health`,
   `Initiative` are **not** added until their milestone (§2.3.2.2 lists all
-  five as hot, but YAGNI: add each dense table when first used).
-  - *Spec:* §2.3.2.2–2.3.2.4. *Verify:* occupants-of-place and
-    inventory-of-entity round-trips.
+  five as hot, but YAGNI: add each dense table when first used). Adds
+  `occupants()` to the `Place` surface (deferred from M1-04), resolving a
+  Place's occupants through the `LocationOf` reverse index.
+  - *Spec:* §2.3.2.2–2.3.2.4. *Verify:* occupants-of-place (via the `Place`
+    surface) and inventory-of-entity round-trips.
 - **M1-06 — Scheduler tick + `MutationCommand` (M1 subset).** 20 Hz fixed
   tick (§3.16.2). `MutationCommand` enum with only the variants M1 needs
   (move entity between Places, inventory add/remove, create/teardown
