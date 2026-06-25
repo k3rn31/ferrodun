@@ -295,6 +295,21 @@ mod tests {
     }
 
     #[test]
+    fn with_exit_replaces_a_previously_wired_exit() {
+        let room = Place::Room(
+            RoomData::new(
+                place_id(HALL),
+                region_id(REGION),
+                Description::new("A long stone hall."),
+            )
+            .with_exit(Direction::North, place_id(STUDY))
+            .with_exit(Direction::North, place_id(LOFT)),
+        );
+
+        assert_eq!(room.neighbor(Direction::North), Some(place_id(LOFT)));
+    }
+
+    #[test]
     fn visible_places_yields_the_authored_set() {
         let hall = hall();
 

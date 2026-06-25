@@ -470,7 +470,14 @@ Epics:
 - **M4-A — `Place::Tile` + coordinate system.** Add the `Tile` variant and
   the dense `Position` hot table now that it's needed; signed-32 `(x,y,z)`
   with z as floor-stacking (§2.2.1, §3.2.2.0). Rooms↔tiles freely
-  interconnect via the single `move()` primitive (§2.2.4, §3.2.5).
+  interconnect via the single `move()` primitive (§2.2.4, §3.2.5). With a
+  second variant the `visible_places` arms now need an enum/`Either` iterator
+  to unify; revisit the visibility set's type while doing so: M1 stores it as
+  `Vec<PlaceId>`, which permits duplicates even though §2.2.2 calls it a *set*.
+  Decide between dedup-on-build and a true set type, weighing the
+  order-preservation a `Vec` gives display against `HashSet` set semantics —
+  and drop `visible_places_yields_the_authored_set`'s exact-ordering assertion
+  if visibility becomes unordered.
 - **M4-B — Regions.** `mud-world` region loader: terrain layer (ASCII *or*
   PNG palette), features overlay, encounters layer, region scripts
   (§3.2.2–3.2.3). Procedural regions (`(x,y)->tile`, lazy + cached) and the
