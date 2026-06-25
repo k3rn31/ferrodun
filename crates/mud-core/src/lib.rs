@@ -2,6 +2,8 @@
 
 mod arena;
 mod entity_id;
+mod entity_key;
 
 pub use arena::{ArenaError, EntityArena};
 pub use entity_id::{EntityId, EntityIdError, Generation, SlotIndex, TenantTag};
+pub use entity_key::EntityKey;

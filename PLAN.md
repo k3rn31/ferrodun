@@ -172,14 +172,22 @@ spine.
   error, never another tenant's entity (§3.11.4).
   - *Spec:* §2.3.1–2.3.2, §3.11.4. *Verify:* alloc/free/stale-handle tests;
     **the tenant-isolation unit test** (A's id not resolvable via B).
-- **M1-03 — Core domain newtypes.** `EntityKey` (durable per-tenant entity
-  identity; the DB primary key, §2.3.1.5), `PlaceId`, `RegionId`,
-  `ArchetypeId`, `ComponentId`, plus session/account ids as M1 needs them. No
-  primitives cross public APIs (§1.7).
-  - *Spec:* §1.7, §2.3.1.5. *Verify:* compile-level; `EntityKey` (durable) and
-    `EntityId` (ephemeral) are distinct types — misuse is a type error.
+- **M1-03 — `EntityKey` (durable entity identity).** The durable, per-tenant
+  monotonic 64-bit identity and DB primary key (§2.3.1.5); the only entity
+  reference that crosses the disk/wire/IPC boundary (§2.3.1.4). A newtype
+  distinct from the ephemeral `EntityId` (§2.3.1.1) so the two cannot be
+  confused at compile time (§1.7). Per-tenant monotonic minting and the
+  `EntityKey`↔`EntityId` mapping live in M1-08/M1-09; this PR adds only the
+  type. Per YAGNI, the other ids the foundation once bundled here move to their
+  first consumer: `PlaceId`/`RegionId` to M1-04, `ArchetypeId`/`ComponentId` to
+  the M2 archetype/component-bag work.
+  - *Spec:* §1.7, §2.3.1.4–2.3.1.5. *Verify:* compile-level; `EntityKey`
+    (durable) and `EntityId` (ephemeral) are distinct types — misuse is a type
+    error; `Option<EntityKey>` is niche-optimized to 8 bytes.
 - **M1-04 — `Place` enum (Room only) + `PlaceView`.** Static-dispatch enum
   with the single `Room` variant for M1 (Tile deferred to M4, §2.2.1).
+  Introduces the `PlaceId`/`RegionId` newtypes (moved from M1-03) its
+  `Place`/`PlaceView` surface uses.
   `PlaceView`: `id`, `region`, `occupants`, `describe(viewer)`, `neighbor`,
   `visible_places` (§2.2.2). No virtual dispatch on the surface (§2.2.5).
   - *Spec:* §2.2. *Verify:* describe/neighbor/occupants unit tests against a
