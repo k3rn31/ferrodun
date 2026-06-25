@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+chumsky = "0.13.0"
 thiserror = "2.0.18"
 
 [lints]
