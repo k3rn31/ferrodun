@@ -1,0 +1,346 @@
+//! The `Place` spatial surface (§2.2).
+//!
+//! Every spatial location in Ferrodun is a [`Place`]. Movement, perception,
+//! line-of-sight, and NPC awareness all operate against the surface [`Place`]
+//! exposes — `id`, `region`, `describe`, `neighbor`, `visible_places` (§2.2.2) —
+//! with no special cases per variant (§2.2.3). Because `Place` is an enum and the
+//! surface is inherent methods (never a trait object), dispatch is **static** by
+//! construction, so per-tick hot paths pay no virtual-call cost (§2.2.5).
+//!
+//! The surface is inherent methods rather than a `PlaceView` trait on purpose:
+//! with only the `Room` variant in M1 a trait would have a single implementor
+//! (YAGNI). The trait is introduced in M4 alongside `Tile`, when a second
+//! variant gives it a genuine second implementation.
+//!
+//! For M1 the only variant is [`Room`](Place::Room); `Tile` and its `Region`
+//! grid arrive in M4 (§2.2.1). Occupancy is deliberately absent here: a Place's
+//! occupants come from the dense `LocationOf` side-table (§2.3.2.2), so
+//! `occupants()` joins this surface in M1-05 against that table rather than
+//! duplicating it on the static room.
+
+use std::num::NonZeroU64;
+
+use crate::EntityId;
+
+/// The stable identifier of a [`Place`] (§2.2.2).
+///
+/// Backed by `NonZeroU64`: ids are 1-based, so an absent neighbour or exit is
+/// representable as `Option::None` (which takes the niche for free), never as a
+/// meaningless id `0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[must_use]
+pub struct PlaceId(NonZeroU64);
+
+impl PlaceId {
+    /// Wraps a place identifier value.
+    pub const fn new(value: NonZeroU64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the underlying identifier value.
+    pub const fn get(self) -> NonZeroU64 {
+        self.0
+    }
+}
+
+/// The identifier of the region a [`Place`] belongs to (§2.2.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[must_use]
+pub struct RegionId(NonZeroU64);
+
+impl RegionId {
+    /// Wraps a region identifier value.
+    pub const fn new(value: NonZeroU64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the underlying identifier value.
+    pub const fn get(self) -> NonZeroU64 {
+        self.0
+    }
+}
+
+/// A direction an exit can lead in (§2.2.2).
+///
+/// The cardinal four follow the §3.2.2.0 fixed map (`x` increases east, `y`
+/// increases north). `Up`/`Down` are vertical exits — stairs, ladders, shafts —
+/// modeled as explicit exits rather than a `z` coordinate (§3.2.2.0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
+    North,
+    East,
+    South,
+    West,
+    Up,
+    Down,
+}
+
+/// A rendered description of a [`Place`] as seen by a viewer (§2.2.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
+pub struct Description(String);
+
+impl Description {
+    /// Wraps rendered description text.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self(text.into())
+    }
+
+    /// Returns the description text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Authored static content of a [`Room`](Place::Room): its identity, its exits
+/// (one optional neighbour per [`Direction`]), and its visibility set.
+///
+/// Storing exits as one field per direction makes a duplicate-direction exit
+/// unrepresentable and keeps [`neighbor`](Place::neighbor) a plain `match`.
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct RoomData {
+    id: PlaceId,
+    region: RegionId,
+    description: Description,
+    north: Option<PlaceId>,
+    east: Option<PlaceId>,
+    south: Option<PlaceId>,
+    west: Option<PlaceId>,
+    up: Option<PlaceId>,
+    down: Option<PlaceId>,
+    visible: Vec<PlaceId>,
+}
+
+impl RoomData {
+    /// Creates a room with the given identity and description, no exits, and an
+    /// empty visibility set. Wire exits and visibility with [`with_exit`] and
+    /// [`with_visible_places`].
+    ///
+    /// [`with_exit`]: RoomData::with_exit
+    /// [`with_visible_places`]: RoomData::with_visible_places
+    pub fn new(id: PlaceId, region: RegionId, description: Description) -> Self {
+        Self {
+            id,
+            region,
+            description,
+            north: None,
+            east: None,
+            south: None,
+            west: None,
+            up: None,
+            down: None,
+            visible: Vec::new(),
+        }
+    }
+
+    /// Sets the exit in `dir` to `to`, replacing any existing exit that way.
+    pub fn with_exit(mut self, dir: Direction, to: PlaceId) -> Self {
+        match dir {
+            Direction::North => self.north = Some(to),
+            Direction::East => self.east = Some(to),
+            Direction::South => self.south = Some(to),
+            Direction::West => self.west = Some(to),
+            Direction::Up => self.up = Some(to),
+            Direction::Down => self.down = Some(to),
+        }
+        self
+    }
+
+    /// Replaces the visibility set with `places`.
+    pub fn with_visible_places(mut self, places: impl IntoIterator<Item = PlaceId>) -> Self {
+        self.visible = places.into_iter().collect();
+        self
+    }
+
+    // The `Room` variant's answers to the `Place` surface. `Place` matches the
+    // variant and delegates here, keeping each variant's logic with its data.
+
+    fn id(&self) -> PlaceId {
+        self.id
+    }
+
+    fn region(&self) -> RegionId {
+        self.region
+    }
+
+    fn describe(&self, _viewer: EntityId) -> Description {
+        self.description.clone()
+    }
+
+    fn neighbor(&self, dir: Direction) -> Option<PlaceId> {
+        match dir {
+            Direction::North => self.north,
+            Direction::East => self.east,
+            Direction::South => self.south,
+            Direction::West => self.west,
+            Direction::Up => self.up,
+            Direction::Down => self.down,
+        }
+    }
+
+    fn visible_places(&self) -> impl Iterator<Item = PlaceId> {
+        self.visible.iter().copied()
+    }
+}
+
+/// A spatial location (§2.2.1). For M1 the only variant is [`Room`](Place::Room).
+///
+/// `Place` exposes the §2.2.2 surface as inherent methods that `match` on the
+/// variant — static dispatch with no trait object (§2.2.5).
+#[derive(Debug, Clone)]
+#[must_use]
+pub enum Place {
+    Room(RoomData),
+}
+
+impl Place {
+    /// This Place's stable identifier (§2.2.2).
+    pub fn id(&self) -> PlaceId {
+        match self {
+            Place::Room(room) => room.id(),
+        }
+    }
+
+    /// The region this Place belongs to (§2.2.2).
+    pub fn region(&self) -> RegionId {
+        match self {
+            Place::Room(room) => room.region(),
+        }
+    }
+
+    /// This Place's description as seen by `viewer` (§2.2.2).
+    ///
+    /// Viewer-conditional rendering (invisibility, lighting, language) is a
+    /// trivial passthrough in M1: the same `Description` is returned regardless
+    /// of `viewer`. The parameter fixes the signature for that later behaviour.
+    pub fn describe(&self, viewer: EntityId) -> Description {
+        match self {
+            Place::Room(room) => room.describe(viewer),
+        }
+    }
+
+    /// The Place reached by leaving in `dir`, or `None` if there is no exit.
+    pub fn neighbor(&self, dir: Direction) -> Option<PlaceId> {
+        match self {
+            Place::Room(room) => room.neighbor(dir),
+        }
+    }
+
+    /// The Places observable from here (§2.2.2). Distinct from exits: a Place
+    /// may be visible without being directly reachable.
+    pub fn visible_places(&self) -> impl Iterator<Item = PlaceId> {
+        // One variant unifies the return type trivially; when Tile lands (M4)
+        // the arms will need an enum/`Either` iterator to unify.
+        match self {
+            Place::Room(room) => room.visible_places(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn place_id(value: u64) -> PlaceId {
+        PlaceId::new(NonZeroU64::new(value).expect("test place id must be non-zero"))
+    }
+
+    fn region_id(value: u64) -> RegionId {
+        RegionId::new(NonZeroU64::new(value).expect("test region id must be non-zero"))
+    }
+
+    fn entity_id(value: u64) -> EntityId {
+        EntityId::from_bits(value)
+    }
+
+    // A small fixture: a hall with a north exit to a study and an up exit to a
+    // loft, able to see a courtyard it cannot directly reach. Built as the
+    // `Place` a caller would actually hold.
+    const REGION: u64 = 1;
+    const HALL: u64 = 10;
+    const STUDY: u64 = 11;
+    const LOFT: u64 = 12;
+    const COURTYARD: u64 = 13;
+
+    fn hall() -> Place {
+        Place::Room(
+            RoomData::new(
+                place_id(HALL),
+                region_id(REGION),
+                Description::new("A long stone hall."),
+            )
+            .with_exit(Direction::North, place_id(STUDY))
+            .with_exit(Direction::Up, place_id(LOFT))
+            .with_visible_places([place_id(STUDY), place_id(COURTYARD)]),
+        )
+    }
+
+    #[test]
+    fn neighbor_returns_wired_exits() {
+        let hall = hall();
+
+        assert_eq!(hall.neighbor(Direction::North), Some(place_id(STUDY)));
+        assert_eq!(hall.neighbor(Direction::Up), Some(place_id(LOFT)));
+    }
+
+    #[test]
+    fn neighbor_is_none_for_unwired_directions() {
+        let hall = hall();
+
+        assert_eq!(hall.neighbor(Direction::East), None);
+        assert_eq!(hall.neighbor(Direction::South), None);
+        assert_eq!(hall.neighbor(Direction::West), None);
+        assert_eq!(hall.neighbor(Direction::Down), None);
+    }
+
+    #[test]
+    fn with_exit_replaces_a_previously_wired_exit() {
+        let room = Place::Room(
+            RoomData::new(
+                place_id(HALL),
+                region_id(REGION),
+                Description::new("A long stone hall."),
+            )
+            .with_exit(Direction::North, place_id(STUDY))
+            .with_exit(Direction::North, place_id(LOFT)),
+        );
+
+        assert_eq!(room.neighbor(Direction::North), Some(place_id(LOFT)));
+    }
+
+    #[test]
+    fn visible_places_yields_the_authored_set() {
+        let hall = hall();
+
+        let visible: Vec<PlaceId> = hall.visible_places().collect();
+
+        assert_eq!(visible, vec![place_id(STUDY), place_id(COURTYARD)]);
+    }
+
+    #[test]
+    fn describe_returns_the_authored_text_independently_of_viewer() {
+        let hall = hall();
+
+        let to_alice = hall.describe(entity_id(1));
+        let to_bob = hall.describe(entity_id(2));
+
+        assert_eq!(to_alice.as_str(), "A long stone hall.");
+        assert_eq!(to_alice, to_bob);
+    }
+
+    #[test]
+    fn id_and_region_return_the_constructed_values() {
+        let hall = hall();
+
+        assert_eq!(hall.id(), place_id(HALL));
+        assert_eq!(hall.region(), region_id(REGION));
+    }
+
+    // The non-zero niche encodes "no exit" as None for free, keeping an optional
+    // neighbour the same width as a PlaceId.
+    #[test]
+    fn option_place_id_is_niche_optimized() {
+        assert_eq!(size_of::<Option<PlaceId>>(), 8);
+    }
+}

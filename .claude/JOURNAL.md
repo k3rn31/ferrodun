@@ -165,3 +165,40 @@ truth when this log drifts.
   observable surface yet).
 - **Next:** **M1-04** — `Place` enum (Room only) + `PlaceView`, introducing the
   `PlaceId`/`RegionId` newtypes.
+
+## 2026-06-25 — M1-04 `Place` enum (Room only) + spatial surface
+
+- **Spec:** §2.2 — the spatial surface. Every location is a `Place`; one shared
+  read surface with no per-variant special cases (§2.2.3) and **static dispatch
+  only** (§2.2.5, no trait object).
+- **Done:** Added `crates/mud-core/src/place.rs`. Newtypes `PlaceId`/`RegionId`
+  over `NonZeroU64` (mirroring `EntityKey`: 1-based so `Option<PlaceId>` takes
+  the niche, which `neighbor` returns); `Direction` enum n/e/s/w + up/down
+  (vertical exits per §3.2.2.0, not a `z` coord); `Description` newtype over
+  `String`. `Place` (only `Room` for M1, Tile→M4) exposes the §2.2.2 surface —
+  `id`, `region`, `describe(viewer)`, `neighbor`, `visible_places` — as
+  **inherent methods** that `match` on the variant and delegate to private
+  accessors on the variant payload (`RoomData`). Dispatch is static *by
+  construction* (an enum with inherent methods can't be a trait object), so
+  §2.2.5 holds with no trait gymnastics. **No `PlaceView` trait yet:** with one
+  variant it would be single-impl (our rules forbid a trait for a single impl);
+  it lands in M4 when `Tile` is its second implementor. `RoomData` stores exits
+  as six explicit `Option<PlaceId>` fields (duplicate-direction exit
+  unrepresentable; `neighbor` is a plain `match`, no `indexing_slicing`) built
+  via `new` + chainable `with_exit`/`with_visible_places`. `describe` ignores
+  `viewer` for M1 (documented trivial passthrough; param locks the signature).
+  **Scope call:** `occupants()` deferred to M1-05 — occupancy's authoritative
+  home is the dense `LocationOf` side-table (§2.3.2.2), so putting it on the
+  static `Place` now would duplicate that index. `PLAN.md` updated accordingly
+  (M1-04 = `Place` inherent surface, `PlaceView` trait → M4; M1-05 adds
+  `occupants()` to the surface against `LocationOf`). Re-exported `Place`/
+  `RoomData`/`PlaceId`/`RegionId`/`Direction`/`Description` from `lib.rs`.
+- **Verify:** 6 new unit tests (neighbor wired/unwired, visible-places set,
+  viewer-independent describe, id/region, `Option<PlaceId>` niche = 8 bytes),
+  all exercised through the `Place` surface against a fixture room graph (so
+  `Place`→variant delegation is covered by every test). `cargo test -p
+  mud-core` (30 tests), `cargo clippy --workspace --all-targets -D warnings`,
+  `cargo fmt --check` all green. No docs-site change (`Place` is internal
+  plumbing — no command, world-file, or other observable surface yet).
+- **Next:** **M1-05** — hot side-tables (`LocationOf`, `Inventory`); add
+  `occupants()` to the `Place` surface resolving through `LocationOf`.
