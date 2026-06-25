@@ -183,6 +183,21 @@ impl Inventory {
         contents.retain(|held| held.slot() != item.slot());
     }
 
+    /// Drops every item `container` holds, releasing its hot-component slot for
+    /// teardown (§2.3.7.3). A no-op for an empty or unknown container.
+    ///
+    /// Matches by slot so a freed slot carries no contents into its next tenant:
+    /// without this, a reused container slot would inherit the torn-down
+    /// entity's items, since [`insert`](Inventory::insert) appends rather than
+    /// overwriting a reused slot.
+    pub fn clear(&mut self, container: EntityId) {
+        if let Some(contents) =
+            slot_index(container.slot()).and_then(|index| self.by_slot.get_mut(index))
+        {
+            contents.clear();
+        }
+    }
+
     /// The entities in `container`. Empty for an empty or unknown container.
     pub fn contents(&self, container: EntityId) -> impl Iterator<Item = EntityId> + '_ {
         slot_index(container.slot())
@@ -370,5 +385,22 @@ mod tests {
 
         assert_eq!(inventory.contents(chest).count(), 0);
         assert_eq!(inventory.contents(entity(99)).count(), 0);
+    }
+
+    // Slot-reuse safety for containers: clearing a torn-down container's slot
+    // must leave nothing for a fresh handle reusing that slot to inherit, since
+    // `insert` appends rather than self-healing a reused slot.
+    #[test]
+    fn cleared_container_slot_carries_no_contents_to_a_reused_handle() {
+        let mut inventory = Inventory::new();
+        let chest = entity(2);
+        inventory.insert(chest, entity(5));
+        inventory.insert(chest, entity(6));
+
+        inventory.clear(chest);
+
+        assert_eq!(inventory.contents(chest).count(), 0);
+        let reused = reused_slot(2, 1);
+        assert_eq!(inventory.contents(reused).count(), 0);
     }
 }

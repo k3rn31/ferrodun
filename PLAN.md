@@ -214,6 +214,10 @@ spine.
   carrying (§2.5.3.5).
   - *Spec:* §2.5.3.3, §2.5.3.5, §3.16.2. *Verify:* serialization +
     last-writer-wins + precondition-failed tests.
+  - *Out of scope:* the **wall-clock driver loop** — this PR ships a
+    deterministic logical `tick()` plus the `TICK_HZ`/`TICK_PERIOD` cadence
+    constants only. The 50 ms timed loop that calls `tick()` is deferred to
+    M1-22 (no async runtime is wired before then).
 - **M1-07 — Locks DSL.** `chumsky` parser → typed AST; static-dispatch
   evaluation table (no string matching at eval time). Lock functions for
   M1: `perm`, `attr`, `tag`, `self` (§2.6.1.2). Inline typed builder seam
@@ -354,7 +358,13 @@ spine.
 - **M1-22 — `mudd` single-process wiring.** Boot a tenant: load world
   (M1-12), open DB pool (M1-08), start the scheduler (M1-06), run the
   command pipeline (M1-16), embed the gateway (M1-21) via the in-proc IPC
-  channel (M1-11).
+  channel (M1-11). **Starting the scheduler = owning a `mud_core::World` plus
+  a `mud_core::Scheduler` and running the driver loop M1-06 deferred:** every
+  `mud_core::TICK_PERIOD` (50 ms / `TICK_HZ`), call `scheduler.tick(&mut
+  world)` and consume the returned `Vec<TickEvent>` (`Created` reports minted
+  handles; `PreconditionFailed`/`Rejected` are surfaced to the caller). This
+  is where the async runtime / timer is introduced; M1-06 ships only the
+  logical `tick()` and the cadence constants.
   - *Spec:* §2.1.3.3, §5.2. *Verify:* `cargo run -p mudd` serves a telnet
     login locally.
 - **M1-23 — M1 acceptance integration test.** Drive two scripted telnet

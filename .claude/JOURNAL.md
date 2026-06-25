@@ -242,3 +242,55 @@ truth when this log drifts.
 - **Next:** **M1-06** — scheduler tick + `MutationCommand` (M1 subset). Entity
   teardown there will consume `LocationOf::remove`; move-between-Places will
   drive `LocationOf::place`; inventory add/remove will drive `Inventory`.
+
+## 2026-06-25 — M1-06 Scheduler tick + `MutationCommand` (M1 subset)
+
+- **Spec:** §2.5.3.3 (write-through single channel), §2.5.3.5 (per-entity
+  serialization, arrival order, last-writer-wins, precondition-carrying
+  composite mutations), §3.16.2 (fixed 20 Hz tick) — the write-model
+  orchestration over the M1 domain primitives.
+- **Done:** Added `crates/mud-core/src/world.rs` and `scheduler.rs`. **`World`**
+  is the per-tenant mutable aggregate bundling `EntityArena` + `LocationOf` +
+  `Inventory` (fields private); it exposes the *apply* surface (`create`,
+  `teardown`, `move_to`, `inventory_add`, `inventory_remove`) and the
+  *precondition* read surface (`is_located_in`, `contains`). Every op resolves
+  the handle through the arena before touching a side-table, so the §2.3.2
+  liveness/separation rule holds and stale/cross-tenant handles are rejected as
+  `ArenaError`; predicates return `false` for a non-live handle rather than
+  reading the table. `teardown` = `arena.free` + `LocationOf::remove` +
+  `Inventory::clear` — releases both hot-component slots so a reused slot leaks
+  no state (§2.3.7.3); removing the entity from a container that holds it *as an
+  item* is deferred (no reverse item→container index yet).
+  **`scheduler.rs`** holds the mutation vocabulary — `Effect` (Create / Teardown
+  / MoveTo / InventoryAdd / InventoryRemove, primitive by design), an orthogonal
+  optional `Precondition` (LocatedIn / Contains), `MutationCommand`
+  (`new(effect)` + `.with_precondition(..)`), and `TickEvent` (Created /
+  PreconditionFailed / Rejected) — plus the `Scheduler` (FIFO `VecDeque` +
+  monotonic `tick` counter; `submit`/`tick`/`tick_number`). `tick(&mut world)`
+  drains the whole queue in arrival order; a carried precondition is evaluated
+  at apply time and on failure emits `PreconditionFailed` and skips the effect
+  (no partial effect, §2.5.3.5); effects dispatch to the matching `World` method,
+  mapping `Ok(EntityId)`→`Created`, `Ok(())`→no event, `Err`→`Rejected`.
+  **Per-entity serialization + arrival order + last-writer-wins all hold by
+  construction** from the single-threaded sequential drain; parallel execution
+  of different entities is a §2.5.3.5 MAY, so no per-entity lock was built
+  (YAGNI), and the §2.3.4.1 per-tick budget is not enforced yet. Cadence pinned
+  via `TICK_HZ = 20` / `TICK_PERIOD = 50ms` constants; the **wall-clock driver
+  loop is deferred to M1-22** (no async runtime yet) — documented in the module
+  doc and both PLAN entries (M1-06 *Out of scope*, M1-22 wiring contract).
+  `tick_number()` is the §3.16.4 `mud.time.tick()` source. Re-exported all new
+  public items from `lib.rs`.
+- **Verify:** 20 new unit tests (8 `World`: create→usable, teardown→stale +
+  location cleared, move records location, foreign-handle reject, inventory
+  add/contains + remove, predicates-false-for-stale, teardown clears a reused
+  slot's inventory; 10 `Scheduler`: create mints usable entity, arrival-order/
+  last-writer-wins, two-entity independence, precondition fail→skip+event,
+  precondition pass→apply, inventory effects through tick, `Contains`
+  precondition gate, teardown command, foreign-handle→Rejected, tick counter
+  increments, cadence constants) plus 1 `Inventory::clear` slot-reuse test.
+  `cargo test -p mud-core` (62 tests), `cargo clippy --workspace --all-targets
+  -D warnings`, `cargo fmt --check` all green. No `unwrap`/`expect`/`panic`
+  outside tests. No docs-site change (internal plumbing — no player/builder/
+  operator-observable surface yet).
+- **Next:** **M1-07** — Locks DSL (`chumsky` parser → typed AST, static-dispatch
+  eval table; lock fns `perm`/`attr`/`tag`/`self`).
