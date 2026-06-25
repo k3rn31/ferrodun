@@ -53,3 +53,30 @@ truth when this log drifts.
   (needs a push to `main` and Pages set to the `gh-pages` branch).
 - **Next:** Repo owner must enable GitHub Pages → branch `gh-pages` (one
   time) after the first `main` deploy. Then resume **M1-01**.
+
+## 2026-06-25 — M1-01 `EntityId` + `TenantTag`
+
+- **Spec:** §2.3.1 (id bit layout), §2.3.7.3 (generational index) — 8-byte
+  `EntityId` packing 12-bit tenant tag + 32-bit slot index + 20-bit
+  generation; generation wraparound burns the slot rather than recycling.
+- **Done:** Created `crates/mud-core` (first domain crate). Added
+  `entity_id` module with newtypes `TenantTag` (parsed, `0..=4095`),
+  `SlotIndex` (full u32), `Generation` (parsed, `0..=2^20-1`), and
+  `EntityId` (single `u64`). Packing/extraction via documented bit
+  constants; `Generation::next()` returns `Option` (`None` = wraparound →
+  arena must burn the slot, encoding the §2.3.1.3 rule in the type).
+  `EntityIdError` via `thiserror`. `to_bits`/`from_bits` for the
+  persistence/wire seam. Bit-field extraction narrows via masked `as`; the
+  `& MASK` bounds the value so clippy's `cast_possible_truncation` range
+  analysis passes with no suppression. Wired `mud-core` into the workspace
+  members.
+- **Verify:** 8 unit tests (8-byte size, per-field pack/unpack, per-field
+  bit isolation — one field max + neighbors zero, mutation-checked to fail
+  under an overlapping layout, raw-bits round-trip, out-of-range rejection
+  for tenant and generation, `next()` increment, wraparound→`None`). `cargo
+  test -p mud-core`, `cargo clippy --workspace --all-targets -D warnings`,
+  `cargo fmt --check` all green.
+- **Next:** **M1-02** — per-tenant generational arena (`slotmap`-style):
+  alloc with current tenant tag, resolve live handles, invalidate on slot
+  reuse, cross-tenant resolution returns an error (the tenant-isolation
+  unit test).
