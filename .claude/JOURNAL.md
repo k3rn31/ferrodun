@@ -141,3 +141,27 @@ truth when this log drifts.
   only; no mkdocs surface (`EntityKey`/`EntityId` are internal).
 - **Next:** implement the `EntityKey` newtype in **M1-03**; the
   `EntityKey`↔`EntityId` mapping, key assignment, and LRU live in **M1-09**.
+
+## 2026-06-25 — M1-03 `EntityKey` (durable entity identity)
+
+- **Spec:** §2.3.1.4–2.3.1.5, §1.7 — the durable, per-tenant monotonic 64-bit
+  identity / DB primary key; the only entity ref that crosses disk/wire/IPC,
+  distinct from the ephemeral `EntityId`.
+- **Done:** Added `crates/mud-core/src/entity_key.rs` with `EntityKey`, a
+  newtype over `NonZeroU64` (Copy/Eq/Ord/Hash, `#[must_use]`, `new`/`get`).
+  `NonZeroU64` so an unassigned ref is only `Option::None` (niche, no sentinel
+  0) and the constructor stays infallible — no `EntityKeyError`/`thiserror`
+  needed (the zero-check is std's `NonZeroU64::new` at the boundary). Re-exported
+  from `lib.rs`. **Strict-YAGNI scope:** M1-03 ships only `EntityKey`; the other
+  ids the old foundation bundled here were redistributed in `PLAN.md` —
+  `PlaceId`/`RegionId` → M1-04, `ArchetypeId`/`ComponentId` → M2. Per-tenant
+  minting + the `EntityKey`↔`EntityId` mapping stay in M1-08/M1-09 (not added).
+  Distinctness from `EntityId` is enforced by the type system (no shared
+  conversion), so no `trybuild` harness.
+- **Verify:** 4 new unit tests (8-byte size, `Option<EntityKey>` niche = 8
+  bytes, `new`/`get` round-trip, monotonic ordering). `cargo test -p mud-core`
+  (24 tests), `cargo clippy --workspace --all-targets -D warnings`, `cargo fmt
+  --check` all green. No docs-site change (`EntityKey` is internal, no
+  observable surface yet).
+- **Next:** **M1-04** — `Place` enum (Room only) + `PlaceView`, introducing the
+  `PlaceId`/`RegionId` newtypes.
