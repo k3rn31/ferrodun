@@ -294,3 +294,43 @@ truth when this log drifts.
   operator-observable surface yet).
 - **Next:** **M1-07** — Locks DSL (`chumsky` parser → typed AST, static-dispatch
   eval table; lock fns `perm`/`attr`/`tag`/`self`).
+
+## 2026-06-25 — M1-07 Locks DSL (parse → resolve → eval)
+
+- **Spec:** §2.6.1–2.6.2 — Evennia-style lock DSL (`accesstype:expr`); MUST
+  parse to a typed AST via `chumsky` (§2.6.2.1) and evaluate via a static
+  dispatch table with no string matching at eval time (§2.6.2.2).
+- **Done:** Added `crates/mud-core/src/locks/` (module dir, not the flat
+  single-file style — multi-concern). Added `chumsky` 0.13 via `cargo add`
+  (locked tech stack). **Two-phase pipeline**: `parser.rs` (chumsky grammar) →
+  syntactic `ParsedLock`/`SyntaxExpr` (functions = name + string args, pure
+  syntax); `resolve.rs` lowers known functions into the typed `Lock`/
+  `ResolvedExpr`/`LockFn` (`Perm`/`Attr`/`Tag`/`Status`/`SelfRef`), enforcing
+  arity, so unknown-function (`UnknownFunction`) and bad-arity (`ArityMismatch`)
+  become errors at this seam (the M2 `mud check` hook). `eval.rs` walks the
+  resolved tree and `match`es on `LockFn` → static dispatch, no strings;
+  `LockContext` is a concrete struct (sets of perms/attrs/tags/statuses + an
+  `is_self` flag, chainable `with_*`/`as_self` builders) — no trait yet (single
+  use; real component stores arrive later). Grammar: `not` > `and` > `or`
+  precedence (foldr/foldl), parens, whitespace-insensitive; `and`/`or`/`not`
+  reserved (rejected as function names via `try_map`). **Scope decision (with
+  user):** added `status` to the M1 function set so all three §2.6.1.2 normative
+  examples fully evaluate (the third uses `status(drunk)`); PLAN.md M1-07
+  updated to record the divergence from its original 4-function list and the
+  two-phase design. `chumsky` error types are wrapped in a crate-owned
+  `ParseError` (no dep leak). `LockArg` is one shared newtype — the `LockFn`
+  variant already encodes the domain, so no per-function arg newtype. Arity
+  extraction uses `<[String;1]>::try_from` (no unwrap/unreachable). Re-exported
+  the public API from `lib.rs`.
+- **Verify:** 24 new unit tests (parser: 3 normative strings → expected AST,
+  precedence, parens override, whitespace, + malformed/missing-accesstype/
+  unbalanced-paren/trailing-input/keyword-as-fn-name rejects; resolve: each of
+  the 5 functions, all 3 normative strings, unknown-function, unary-no-arg,
+  self-with-arg; eval: all 3 normative strings true/false, negation,
+  disjunction). `cargo test -p mud-core` (86 tests), `cargo clippy --workspace
+  --all-targets -D warnings`, `cargo fmt --check` all green. No docs-site change
+  (locks aren't wired to any builder/operator-observable surface yet — no
+  command, world-file, or `mud check` consumes them until later milestones).
+- **Next:** **M1-08** — `mud-db` crate: SQLx + SQLite, per-tenant connection
+  pool over a distinct file, initial migration (accounts, puppets, entities by
+  `EntityKey`, location, inventory).

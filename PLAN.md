@@ -220,7 +220,13 @@ spine.
     M1-22 (no async runtime is wired before then).
 - **M1-07 — Locks DSL.** `chumsky` parser → typed AST; static-dispatch
   evaluation table (no string matching at eval time). Lock functions for
-  M1: `perm`, `attr`, `tag`, `self` (§2.6.1.2). Inline typed builder seam
+  M1: `perm`, `attr`, `tag`, `self`, **`status`** (§2.6.1.2). `status` is
+  included so all three normative example strings (one uses `status(drunk)`)
+  fully evaluate. Two-phase pipeline: a `chumsky` grammar produces a purely
+  syntactic AST (functions = name + string args), then a separate **resolve**
+  pass lowers known functions into the typed `LockFn` enum — keeping parse
+  pure-syntax and giving M2's `mud check` a clean seam for unknown-function /
+  arity / tag-lint diagnostics (§2.6.2.3–2.6.2.4). Inline typed builder seam
   may be deferred to when scripts need it (M2).
   - *Spec:* §2.6.1–2.6.2. *Verify:* parse + eval table tests over the three
     normative example strings. *Out of scope:* `mud check` CLI validation
