@@ -1,9 +1,10 @@
-[package]
-name = "ferrodun"
+[workspace]
+resolver = "3"
+members = ["crates/mudd"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-
-[dependencies]
 
 [workspace.lints.clippy]
 all = { level = "deny" }
