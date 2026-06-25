@@ -145,7 +145,9 @@ code exists.
 
 **Acceptance (§7.4 M1):** two players connect over telnet, log in, walk
 between hand-authored rooms, see each other, chat. Account credentials,
-puppet location, and inventory survive a clean restart. ANSI + NAWS work.
+puppet location, and inventory survive a clean restart (entity references
+persist via the durable `EntityKey`; the in-memory `EntityId` is re-minted on
+load). ANSI + NAWS work.
 Locks parse and evaluate. A tenant-isolation smoke test asserts an
 `EntityId` minted in tenant A cannot be resolved/mutated/observed via
 tenant B (§2.3.1, §3.11.4).
@@ -163,14 +165,19 @@ spine.
   - *Spec:* §2.3.1. *Verify:* unit tests on packing, round-trip, wraparound.
 - **M1-02 — Generational arena (per tenant).** A `slotmap`-style arena that
   allocates `EntityId`s with the current tenant tag, resolves live handles,
-  and invalidates stale handles on slot reuse (§2.3.7.3). Cross-tenant
-  resolution returns an error, never another tenant's entity (§3.11.4).
+  and invalidates stale handles on slot reuse (§2.3.7.3). `EntityId` is the
+  **ephemeral** arena handle; durable identity (`EntityKey`), the
+  `EntityKey`↔`EntityId` mapping, and LRU eviction live in the write-through
+  cache layer (M1-09, §2.3.1.4–2.3.1.6). Cross-tenant resolution returns an
+  error, never another tenant's entity (§3.11.4).
   - *Spec:* §2.3.1–2.3.2, §3.11.4. *Verify:* alloc/free/stale-handle tests;
     **the tenant-isolation unit test** (A's id not resolvable via B).
-- **M1-03 — Core domain newtypes.** `PlaceId`, `RegionId`, `ArchetypeId`,
-  `ComponentId`, plus session/account ids as M1 needs them. No primitives
-  cross public APIs (§1.7).
-  - *Spec:* §1.7. *Verify:* compile-level; misuse is a type error.
+- **M1-03 — Core domain newtypes.** `EntityKey` (durable per-tenant entity
+  identity; the DB primary key, §2.3.1.5), `PlaceId`, `RegionId`,
+  `ArchetypeId`, `ComponentId`, plus session/account ids as M1 needs them. No
+  primitives cross public APIs (§1.7).
+  - *Spec:* §1.7, §2.3.1.5. *Verify:* compile-level; `EntityKey` (durable) and
+    `EntityId` (ephemeral) are distinct types — misuse is a type error.
 - **M1-04 — `Place` enum (Room only) + `PlaceView`.** Static-dispatch enum
   with the single `Room` variant for M1 (Tile deferred to M4, §2.2.1).
   `PlaceView`: `id`, `region`, `occupants`, `describe(viewer)`, `neighbor`,
@@ -203,19 +210,26 @@ spine.
 
 - **M1-08 — SQLx + SQLite backend.** `mud-db` crate; SQLx with compile-time
   checked queries; `sqlx migrate` setup; initial migration for accounts,
-  puppets, entities, location, inventory. **Per-tenant connection pool over
+  puppets, entities (keyed by a per-tenant monotonic `EntityKey`, §2.3.1.5),
+  location, inventory. **Per-tenant connection pool over
   a distinct SQLite file** (§2.5.1.4) — no shared DB, no tenant column.
   - *Spec:* §2.5.1. *Verify:* migration applies; per-tenant file isolation
     test. *Out of scope:* Postgres backend (added when prod is exercised,
     M7-ish), `sqlite-vec` (M6).
-- **M1-09 — Write-through + boot load.** Every mutation flows through
-  `MutationCommand` and applies to arena + DB in one transaction (§2.5.3.3);
-  world state loads from DB on boot so a clean restart restores accounts,
-  location, and inventory.
-  - *Spec:* §1.2, §2.5.3. *Verify:* restart integration test (write → drop
-    process → reload → state intact). *Out of scope:* background snapshot
-    (§2.5.3.4 — crash recovery, deferred until M7 hardening; clean restart
-    needs only write-through).
+- **M1-09 — Write-through + boot load (cache keyed by `EntityKey`).** Every
+  mutation flows through `MutationCommand` and applies to arena + DB in one
+  transaction (§2.5.3.3). The arena is a cache keyed by `EntityKey`: loading an
+  entity mints a fresh `EntityId` for its durable `EntityKey` and installs the
+  `EntityKey`↔`EntityId` mapping (§2.3.1.6). World state loads from DB on boot
+  so a clean restart restores accounts, location, and inventory.
+  - *Spec:* §1.2, §2.3.1.4–2.3.1.6, §2.5.3. *Verify:* restart integration test
+    (write → drop process → reload → state intact), asserting a persisted
+    `EntityKey` resolves to the same entity after restart; `EntityId` values are
+    **not** expected to survive restart (re-minted on load). *Out of scope:*
+    LRU eviction + cache-miss reload beyond what boot-load exercises (deferred
+    until working sets exceed the cache, M7-ish); background snapshot (§2.5.3.4
+    — crash recovery, deferred until M7 hardening; clean restart needs only
+    write-through).
 
 ### Wire/IPC seam (`mud-schema`) and Gateway/World split
 
