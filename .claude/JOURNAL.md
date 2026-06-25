@@ -118,3 +118,26 @@ truth when this log drifts.
   docs-site change (internal plumbing, no observable surface).
 - **Next:** **M1-03** — core domain newtypes (`PlaceId`, `RegionId`,
   `ArchetypeId`, `ComponentId`, plus session/account ids as M1 needs them).
+
+## 2026-06-25 — EntityKey/EntityId split (durable vs ephemeral identity)
+
+- **Spec:** §2.3.1 (new §2.3.1.4–2.3.1.6), §2.3.7.1, §2.5.3.1–2.5.3.2 — a
+  design fix, not new code. The shipped `EntityId` (M1-01) was wrongly billed
+  as the persisted + wire identity, but it is a generational arena index whose
+  slots are reused under the LRU cache (§2.5.3.2) — it cannot be durable.
+- **Done:** Split entity identity into two types. `EntityId` stays the
+  **ephemeral** in-memory arena handle (dense O(1) side-table index on the hot
+  path); a new durable **`EntityKey`** (per-tenant monotonic, DB primary key,
+  the only entity ref that leaves the World process) carries persistent
+  identity. SPEC §2.3.1 restructured; §2.3.7.1/§2.5.3 updated so the arena is a
+  cache keyed by `EntityKey` with an `EntityKey`↔`EntityId` mapping. PLAN:
+  `EntityKey` added to M1-03; mapping + key assignment scoped to M1-08/M1-09;
+  M1-09 restart test now asserts `EntityKey` (not `EntityId`) stability.
+  Corrected `entity_id.rs` doc comments + renamed the persistence test to
+  `packs_to_the_documented_bit_layout`. Kept `to_bits`/`from_bits` as an
+  internal encoding utility (the layout-tiling tests depend on them).
+- **Verify:** `cargo test -p mud-core` (20 tests), `cargo clippy --workspace
+  --all-targets -D warnings`, `cargo fmt --check` all green. Docs are SPEC/PLAN
+  only; no mkdocs surface (`EntityKey`/`EntityId` are internal).
+- **Next:** implement the `EntityKey` newtype in **M1-03**; the
+  `EntityKey`↔`EntityId` mapping, key assignment, and LRU live in **M1-09**.

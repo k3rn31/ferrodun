@@ -1,7 +1,7 @@
 //! `EntityId` and its component newtypes (§2.3.1).
 //!
-//! An `EntityId` is the engine's stable, tenant-scoped handle to an entity. It
-//! packs three fields into a single 64-bit word so it fits in a machine
+//! An `EntityId` is the engine's ephemeral, tenant-scoped handle to an entity.
+//! It packs three fields into a single 64-bit word so it fits in a machine
 //! register and iterates densely on the combat hot path (§2.3.1.3):
 //!
 //! | field         | width   | meaning                                      |
@@ -11,10 +11,11 @@
 //! | generation    | 20 bits | bumped on slot reuse to catch stale handles |
 //!
 //! The slot index + generation pair is the standard generational index that
-//! prevents use-after-free across teardown (§2.3.7.3). The field *widths* are
-//! normative and leak into persistence and the wire protocol, so they MUST NOT
-//! change without a major-version bump; the exact bit placement below is a
-//! `mud-core` implementation detail.
+//! prevents use-after-free across teardown (§2.3.7.3). `EntityId` is an
+//! ephemeral in-memory handle — it is never persisted or sent on the wire
+//! (§2.3.1.4), so the bit layout below is an internal `mud-core` detail that
+//! MAY change without a version bump. An entity's durable identity is carried
+//! separately by `EntityKey` (§2.3.1.5).
 
 // Bit layout within the 64-bit word. Tenant occupies the high bits, the
 // generation the low bits, so consecutive slots in one tenant stay numerically
@@ -174,7 +175,9 @@ impl EntityId {
         Generation(value)
     }
 
-    /// The raw 64-bit encoding, for persistence and the wire protocol.
+    /// The raw 64-bit in-memory encoding. An internal detail — `EntityId` is
+    /// not persisted or sent on the wire (§2.3.1.4); durable identity is
+    /// `EntityKey` (§2.3.1.5).
     pub const fn to_bits(self) -> u64 {
         self.0
     }
@@ -250,11 +253,13 @@ mod tests {
         assert_eq!(EntityId::from_bits(id.to_bits()), id);
     }
 
-    // The encoding is normative: it leaks into on-disk persistence and the
-    // wire protocol (§2.3.1.3), so pin it to a concrete bit pattern. A change
-    // to the layout that a self-consistent round-trip would miss fails here.
+    // Pin the current internal bit layout to a concrete pattern so an
+    // accidental change to field placement is caught (a change a self-
+    // consistent round-trip would miss). The layout is a `mud-core` detail,
+    // not a persistence/wire contract (§2.3.1.4), so this test may be updated
+    // deliberately if the layout changes.
     #[test]
-    fn encoding_is_stable_for_persistence() {
+    fn packs_to_the_documented_bit_layout() {
         let id = EntityId::new(unwrap_tenant(1), SlotIndex::new(1), unwrap_generation(1));
 
         assert_eq!(id.to_bits(), (1 << 52) | (1 << 20) | 1);
