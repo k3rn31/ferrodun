@@ -202,3 +202,43 @@ truth when this log drifts.
   plumbing — no command, world-file, or other observable surface yet).
 - **Next:** **M1-05** — hot side-tables (`LocationOf`, `Inventory`); add
   `occupants()` to the `Place` surface resolving through `LocationOf`.
+
+## 2026-06-25 — M1-05 Hot side-tables + `Place::occupants`
+
+- **Spec:** §2.3.2.2–2.3.2.4 (hot components in dense slot-indexed arrays),
+  §2.2.2 (the Place surface's occupants) — the two M1 hot side-tables and the
+  occupancy join deferred from M1-04.
+- **Done:** Added `crates/mud-core/src/side_tables.rs` with `LocationOf` and
+  `Inventory`, the only two hot components M1 needs (`Position`/`Health`/
+  `Initiative` deferred to their own milestones per YAGNI). Both are **pure
+  storage keyed by `SlotIndex`**, not liveness authorities — the arena resolves
+  handles (rejecting stale/cross-tenant) before a table is indexed (§2.3.2
+  separation, documented on the module). `LocationOf` is a dense forward array
+  (`Vec<Option<PlaceId>>` by slot) plus a reverse occupant index
+  (`HashMap<PlaceId, Vec<EntityId>>`) kept in lockstep: `place` moves an entity
+  out of its old Place's list before recording the new one (reverse-index
+  consistency on move); `remove` clears both halves (teardown-ready, §2.3.7.3);
+  `location`/`occupants` are the reads. Reverse removal matches **by slot** (a
+  slot is in ≤1 Place), so it stays correct across slot reuse; empty reverse
+  `Vec`s are pruned. `Inventory` is a dense `Vec<Vec<EntityId>>` by slot with
+  `insert` (dedups within a container)/`remove`/`contents`; cross-container
+  exclusivity is left to the M1-06 mutation layer. Growth via `resize`/
+  `resize_with` with `checked_add` (no overflow); cell access after grow uses a
+  documented `// INVARIANT:` `unreachable!` mirroring `arena.rs`. Completed the
+  Place surface with inherent `Place::occupants(&self, &LocationOf)` — a Place
+  doesn't own occupancy, so the table is passed in and the join keys on
+  `self.id()` (the §2.2.2 sketch's bare `occupants(&self)` is illustrative).
+  Re-exported `Inventory`/`LocationOf` from `lib.rs`; refreshed the place.rs
+  module-doc note to point at the now-landed method.
+- **Verify:** 12 new unit tests (location round-trip, occupants listing,
+  unlocated/empty cases, **move keeps the reverse index consistent**, move
+  evicts only the moved entity while other occupants stay, a reused slot
+  supersedes its stale handle, `remove` clears both halves, inventory
+  round-trip, dedup on duplicate insert, remove-drops-item, and
+  `Place::occupants` joining through `LocationOf`). `cargo test -p mud-core`
+  (42 tests), `cargo clippy --workspace --all-targets -D warnings`, `cargo fmt
+  --check` all green. No docs-site change (internal plumbing — no command,
+  world-file, or operator-observable surface yet).
+- **Next:** **M1-06** — scheduler tick + `MutationCommand` (M1 subset). Entity
+  teardown there will consume `LocationOf::remove`; move-between-Places will
+  drive `LocationOf::place`; inventory add/remove will drive `Inventory`.

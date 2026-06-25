@@ -13,14 +13,14 @@
 //! variant gives it a genuine second implementation.
 //!
 //! For M1 the only variant is [`Room`](Place::Room); `Tile` and its `Region`
-//! grid arrive in M4 (§2.2.1). Occupancy is deliberately absent here: a Place's
-//! occupants come from the dense `LocationOf` side-table (§2.3.2.2), so
-//! `occupants()` joins this surface in M1-05 against that table rather than
+//! grid arrive in M4 (§2.2.1). Occupancy is not the Place's data: a Place's
+//! occupants come from the dense [`LocationOf`] side-table (§2.3.2.2), so
+//! [`Place::occupants`] joins this surface against that table rather than
 //! duplicating it on the static room.
 
 use std::num::NonZeroU64;
 
-use crate::EntityId;
+use crate::{EntityId, LocationOf};
 
 /// The stable identifier of a [`Place`] (§2.2.2).
 ///
@@ -227,6 +227,17 @@ impl Place {
         }
     }
 
+    /// The entities currently in this Place (§2.2.2), resolved through the
+    /// [`LocationOf`] reverse index.
+    ///
+    /// A Place does not own its occupancy — the dense [`LocationOf`] table is
+    /// the authority (§2.3.2.2) — so callers pass it in. (The §2.2.2 sketch's
+    /// bare `occupants(&self)` is illustrative; this table join is the honest
+    /// signature.)
+    pub fn occupants<'a>(&self, locations: &'a LocationOf) -> impl Iterator<Item = EntityId> + 'a {
+        locations.occupants(self.id())
+    }
+
     /// The Places observable from here (§2.2.2). Distinct from exits: a Place
     /// may be visible without being directly reachable.
     pub fn visible_places(&self) -> impl Iterator<Item = PlaceId> {
@@ -335,6 +346,24 @@ mod tests {
 
         assert_eq!(hall.id(), place_id(HALL));
         assert_eq!(hall.region(), region_id(REGION));
+    }
+
+    // The §2.2.2 occupancy surface is a join against LocationOf: entities placed
+    // at the room's id show up through Place::occupants, and a room with no one
+    // in it is empty.
+    #[test]
+    fn occupants_joins_through_the_location_table() {
+        use crate::LocationOf;
+
+        let hall = hall();
+        let goblin = entity_id(3);
+        let mut locations = LocationOf::new();
+        locations.place(goblin, hall.id());
+
+        assert_eq!(hall.occupants(&locations).collect::<Vec<_>>(), vec![goblin]);
+
+        let empty = LocationOf::new();
+        assert_eq!(hall.occupants(&empty).count(), 0);
     }
 
     // The non-zero niche encodes "no exit" as None for free, keeping an optional
