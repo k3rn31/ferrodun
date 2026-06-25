@@ -94,21 +94,27 @@ truth when this log drifts.
   the normative 12/32/20 bit layout and the burn-on-wraparound rule exact.
   `EntityArena` is a non-generic liveness registry (no component payload; those
   are separate side-tables, M1-05): `new`/`tenant`/`alloc`/`free`/`resolve`.
-  `alloc` reuses a freed slot (a `free: Vec<SlotIndex>` stack) at its advanced
-  generation or grows the arena; slot indices minted via `u32::try_from(len)`
-  → `Exhausted` (no `as`). `free` resolves first (so cross-tenant/stale/double-
-  free all error), then advances the generation via the M1-01
-  `Generation::next()`: `Some` → `Free` + recycle, `None` → `Burned`, never
-  relinked (§2.3.1.3). `resolve` checks tenant first (`CrossTenant`, kept
-  distinct from `StaleHandle` per §3.11.4) then slot liveness+generation,
-  returning the validated `SlotIndex`. Added `Generation::FIRST` const to
-  `entity_id.rs`. Re-exported `EntityArena`/`ArenaError` from `lib.rs`.
-- **Verify:** 7 new unit tests (tenant stamping, resolve live, freed→stale,
-  slot-reuse bumps generation, **tenant-isolation: foreign handle rejected by
-  another tenant's arena**, burn-on-generation-exhaustion via the real
-  free/alloc path cycling one slot to `Generation::MAX`, double-free). `cargo
-  test -p mud-core` (18 tests), `cargo clippy --workspace --all-targets -D
-  warnings`, `cargo fmt --check` all green. No docs-site change (internal
-  plumbing, no observable surface).
+  Slot liveness is `enum SlotState { Live(Generation), Free(Generation),
+  Burned }` (one `Vec<SlotState>` + a `free: Vec<SlotIndex>` stack) — `Burned`
+  carries no generation so a retired-but-non-terminal slot is unrepresentable.
+  `alloc` reuses a freed slot at its advanced generation or grows the arena;
+  slot indices minted via `u32::try_from(len)` → `Exhausted` (no `as`). `free`
+  checks tenant (`ensure_owned`) then the live generation in a single slot
+  lookup, then advances via the M1-01 `Generation::next()`: `Some` → `Free` +
+  recycle, `None` → `Burned`, never relinked (§2.3.1.3). `resolve` checks
+  tenant first (`CrossTenant`, kept distinct from `StaleHandle` per §3.11.4)
+  then slot liveness+generation, returning the validated `SlotIndex`. The
+  reuse path's free-list lookup is a guarded `// INVARIANT:` `unreachable!`
+  (not a dishonest `StaleHandle`, since `alloc` takes no handle). Added
+  `Generation::FIRST` const to `entity_id.rs`. Re-exported `EntityArena`/
+  `ArenaError` from `lib.rs`.
+- **Verify:** 8 new unit tests (tenant stamping, resolve live, freed→stale,
+  slot-reuse bumps generation, **stale handle cannot free a reused slot**
+  (mutation-side use-after-free guard), **tenant-isolation: foreign handle
+  rejected by another tenant's arena**, burn-on-generation-exhaustion via the
+  real free/alloc path cycling one slot to `Generation::MAX`, double-free,
+  out-of-range→stale). `cargo test -p mud-core` (20 tests), `cargo clippy
+  --workspace --all-targets -D warnings`, `cargo fmt --check` all green. No
+  docs-site change (internal plumbing, no observable surface).
 - **Next:** **M1-03** — core domain newtypes (`PlaceId`, `RegionId`,
   `ArchetypeId`, `ComponentId`, plus session/account ids as M1 needs them).

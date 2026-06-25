@@ -36,25 +36,27 @@ pub enum ArenaError {
     /// range, free, or burned, or its generation no longer matches the slot.
     #[error("stale entity handle")]
     StaleHandle,
-    /// The arena's 32-bit slot space is exhausted. Defensive: reaching this
-    /// requires roughly four billion concurrently live slots.
+    /// The arena has grown to the full 32-bit slot space and cannot mint
+    /// another slot. Defensive — reaching it needs ~4 billion slots allocated
+    /// without enough reuse to keep the arena from growing.
     #[error("entity slot space exhausted")]
     Exhausted,
 }
 
 /// Liveness state of a single arena slot.
+///
+/// `Live` and `Free` carry the slot's generation; `Burned` carries none, since
+/// a retired slot's generation is never read again. Keeping the generation off
+/// `Burned` stops the type from representing a burned slot at a non-terminal
+/// generation — an illegal state the arena never produces (§2.3.1.3).
+#[derive(Clone, Copy)]
 enum SlotState {
-    /// Slot holds a live entity at the slot's current generation.
-    Live,
-    /// Slot is free and available for reuse at the slot's current generation.
-    Free,
-    /// Slot's generation is exhausted; it is retired forever (§2.3.1.3).
+    /// Holds a live entity at this generation.
+    Live(Generation),
+    /// Free for reuse; the next allocation into this slot mints this generation.
+    Free(Generation),
+    /// Generation exhausted; retired forever (§2.3.1.3).
     Burned,
-}
-
-struct Slot {
-    generation: Generation,
-    state: SlotState,
 }
 
 /// A per-tenant generational arena that mints [`EntityId`]s and validates
@@ -64,7 +66,7 @@ struct Slot {
 /// every id it mints and rejects handles minted elsewhere.
 pub struct EntityArena {
     tenant: TenantTag,
-    slots: Vec<Slot>,
+    slots: Vec<SlotState>,
     /// Indices of slots in [`SlotState::Free`], ready to reuse. Burned slots
     /// are never pushed here, so they are never minted again.
     free: Vec<SlotIndex>,
@@ -92,22 +94,35 @@ impl EntityArena {
     /// space is full.
     pub fn alloc(&mut self) -> Result<EntityId, ArenaError> {
         if let Some(slot) = self.free.pop() {
-            let entry = self
-                .slots
-                .get_mut(slot.get() as usize)
-                .ok_or(ArenaError::StaleHandle)?;
-            entry.state = SlotState::Live;
-            return Ok(EntityId::new(self.tenant, slot, entry.generation));
+            return Ok(self.reuse(slot));
         }
 
         let index = u32::try_from(self.slots.len()).map_err(|_| ArenaError::Exhausted)?;
-        let slot = SlotIndex::new(index);
-        let generation = Generation::FIRST;
-        self.slots.push(Slot {
-            generation,
-            state: SlotState::Live,
-        });
-        Ok(EntityId::new(self.tenant, slot, generation))
+        self.slots.push(SlotState::Live(Generation::FIRST));
+        Ok(EntityId::new(
+            self.tenant,
+            SlotIndex::new(index),
+            Generation::FIRST,
+        ))
+    }
+
+    /// Re-activates a slot taken from the free list, minting the next handle.
+    ///
+    /// INVARIANT: the free list holds only in-range indices that `free` set to
+    /// `Free`, and `slots` never shrinks, so both lookups always succeed. A
+    /// miss is an internal bookkeeping bug, not a recoverable condition — and
+    /// because `alloc` takes no handle from the caller, reporting it as a
+    /// `StaleHandle` would misattribute that bug to the caller — so it is
+    /// `unreachable!` rather than an error.
+    fn reuse(&mut self, slot: SlotIndex) -> EntityId {
+        let Some(state) = slot_position(slot).and_then(|index| self.slots.get_mut(index)) else {
+            unreachable!("free-list slot {} is out of range", slot.get());
+        };
+        let SlotState::Free(generation) = *state else {
+            unreachable!("free-list slot {} was not Free", slot.get());
+        };
+        *state = SlotState::Live(generation);
+        EntityId::new(self.tenant, slot, generation)
     }
 
     /// Frees a live entity, invalidating its handle.
@@ -118,21 +133,26 @@ impl EntityArena {
     /// foreign handle and [`ArenaError::StaleHandle`] for a handle that does
     /// not name a live entity (including a double free).
     pub fn free(&mut self, id: EntityId) -> Result<(), ArenaError> {
-        let slot = self.resolve(id)?;
-        let entry = self
-            .slots
-            .get_mut(slot.get() as usize)
+        self.ensure_owned(id)?;
+        let state = slot_position(id.slot())
+            .and_then(|index| self.slots.get_mut(index))
             .ok_or(ArenaError::StaleHandle)?;
 
-        match entry.generation.next() {
+        let SlotState::Live(generation) = *state else {
+            return Err(ArenaError::StaleHandle);
+        };
+        if generation != id.generation() {
+            return Err(ArenaError::StaleHandle);
+        }
+
+        match generation.next() {
             Some(next) => {
-                entry.generation = next;
-                entry.state = SlotState::Free;
-                self.free.push(slot);
+                *state = SlotState::Free(next);
+                self.free.push(id.slot());
             }
             // Generation exhausted: burn the slot rather than recycle it into a
             // colliding id (§2.3.1.3). It is deliberately not pushed to `free`.
-            None => entry.state = SlotState::Burned,
+            None => *state = SlotState::Burned,
         }
         Ok(())
     }
@@ -145,26 +165,38 @@ impl EntityArena {
     /// not name a live entity here. On success the returned [`SlotIndex`] is
     /// guaranteed to name a live entity owned by this arena.
     pub fn resolve(&self, id: EntityId) -> Result<SlotIndex, ArenaError> {
-        if id.tenant() != self.tenant {
-            return Err(ArenaError::CrossTenant {
-                arena: self.tenant,
-                handle: id.tenant(),
-            });
-        }
-
-        let slot = id.slot();
-        let entry = self
-            .slots
-            .get(slot.get() as usize)
+        self.ensure_owned(id)?;
+        let state = slot_position(id.slot())
+            .and_then(|index| self.slots.get(index))
             .ok_or(ArenaError::StaleHandle)?;
 
-        let is_live = matches!(entry.state, SlotState::Live) && entry.generation == id.generation();
-        if is_live {
-            Ok(slot)
-        } else {
-            Err(ArenaError::StaleHandle)
+        match *state {
+            SlotState::Live(generation) if generation == id.generation() => Ok(id.slot()),
+            SlotState::Live(_) | SlotState::Free(_) | SlotState::Burned => {
+                Err(ArenaError::StaleHandle)
+            }
         }
     }
+
+    /// Rejects a handle minted in another tenant (§3.11.4), the first gate
+    /// every lookup passes so cross-tenant access never reaches slot liveness.
+    fn ensure_owned(&self, id: EntityId) -> Result<(), ArenaError> {
+        if id.tenant() == self.tenant {
+            Ok(())
+        } else {
+            Err(ArenaError::CrossTenant {
+                arena: self.tenant,
+                handle: id.tenant(),
+            })
+        }
+    }
+}
+
+/// Maps a slot index to a position in a `slots` vector, or `None` when the
+/// index cannot be one — possible only on targets where `usize` is narrower
+/// than `u32`, where such a slot could never have been allocated.
+fn slot_position(slot: SlotIndex) -> Option<usize> {
+    usize::try_from(slot.get()).ok()
 }
 
 #[cfg(test)]
@@ -217,6 +249,22 @@ mod tests {
         assert_eq!(arena.resolve(second), Ok(second.slot()));
     }
 
+    // The mutation-side use-after-free guard: a stale handle to a reused slot
+    // must not free the slot's *current* occupant. `free` re-validates the
+    // generation, not just the slot's liveness, so freeing the old handle is
+    // rejected and the live occupant is left untouched. `resolve` rejecting the
+    // stale handle (tested above) does not by itself prove `free` does.
+    #[test]
+    fn stale_handle_cannot_free_a_reused_slot() {
+        let mut arena = EntityArena::new(tenant(1));
+        let first = arena.alloc().expect("first alloc must succeed");
+        arena.free(first).expect("free must succeed");
+        let second = arena.alloc().expect("second alloc must reuse the slot");
+
+        assert_eq!(arena.free(first), Err(ArenaError::StaleHandle));
+        assert_eq!(arena.resolve(second), Ok(second.slot()));
+    }
+
     // §3.11.4: a handle minted in one tenant must not be resolvable or mutable
     // through another tenant's arena. This is the M1-02 tenant-isolation gate.
     #[test]
@@ -261,8 +309,10 @@ mod tests {
     }
 
     // A same-tenant handle naming a slot the arena never allocated is stale,
-    // not a tenant violation: the bounds check, distinct from the generation
-    // check the other stale-handle tests exercise.
+    // not a tenant violation. Slot 999 in an empty arena is constructed to take
+    // the bounds branch of `resolve` rather than the generation-mismatch branch
+    // the other stale-handle tests exercise; both collapse to `StaleHandle`, so
+    // the assertion pins the behavior, not which internal branch produced it.
     #[test]
     fn out_of_range_slot_is_stale() {
         let arena = EntityArena::new(tenant(1));
