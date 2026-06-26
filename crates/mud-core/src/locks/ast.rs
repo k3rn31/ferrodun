@@ -91,9 +91,9 @@ impl LockArg {
 }
 
 /// A resolved lock function. Each variant maps to one fixed evaluator, which is
-/// what lets evaluation dispatch statically (SPEC §2.6.2.2). The M1 set is
-/// `perm`, `attr`, `tag`, `status`, and `self`; more functions are added in
-/// later milestones, hence `#[non_exhaustive]`.
+/// what lets evaluation dispatch statically (SPEC §2.6.2.2). The set is `perm`,
+/// `attr`, `tag`, `status`, and `self`; more functions may be added, hence
+/// `#[non_exhaustive]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LockFn {

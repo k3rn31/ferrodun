@@ -10,7 +10,7 @@
 //! 3. [`Lock::evaluate`] — walk the typed tree against a [`LockContext`],
 //!    dispatching statically on [`LockFn`] with no string matching.
 //!
-//! The M1 lock-function set is `perm`, `attr`, `tag`, `status`, and `self`.
+//! The lock-function set is `perm`, `attr`, `tag`, `status`, and `self`.
 
 mod ast;
 mod eval;

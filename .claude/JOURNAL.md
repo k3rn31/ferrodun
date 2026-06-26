@@ -334,3 +334,25 @@ truth when this log drifts.
 - **Next:** **M1-08** — `mud-db` crate: SQLx + SQLite, per-tenant connection
   pool over a distinct file, initial migration (accounts, puppets, entities by
   `EntityKey`, location, inventory).
+
+## 2026-06-26 — mud-core M1 housekeeping: reorg, comment cleanup, integration tests
+
+- **Spec:** §2.3.1–2.3.2, §2.2, §2.6 — no normative change; tidy the crate at
+  the M1-01…M1-07 boundary (internal structure + tests only).
+- **Done:** Grouped the entity-identity subsystem into `entity/` (`id.rs`,
+  `key.rs`, `arena.rs` + `mod.rs`) and split `side_tables.rs` into
+  `side_tables/{location,inventory}.rs` (+ `mod.rs`). Consolidated the
+  duplicated slot→index helper (`arena::slot_position` /
+  `side_tables::slot_index`) into one `pub(crate) SlotIndex::to_index`. Comment
+  pass: stripped development-process/roadmap meta (YAGNI tags, milestone/PR
+  refs like M1-22/M4, "deferred to") while keeping design rationale and spec
+  `§` anchors; fixed one stale comment (side-table test helper claimed "raw
+  bits" but builds via `EntityId::new`). Public API unchanged — `lib.rs`
+  re-exports the same names, now sourced from the new modules.
+- **Verify:** `cargo test -p mud-core` green — 89 unit + 14 new integration
+  tests across `tests/{world_simulation,locks_pipeline,navigation}.rs`
+  (Scheduler+World over many ticks; full parse→resolve→evaluate lock pipeline
+  incl. error surfaces; arena+Place+LocationOf composed for handle-validated
+  movement). `cargo clippy -p mud-core --all-targets` and `cargo doc -p
+  mud-core --no-deps` clean. No docs-site change (purely internal).
+- **Next:** **M1-08** — `mud-db` crate (SQLx + SQLite), unchanged by this pass.

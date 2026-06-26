@@ -16,17 +16,16 @@
 //! overwriting the first. §2.5.3.5 permits mutations against *different*
 //! entities to proceed in parallel (a MAY), so no per-entity lock or parallel
 //! executor is built here. The per-tick work budget (§2.3.4.1) is likewise not
-//! enforced yet.
+//! enforced.
 //!
 //! ## Cadence and the wall-clock driver
 //!
 //! [`TICK_HZ`] / [`TICK_PERIOD`] pin the normative 20 Hz / 50 ms cadence
-//! (§3.16.2). This module deliberately ships only the deterministic logical
-//! tick — **not** the wall-clock loop that drives it. M1-22 owns a [`World`] and
-//! a [`Scheduler`] and runs the driver: every [`TICK_PERIOD`] it calls
-//! [`Scheduler::tick`] against the world and consumes the returned
-//! [`TickEvent`]s. No async runtime exists in the workspace yet, so wiring the
-//! timed loop is deferred to that milestone.
+//! (§3.16.2). This module provides only the deterministic logical tick — **not**
+//! the wall-clock loop that drives it. The driver — which owns a [`World`] and a
+//! [`Scheduler`] and calls [`Scheduler::tick`] every [`TICK_PERIOD`], consuming
+//! the returned [`TickEvent`]s — lives outside this module, since it needs an
+//! async runtime the engine wires up elsewhere.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -37,9 +36,9 @@ use crate::{ArenaError, EntityId, PlaceId, World};
 /// (§3.16.2).
 pub const TICK_HZ: u32 = 20;
 
-/// Scheduler tick period — the 50 ms wall-clock cadence the M1-22 driver runs
+/// Scheduler tick period — the 50 ms wall-clock cadence the driver runs
 /// [`Scheduler::tick`] at (§3.16.2). Pinned here; the loop that consumes it
-/// lands in M1-22.
+/// lives outside this module.
 pub const TICK_PERIOD: Duration = Duration::from_millis(1000 / TICK_HZ as u64);
 
 /// A primitive world mutation. Each variant maps to one [`World`] operation.

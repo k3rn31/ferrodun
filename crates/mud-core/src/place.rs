@@ -8,15 +8,13 @@
 //! construction, so per-tick hot paths pay no virtual-call cost (§2.2.5).
 //!
 //! The surface is inherent methods rather than a `PlaceView` trait on purpose:
-//! with only the `Room` variant in M1 a trait would have a single implementor
-//! (YAGNI). The trait is introduced in M4 alongside `Tile`, when a second
-//! variant gives it a genuine second implementation.
+//! the only variant is [`Room`](Place::Room), so a trait would have a single
+//! implementor and buy nothing; inherent methods keep dispatch static. A trait
+//! becomes worthwhile once a second variant gives it a genuine implementation.
 //!
-//! For M1 the only variant is [`Room`](Place::Room); `Tile` and its `Region`
-//! grid arrive in M4 (§2.2.1). Occupancy is not the Place's data: a Place's
-//! occupants come from the dense [`LocationOf`] side-table (§2.3.2.2), so
-//! [`Place::occupants`] joins this surface against that table rather than
-//! duplicating it on the static room.
+//! Occupancy is not the Place's data: a Place's occupants come from the dense
+//! [`LocationOf`] side-table (§2.3.2.2), so [`Place::occupants`] joins this
+//! surface against that table rather than duplicating it on the static room.
 
 use std::num::NonZeroU64;
 
@@ -184,7 +182,7 @@ impl RoomData {
     }
 }
 
-/// A spatial location (§2.2.1). For M1 the only variant is [`Room`](Place::Room).
+/// A spatial location (§2.2.1). The only variant is [`Room`](Place::Room).
 ///
 /// `Place` exposes the §2.2.2 surface as inherent methods that `match` on the
 /// variant — static dispatch with no trait object (§2.2.5).
@@ -211,9 +209,9 @@ impl Place {
 
     /// This Place's description as seen by `viewer` (§2.2.2).
     ///
-    /// Viewer-conditional rendering (invisibility, lighting, language) is a
-    /// trivial passthrough in M1: the same `Description` is returned regardless
-    /// of `viewer`. The parameter fixes the signature for that later behaviour.
+    /// Viewer-conditional rendering (invisibility, lighting, language) is not
+    /// yet applied: the same `Description` is returned regardless of `viewer`.
+    /// The parameter reserves the signature for that behaviour.
     pub fn describe(&self, viewer: EntityId) -> Description {
         match self {
             Place::Room(room) => room.describe(viewer),
@@ -241,8 +239,8 @@ impl Place {
     /// The Places observable from here (§2.2.2). Distinct from exits: a Place
     /// may be visible without being directly reachable.
     pub fn visible_places(&self) -> impl Iterator<Item = PlaceId> {
-        // One variant unifies the return type trivially; when Tile lands (M4)
-        // the arms will need an enum/`Either` iterator to unify.
+        // A single variant unifies the return type trivially; multiple variants
+        // would need an enum/`Either` iterator to unify the arms.
         match self {
             Place::Room(room) => room.visible_places(),
         }

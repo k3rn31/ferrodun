@@ -16,7 +16,7 @@
 //! (§2.3.7.3). When a slot's generation cannot advance further it is **burned**
 //! — retired forever rather than recycled into a colliding id (§2.3.1.3).
 
-use crate::entity_id::{EntityId, Generation, SlotIndex, TenantTag};
+use super::id::{EntityId, Generation, SlotIndex, TenantTag};
 
 /// Errors from arena allocation and resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -115,7 +115,7 @@ impl EntityArena {
     /// `StaleHandle` would misattribute that bug to the caller — so it is
     /// `unreachable!` rather than an error.
     fn reuse(&mut self, slot: SlotIndex) -> EntityId {
-        let Some(state) = slot_position(slot).and_then(|index| self.slots.get_mut(index)) else {
+        let Some(state) = slot.to_index().and_then(|index| self.slots.get_mut(index)) else {
             unreachable!("free-list slot {} is out of range", slot.get());
         };
         let SlotState::Free(generation) = *state else {
@@ -134,7 +134,9 @@ impl EntityArena {
     /// not name a live entity (including a double free).
     pub fn free(&mut self, id: EntityId) -> Result<(), ArenaError> {
         self.ensure_owned(id)?;
-        let state = slot_position(id.slot())
+        let state = id
+            .slot()
+            .to_index()
             .and_then(|index| self.slots.get_mut(index))
             .ok_or(ArenaError::StaleHandle)?;
 
@@ -166,7 +168,9 @@ impl EntityArena {
     /// guaranteed to name a live entity owned by this arena.
     pub fn resolve(&self, id: EntityId) -> Result<SlotIndex, ArenaError> {
         self.ensure_owned(id)?;
-        let state = slot_position(id.slot())
+        let state = id
+            .slot()
+            .to_index()
             .and_then(|index| self.slots.get(index))
             .ok_or(ArenaError::StaleHandle)?;
 
@@ -190,13 +194,6 @@ impl EntityArena {
             })
         }
     }
-}
-
-/// Maps a slot index to a position in a `slots` vector, or `None` when the
-/// index cannot be one — possible only on targets where `usize` is narrower
-/// than `u32`, where such a slot could never have been allocated.
-fn slot_position(slot: SlotIndex) -> Option<usize> {
-    usize::try_from(slot.get()).ok()
 }
 
 #[cfg(test)]
@@ -266,7 +263,7 @@ mod tests {
     }
 
     // §3.11.4: a handle minted in one tenant must not be resolvable or mutable
-    // through another tenant's arena. This is the M1-02 tenant-isolation gate.
+    // through another tenant's arena — the tenant-isolation gate.
     #[test]
     fn foreign_handle_is_rejected_by_another_tenant() {
         let mut arena_a = EntityArena::new(tenant(1));
