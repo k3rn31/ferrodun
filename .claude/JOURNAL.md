@@ -356,3 +356,44 @@ truth when this log drifts.
   movement). `cargo clippy -p mud-core --all-targets` and `cargo doc -p
   mud-core --no-deps` clean. No docs-site change (purely internal).
 - **Next:** **M1-08** — `mud-db` crate (SQLx + SQLite), unchanged by this pass.
+
+## 2026-06-26 — M1-08 `mud-db` SQLx + SQLite backend
+
+- **Spec:** §2.5.1.1–2.5.1.4 (SQLx, `sqlx migrate`, **per-tenant physical file
+  isolation**), §2.3.1.5 (EntityKey never reused), §3.15.1 (accounts/puppets) —
+  the persistence backend and initial schema.
+- **Done:** Created `crates/mud-db` (workspace member). Deps via `cargo add`:
+  `sqlx` 0.9 (`default-features = false`, features `sqlite,runtime-tokio,migrate,
+  macros`; `sqlite` bundles libsqlite3 so CI needs no system dep), `thiserror`;
+  dev `tokio` (`macros,rt-multi-thread`) + `tempfile`. **Backend-namespaced
+  layout** to anticipate Postgres without a premature single-impl trait:
+  `migrations/sqlite/0001_initial.sql`, code in `src/sqlite/mod.rs`, a
+  backend-agnostic `DbError` (`thiserror`, `#[from]` over `sqlx::Error` +
+  `MigrateError`) at `src/error.rs`. `TenantDb` wraps one tenant's `SqlitePool`
+  opened over `<data_dir>/world.db` via `SqliteConnectOptions` with
+  `create_if_missing(true)` + `foreign_keys(true)` (SQLite ignores FKs
+  otherwise), then runs `sqlx::migrate!("./migrations/sqlite")`; `pool()`
+  accessor exposed for M1-09's write-through. Schema: `entities.entity_key
+  INTEGER PRIMARY KEY AUTOINCREMENT` (AUTOINCREMENT, not plain rowid, to honor
+  the §2.3.1.5 no-reuse MUST); `accounts` (username UNIQUE, password_hash,
+  state); `puppets`→accounts+entities FKs; `location` (entity_key PK, place_id —
+  no places table in M1); `inventory` with `item_key` as PK (item-in-≤1-container
+  unrepresentable). **No `mud-core` dep yet** (no domain marshaling until M1-09).
+  **§2.5.1.2 compile-time-checked `query!` macros deferred to M1-09** with the
+  first real query (and the `.sqlx` cache + `SQLX_OFFLINE` CI step it needs);
+  M1-08 tests use runtime `sqlx::query`/`query_scalar` (sqlx 0.9 requires
+  `&'static str` SQL — table-existence check goes through `sqlite_master` with a
+  bind param). Added `mud-db` to workspace `members`; updated PLAN M1-08 with the
+  as-built notes.
+- **Verify:** 4 `#[tokio::test]`s — migration creates all five tables, **two
+  tenants' files are isolated** (write to A invisible to B), EntityKey never
+  reused after delete (AUTOINCREMENT), item cannot occupy two containers (PK
+  violation). `cargo test -p mud-db` (4) and `cargo test --workspace` (89 + 14
+  integration + 4) green; `cargo clippy --workspace --all-targets -D warnings`
+  and `cargo fmt --all --check` clean. No `unwrap`/`expect`/`panic` outside
+  tests. No docs-site change (persistence is internal — no player/builder/
+  operator-observable surface yet).
+- **Next:** **M1-09** — write-through + boot load: arena as cache keyed by
+  `EntityKey`, every mutation applies to arena + DB in one transaction, restart
+  integration test. Introduces the first compile-time-checked `query!` (+ `.sqlx`
+  offline cache + `SQLX_OFFLINE` CI step) and the `mud-core` dependency.

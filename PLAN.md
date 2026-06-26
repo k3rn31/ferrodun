@@ -242,6 +242,20 @@ spine.
   - *Spec:* §2.5.1. *Verify:* migration applies; per-tenant file isolation
     test. *Out of scope:* Postgres backend (added when prod is exercised,
     M7-ish), `sqlite-vec` (M6).
+  - *As built:* layout is **namespaced by backend** to anticipate Postgres
+    without a premature trait (single-impl rule): SQLite migrations under
+    `migrations/sqlite/`, code under `src/sqlite/`; a backend-agnostic `DbError`
+    at the crate root; Postgres will land as sibling `migrations/postgres/` +
+    `src/postgres/`, and the unifying seam emerges with that second implementor.
+    The §2.5.1.2 **compile-time-checked `query!` macros** (and the `.sqlx`
+    offline cache + `SQLX_OFFLINE` CI step they require) are deferred to **M1-09**
+    with the first real write-through query — M1-08 has no app queries, so its
+    tests use runtime `sqlx::query` and need no CI change.
+  - *SQL tooling:* migrations are linted by **sqruff** (pinned in `mise.toml`),
+    gated in CI (`sqruff lint crates/mud-db/migrations`) and wired into Zed via
+    the sqruff LSP. Dialect is per-directory through sqruff's hierarchical
+    `.sqruff` discovery: the root `.sqruff` sets `dialect = sqlite`; the Postgres
+    backend PR adds `migrations/postgres/.sqruff` (`dialect = postgres`).
 - **M1-09 — Write-through + boot load (cache keyed by `EntityKey`).** Every
   mutation flows through `MutationCommand` and applies to arena + DB in one
   transaction (§2.5.3.3). The arena is a cache keyed by `EntityKey`: loading an
