@@ -13,4 +13,34 @@ pub enum DbError {
     /// A schema migration failed to apply.
     #[error("migration error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+
+    /// A persisted integer id read from the database was not a valid id —
+    /// negative or zero where a positive `AUTOINCREMENT` key was expected.
+    /// Defensive: signals DB corruption rather than a normal outcome.
+    #[error("invalid persisted id: {0}")]
+    InvalidId(i64),
+
+    /// An in-memory id exceeded the signed range its column stores, so it could
+    /// not be written back. Defensive: rowids never approach `i64::MAX`.
+    #[error("entity key out of range for storage: {0}")]
+    KeyOutOfRange(u64),
+
+    /// A live arena handle had no `EntityKey` in the in-process map. Every minted
+    /// handle is mapped, so this is an internal invariant violation surfaced
+    /// rather than panicked on.
+    #[error("internal map inconsistency: a live entity has no persisted key")]
+    EntityNotMapped,
+
+    /// A row referenced an `EntityKey` with no matching arena entity during boot
+    /// load. Foreign keys make this unreachable in a consistent database; it is
+    /// surfaced rather than panicked on so a corrupt file fails loudly.
+    #[error("dangling entity reference during load: entity_key {0}")]
+    DanglingReference(i64),
+
+    /// A `MutationCommand` carried an `Effect` variant this backend cannot
+    /// persist. Unreachable today (every variant is handled); the arm exists
+    /// only because `mud_core::Effect` is `#[non_exhaustive]`, so a future
+    /// variant surfaces here at runtime rather than as a compile error.
+    #[error("unsupported effect variant")]
+    UnsupportedEffect,
 }

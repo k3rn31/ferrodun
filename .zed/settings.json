@@ -1,9 +1,31 @@
 {
-  "languages": {
-    "SQL": {
-      "language_servers": ["sqruff"],
-      "format_on_save": "on",
-      "formatter": { "language_server": { "name": "sqruff" } }
+    "languages": {
+        "SQL": {
+            "language_servers": [
+                "sqruff"
+            ],
+            "format_on_save": "on",
+            "formatter": {
+                "language_server": {
+                    "name": "sqruff"
+                }
+            }
+        }
+    },
+    "lsp": {
+        "rust-analyzer": {
+            "initialization_options": {
+                "cargo": {
+                    "extraEnv": {
+                        "SQLX_OFFLINE": "true"
+                    }
+                },
+                "check": {
+                    "extraEnv": {
+                        "SQLX_OFFLINE": "true"
+                    }
+                }
+            }
+        }
     }
-  }
 }

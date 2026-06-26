@@ -717,6 +717,7 @@ dependencies = [
 name = "mud-db"
 version = "0.1.0"
 dependencies = [
+ "mud-core",
  "sqlx",
  "tempfile",
  "thiserror",

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO inventory (item_key, container_key) VALUES (?, ?) ON CONFLICT(item_key) DO UPDATE SET container_key = excluded.container_key",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "33a740acda0e36d96b783e546e3e76cf9d99e3c91a60e3e51a0c5de1fc634ef3"
+}

@@ -5,6 +5,10 @@
 //! `TenantDb` is constructed against one directory and never sees another
 //! tenant's file, so cross-tenant queries are impossible by construction.
 
+mod write_through;
+
+pub use write_through::PersistentWorld;
+
 use std::path::Path;
 
 use sqlx::SqlitePool;
