@@ -69,6 +69,7 @@ These are hard constraints, not preferences (cf. SPEC §1.7):
 - **`unwrap()` is strictly forbidden.** No exceptions.
 - **`expect()` is allowed only in tests**, never in production code, and must carry a descriptive message.
 - **Errors are always handled.** Libraries define error types with `thiserror`; applications use `anyhow`. `panic!`/`todo!`/`unreachable!` are forbidden in production unless guarded by a documented `// INVARIANT:` comment.
+- **Database schemas are normalized to 3NF.** Design relational schemas to Third Normal Form: atomic columns, every non-key attribute fully dependent on the key, no transitive dependencies. Denormalize only for a measured reason, and document it in the migration with a `-- DENORMALIZED:` comment explaining the tradeoff.
 
 ## Conventions
 
