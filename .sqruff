@@ -1,0 +1,9 @@
+# sqruff configuration. SQL is linted/formatted per dialect via sqruff's
+# hierarchical config discovery: this root config sets the project default,
+# and a nested `.sqruff` in a dialect directory overrides it for that subtree.
+#
+# SQLite is the dev/embedded backend and the only SQL present today. When the
+# PostgreSQL backend lands, add `crates/mud-db/migrations/postgres/.sqruff`
+# with `dialect = postgres` to override the default for that directory.
+[sqruff]
+dialect = sqlite
