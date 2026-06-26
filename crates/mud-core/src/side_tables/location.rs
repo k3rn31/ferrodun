@@ -1,37 +1,12 @@
-//! Dense hot-component side-tables (§2.3.2.2).
-//!
-//! Hot components are touched every tick / combat round, so §2.3.2.2 mandates
-//! they live in dense, slot-indexed arrays rather than the dynamic component
-//! bag. This module holds the two M1 needs: [`LocationOf`] (which [`Place`] each
-//! entity occupies, plus a reverse occupant index) and [`Inventory`] (which
-//! entities a container holds). The other three hot components §2.3.2.2 lists —
-//! `Position`, `Health`, `Initiative` — are added when their own milestone first
-//! uses them (YAGNI).
-//!
-//! These tables are **pure storage keyed by [`SlotIndex`]** (the slot half of an
-//! [`EntityId`]); they are deliberately *not* the liveness authority. The arena
-//! ([`crate::EntityArena`]) owns liveness: a caller resolves a handle through
-//! [`EntityArena::resolve`](crate::EntityArena::resolve) — which rejects stale
-//! and cross-tenant handles — and only then indexes a side-table. Keeping the
-//! tables ignorant of liveness is the §2.3.2 separation, not missing validation.
-//!
-//! [`Place`]: crate::Place
+//! The location side-table: where each entity is, with a reverse occupant index.
 
 use std::collections::HashMap;
 
 use crate::{EntityId, PlaceId, SlotIndex};
 
-/// Maps a slot index to a position in a dense `by_slot` vector, or `None` when
-/// the index cannot be one — possible only on targets where `usize` is narrower
-/// than `u32`, where such a slot could never have been allocated. Mirrors the
-/// arena's `slot_position`.
-fn slot_index(slot: SlotIndex) -> Option<usize> {
-    usize::try_from(slot.get()).ok()
-}
-
 /// The location of every resident entity: a dense forward table (entity → the
 /// [`Place`](crate::Place) it occupies) plus a reverse occupant index (Place →
-/// the entities in it), one of the §2.3.2.2 hot components.
+/// the entities in it).
 ///
 /// The reverse index lets [`occupants`](LocationOf::occupants) iterate a Place's
 /// occupants in `O(occupants)` rather than scanning every slot. The two halves
@@ -60,7 +35,7 @@ impl LocationOf {
     /// Place's occupant list, so the reverse index stays consistent as entities
     /// move.
     pub fn place(&mut self, entity: EntityId, at: PlaceId) {
-        let Some(index) = slot_index(entity.slot()) else {
+        let Some(index) = entity.slot().to_index() else {
             return;
         };
 
@@ -87,7 +62,9 @@ impl LocationOf {
     /// reverse-index entry. A no-op if the entity has no location. Releases the
     /// entity's hot-component slot for teardown (§2.3.7.3).
     pub fn remove(&mut self, entity: EntityId) {
-        let Some(previous) = slot_index(entity.slot())
+        let Some(previous) = entity
+            .slot()
+            .to_index()
             .and_then(|index| self.by_slot.get_mut(index))
             .and_then(Option::take)
         else {
@@ -99,7 +76,9 @@ impl LocationOf {
     /// The Place `entity` currently occupies, or `None` if it has no location.
     #[must_use]
     pub fn location(&self, entity: EntityId) -> Option<PlaceId> {
-        slot_index(entity.slot())
+        entity
+            .slot()
+            .to_index()
             .and_then(|index| self.by_slot.get(index))
             .copied()
             .flatten()
@@ -128,94 +107,14 @@ fn remove_occupant(
     }
 }
 
-/// The entities each container holds: a dense table (container → its items), one
-/// of the §2.3.2.2 hot components.
-///
-/// In M1 this table only records containment. Cross-container exclusivity (an
-/// item in at most one inventory) and the location-versus-inventory relationship
-/// are enforced by the mutation layer (M1-06), not here.
-#[derive(Debug, Default)]
-#[must_use]
-pub struct Inventory {
-    /// Dense by slot: the entities each container holds.
-    by_slot: Vec<Vec<EntityId>>,
-}
-
-impl Inventory {
-    /// Creates an empty inventory table.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Adds `item` to `container`'s inventory. A no-op if `item` is already in
-    /// that container (an entity cannot be in one container twice).
-    pub fn insert(&mut self, container: EntityId, item: EntityId) {
-        let Some(index) = slot_index(container.slot()) else {
-            return;
-        };
-
-        if index >= self.by_slot.len() {
-            let Some(len) = index.checked_add(1) else {
-                return;
-            };
-            self.by_slot.resize_with(len, Vec::new);
-        }
-
-        // INVARIANT: `index < by_slot.len()` — just grown to cover it if needed.
-        let Some(contents) = self.by_slot.get_mut(index) else {
-            unreachable!(
-                "container slot {} is out of range after grow",
-                container.slot().get()
-            );
-        };
-        if !contents.iter().any(|held| held.slot() == item.slot()) {
-            contents.push(item);
-        }
-    }
-
-    /// Removes `item` from `container`'s inventory. A no-op if absent.
-    pub fn remove(&mut self, container: EntityId, item: EntityId) {
-        let Some(contents) =
-            slot_index(container.slot()).and_then(|index| self.by_slot.get_mut(index))
-        else {
-            return;
-        };
-        contents.retain(|held| held.slot() != item.slot());
-    }
-
-    /// Drops every item `container` holds, releasing its hot-component slot for
-    /// teardown (§2.3.7.3). A no-op for an empty or unknown container.
-    ///
-    /// Matches by slot so a freed slot carries no contents into its next tenant:
-    /// without this, a reused container slot would inherit the torn-down
-    /// entity's items, since [`insert`](Inventory::insert) appends rather than
-    /// overwriting a reused slot.
-    pub fn clear(&mut self, container: EntityId) {
-        if let Some(contents) =
-            slot_index(container.slot()).and_then(|index| self.by_slot.get_mut(index))
-        {
-            contents.clear();
-        }
-    }
-
-    /// The entities in `container`. Empty for an empty or unknown container.
-    pub fn contents(&self, container: EntityId) -> impl Iterator<Item = EntityId> + '_ {
-        slot_index(container.slot())
-            .and_then(|index| self.by_slot.get(index))
-            .into_iter()
-            .flatten()
-            .copied()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
 
     fn entity(slot: u32) -> EntityId {
-        // The slot is the only field the side-tables key on; tenant/generation
-        // are irrelevant here, so build a handle from raw bits via the slot.
+        // The slot is the only field the side-tables key on, so tenant and
+        // generation are arbitrary here.
         EntityId::new(tenant(), SlotIndex::new(slot), generation())
     }
 
@@ -346,61 +245,5 @@ mod tests {
 
         assert_eq!(locations.location(goblin), None);
         assert_eq!(locations.occupants(place(HALL)).count(), 0);
-    }
-
-    #[test]
-    fn insert_then_contents_round_trips() {
-        let mut inventory = Inventory::new();
-        let chest = entity(2);
-        let sword = entity(5);
-        let shield = entity(6);
-
-        inventory.insert(chest, sword);
-        inventory.insert(chest, shield);
-
-        let contents: Vec<EntityId> = inventory.contents(chest).collect();
-        assert_eq!(contents, vec![sword, shield]);
-    }
-
-    #[test]
-    fn duplicate_insert_does_not_double_list() {
-        let mut inventory = Inventory::new();
-        let chest = entity(2);
-        let sword = entity(5);
-
-        inventory.insert(chest, sword);
-        inventory.insert(chest, sword);
-
-        assert_eq!(inventory.contents(chest).collect::<Vec<_>>(), vec![sword]);
-    }
-
-    #[test]
-    fn remove_drops_an_item_and_empty_container_is_empty() {
-        let mut inventory = Inventory::new();
-        let chest = entity(2);
-        let sword = entity(5);
-        inventory.insert(chest, sword);
-
-        inventory.remove(chest, sword);
-
-        assert_eq!(inventory.contents(chest).count(), 0);
-        assert_eq!(inventory.contents(entity(99)).count(), 0);
-    }
-
-    // Slot-reuse safety for containers: clearing a torn-down container's slot
-    // must leave nothing for a fresh handle reusing that slot to inherit, since
-    // `insert` appends rather than self-healing a reused slot.
-    #[test]
-    fn cleared_container_slot_carries_no_contents_to_a_reused_handle() {
-        let mut inventory = Inventory::new();
-        let chest = entity(2);
-        inventory.insert(chest, entity(5));
-        inventory.insert(chest, entity(6));
-
-        inventory.clear(chest);
-
-        assert_eq!(inventory.contents(chest).count(), 0);
-        let reused = reused_slot(2, 1);
-        assert_eq!(inventory.contents(reused).count(), 0);
     }
 }

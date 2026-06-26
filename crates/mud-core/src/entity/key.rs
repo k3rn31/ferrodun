@@ -1,10 +1,10 @@
 //! `EntityKey`, the durable entity identity (§2.3.1.5).
 //!
 //! An entity has two identifiers with distinct lifetimes. `EntityId`
-//! (§2.3.1.1, see `entity_id`) is the ephemeral packed arena handle, valid only
-//! within one arena instance. `EntityKey` is the durable identity and database
-//! primary key: it is the only entity reference that may cross the disk, wire,
-//! or IPC boundary (§2.3.1.4).
+//! (§2.3.1.1, see [`id`](super::id)) is the ephemeral packed arena handle, valid
+//! only within one arena instance. `EntityKey` is the durable identity and
+//! database primary key: it is the only entity reference that may cross the
+//! disk, wire, or IPC boundary (§2.3.1.4).
 //!
 //! An `EntityKey`:
 //! - is unique within a tenant and is never reused for the lifetime of the
@@ -15,9 +15,8 @@
 //!   per-tenant database (§2.5.1.4) and the routing layer, not from bits in the
 //!   key.
 //!
-//! Per-tenant monotonic minting and the `EntityKey`↔`EntityId` mapping live in
-//! the write-through cache layer (M1-08/M1-09); this type carries only the
-//! identity.
+//! Per-tenant monotonic minting and the `EntityKey`↔`EntityId` mapping are out
+//! of scope here; this type carries only the identity.
 
 use std::num::NonZeroU64;
 

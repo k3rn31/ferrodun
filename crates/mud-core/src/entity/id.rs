@@ -92,6 +92,14 @@ impl SlotIndex {
     pub const fn get(self) -> u32 {
         self.0
     }
+
+    /// Maps this slot to a position in a slot-indexed vector, or `None` on
+    /// targets where `usize` is narrower than `u32` — where such a slot could
+    /// never have been allocated. Shared by the arena and the hot side-tables,
+    /// which all index dense `Vec`s by slot.
+    pub(crate) fn to_index(self) -> Option<usize> {
+        usize::try_from(self.0).ok()
+    }
 }
 
 /// Generation counter for a slot, bumped each time the slot is reused so that

@@ -7,11 +7,11 @@ use super::ast::{Lock, LockFn, ResolvedExpr};
 
 /// The facts a lock check evaluates against.
 ///
-/// The M1 lock functions query different subjects: `perm`/`status` describe the
+/// The lock functions query different subjects: `perm`/`status` describe the
 /// **accessor** (the caller), `attr`/`tag` describe the **accessed** object, and
 /// `self` asks whether the two are the same entity. That split is documented
-/// here for when real component stores back these facts (later milestones); in
-/// M1 the caller populates the context directly.
+/// here for when real component stores back these facts; for now the caller
+/// populates the context directly.
 #[derive(Debug, Default, Clone)]
 pub struct LockContext {
     perms: HashSet<String>,

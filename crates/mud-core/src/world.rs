@@ -1,6 +1,6 @@
-//! The per-tenant mutable world aggregate (M1 subset).
+//! The per-tenant mutable world aggregate.
 //!
-//! [`World`] bundles the three things any M1 mutation touches — the liveness
+//! [`World`] bundles the three things a mutation touches — the liveness
 //! [`EntityArena`] and the two hot side-tables [`LocationOf`] and [`Inventory`]
 //! — for a single tenant. It is the apply target the scheduler ([`crate::Scheduler`])
 //! mutates: the scheduler decides *ordering*, `World` performs the *effect*.
@@ -21,7 +21,7 @@
 
 use crate::{ArenaError, EntityArena, EntityId, Inventory, LocationOf, PlaceId, TenantTag};
 
-/// The mutable world for one tenant: liveness arena plus the M1 hot side-tables.
+/// The mutable world for one tenant: liveness arena plus the hot side-tables.
 ///
 /// Construct one `World` per tenant. All mutation flows through its semantic
 /// operations so liveness is validated before any side-table is touched.
@@ -63,8 +63,8 @@ impl World {
     /// inventory keeps the slot clean for reuse (§2.3.7.3); since the side-tables
     /// key on slot, an uncleared slot would otherwise leak state into its next
     /// tenant. Removing the entity from any container that *holds it as an item*
-    /// is out of M1 scope (the inventory table has no reverse item→container
-    /// index yet).
+    /// is not handled here: the inventory table has no reverse item→container
+    /// index.
     pub fn teardown(&mut self, entity: EntityId) -> Result<(), ArenaError> {
         self.arena.free(entity)?;
         self.locations.remove(entity);

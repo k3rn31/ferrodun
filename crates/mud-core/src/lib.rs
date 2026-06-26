@@ -1,17 +1,15 @@
 //! Core domain primitives for the Ferrodun engine.
 
-mod arena;
-mod entity_id;
-mod entity_key;
+mod entity;
 mod locks;
 mod place;
 mod scheduler;
 mod side_tables;
 mod world;
 
-pub use arena::{ArenaError, EntityArena};
-pub use entity_id::{EntityId, EntityIdError, Generation, SlotIndex, TenantTag};
-pub use entity_key::EntityKey;
+pub use entity::{
+    ArenaError, EntityArena, EntityId, EntityIdError, EntityKey, Generation, SlotIndex, TenantTag,
+};
 pub use locks::{
     AccessType, Lock, LockArg, LockContext, LockFn, ParseError, ParsedLock, ResolveError,
     ResolvedExpr, SyntaxExpr, parse, resolve,
