@@ -44,6 +44,15 @@ impl SessionId {
 pub struct SchemaVersion(u32);
 
 impl SchemaVersion {
+    /// Wraps a schema version number.
+    ///
+    /// This build's own version is the [`SCHEMA_VERSION`] constant; `new` exists so
+    /// the resume handshake (§2.1.3.2) can carry and compare a *peer's* announced
+    /// version, which may differ from this build's.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
     /// Returns the underlying version number.
     pub const fn get(self) -> u32 {
         self.0
@@ -52,6 +61,34 @@ impl SchemaVersion {
 
 /// The IPC schema version this build speaks (§2.1.3.1).
 pub const SCHEMA_VERSION: SchemaVersion = SchemaVersion(1);
+
+/// Identifies one World a Gateway holds an IPC channel to (§2.1.3.1).
+///
+/// A single Gateway may hold channels to several Worlds at once; each channel is
+/// addressed by its `WorldId` and carries its own `SessionId` space, so sessions
+/// are never conflated across Worlds (§2.1.3.2). Announced by the resume
+/// handshake (§2.1.3.2) so a freshly started World and a running Gateway can
+/// confirm they are talking about the same World.
+///
+/// Assigned from tenant configuration when a World boots (the minting logic lives
+/// in `mudd`); this crate only defines the address type. Backed by `NonZeroU64`
+/// so an unaddressed channel is representable only as `Option::None`, never as a
+/// meaningless id `0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[must_use]
+pub struct WorldId(NonZeroU64);
+
+impl WorldId {
+    /// Wraps a world id value.
+    pub const fn new(value: NonZeroU64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the underlying id value.
+    pub const fn get(self) -> NonZeroU64 {
+        self.0
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -82,5 +119,31 @@ mod tests {
     #[test]
     fn schema_version_is_one() {
         assert_eq!(SCHEMA_VERSION.get(), 1);
+    }
+
+    #[test]
+    fn schema_version_round_trips_through_new_and_get() {
+        assert_eq!(SchemaVersion::new(42).get(), 42);
+    }
+
+    fn world(value: u64) -> WorldId {
+        WorldId::new(NonZeroU64::new(value).expect("test world id must be non-zero"))
+    }
+
+    // Mirrors the `SessionId` niche: an absent World address costs no extra width.
+    #[test]
+    fn option_world_id_is_niche_optimized() {
+        assert_eq!(size_of::<Option<WorldId>>(), 8);
+    }
+
+    #[test]
+    fn world_id_round_trips_through_new_and_get() {
+        let value = NonZeroU64::new(9).expect("non-zero literal");
+        assert_eq!(WorldId::new(value).get(), value);
+    }
+
+    #[test]
+    fn world_id_orders_by_value() {
+        assert!(world(1) < world(2));
     }
 }

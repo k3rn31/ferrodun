@@ -524,3 +524,36 @@ truth when this log drifts.
   multiplexed by `session_id`, in-memory channel for single-process mode, and the
   resume handshake carrying `world_id` + `SCHEMA_VERSION` + the live session set
   (§2.1.3.2). The handshake `world_id` type and any handshake frame land there.
+
+## 2026-06-27 — M1-11a `mud-schema` resume-handshake vocabulary
+
+- **Spec:** §2.1.3.1–2.1.3.2 (resume handshake carries `world_id` + schema version
+  + the live session set), §2.8.5.7 (IPC frames version-locked at build time) — the
+  frame *types* the M1-11 transport will carry, defined before the transport that
+  carries them (§8 rule 4: wire/IPC changes start in `mud-schema`).
+- **Done:** Split M1-11 into **M1-11a** (this PR, `mud-schema` types) and **M1-11b**
+  (the `mud-ipc` transport crate) to keep each PR to one crate's public API (PLAN
+  principle #3) and honor §8 rule 4. Added `WorldId` to `session.rs` — a `NonZeroU64`
+  newtype mirroring `SessionId` (niche-friendly, `new`/`get`, `#[must_use]`), the
+  §2.1.3.1 per-World address; minting is config-driven (M1-12/M1-22), so only the type
+  lands here. Gave `SchemaVersion` a public `new` (it had only `get`) so the handshake
+  can carry/compare a *peer's* announced version, distinct from this build's
+  `SCHEMA_VERSION` const. Added to `frame.rs`: payloads `ResumeHandshake { world_id, schema_version,
+  live_sessions: Vec<SessionId> }` (the §2.1.3.2 announcement, G→W) and `HandshakeAck
+  { world_id, schema_version }` (W→G confirmation), plus the directional variants
+  `GatewayFrame::Resume(ResumeHandshake)` and `WorldFrame::ResumeAck(HandshakeAck)`.
+  The handshake direction maps onto the existing directional split exactly (Gateway
+  announces, World acks), so it rides the existing enums rather than a new control
+  enum; both enums are already `#[non_exhaustive]`, so appending is wire-additive and
+  the M1-10 golden-bytes pin (which targets `Input` = index 1) is unperturbed. Re-exported
+  the new public items from `lib.rs`.
+- **Verify:** `cargo test -p mud-schema` (15: +`WorldId` round-trip/order/`Option` niche
+  = 8 bytes, +`GatewayFrame::Resume`/`WorldFrame::ResumeAck` postcard round-trips; the
+  existing `input_frame_has_a_stable_encoding` golden test still passes). `cargo clippy
+  -p mud-schema --all-targets -D warnings` and `cargo fmt` clean. No `unwrap`/`expect`/
+  `panic` outside tests. No docs-site change (IPC is internal plumbing).
+- **Next:** **M1-11b** — the `mud-ipc` crate: `Endpoint` duplex trait + `InMemoryEndpoint`
+  (single-process channel) + `SocketEndpoint` (length-prefixed postcard over a unix
+  socket), and the resume-handshake exchange (`announce_sessions`/`accept_resume`) written
+  generically over `Endpoint` so both transports share one code path. Adds the SPEC §5
+  `mud-ipc` layout line and the first async runtime (tokio).

@@ -21,7 +21,7 @@ mod session;
 
 pub use codec::{SchemaError, decode, encode};
 pub use frame::{
-    GatewayFrame, InputLine, OutputText, SessionClose, SessionConnect, SessionDisconnect,
-    SessionInput, SessionOutput, WorldFrame,
+    GatewayFrame, HandshakeAck, InputLine, OutputText, ResumeHandshake, SessionClose,
+    SessionConnect, SessionDisconnect, SessionInput, SessionOutput, WorldFrame,
 };
-pub use session::{SCHEMA_VERSION, SchemaVersion, SessionId};
+pub use session::{SCHEMA_VERSION, SchemaVersion, SessionId, WorldId};

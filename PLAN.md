@@ -93,7 +93,7 @@ speculation violates the core principle below.
 | Phase | Theme (§7.4) | Primary workstreams (§7.3) | Crates first touched |
 |---|---|---|---|
 | **0** | Bootstrap | — | `mudd` (workspace, CI) |
-| **M1** | Walk and talk | Core runtime, Persistence, min. Networking, Game systems (accounts) | `mud-core`, `mud-db`, `mud-schema`, `mud-net`, `mud-cmd`, `mud-world`, `mud-gateway`, `mudd` |
+| **M1** | Walk and talk | Core runtime, Persistence, min. Networking, Game systems (accounts) | `mud-core`, `mud-db`, `mud-schema`, `mud-ipc`, `mud-net`, `mud-cmd`, `mud-world`, `mud-gateway`, `mudd` |
 | **M2** | Builders without Rust | Scripting, i18n | `mud-script`, `mud-i18n`, `mud-cli` |
 | **M3** | Client matrix | Networking & clients, Web | `mud-net` (MCCP2/GMCP/MSDP/MXP/MSSP), `mud-web`, `clients/` |
 | **M4** | Wilderness and ships | Spatial | `mud-core` (Tile), `mud-world` (regions), `mud-vehicle` |
@@ -288,7 +288,7 @@ spine.
     CI; `Effect`/`Precondition` being `#[non_exhaustive]` forces a defensive
     wildcard arm (`DbError::UnsupportedEffect`).
 
-### Wire/IPC seam (`mud-schema`) and Gateway/World split
+### Wire/IPC seam (`mud-schema` types, `mud-ipc` transport) and Gateway/World split
 
 - **M1-10 — `mud-schema` IPC frames.** `mud-schema` crate; postcard IPC
   frame types for M1: `SessionInput`, `SessionOutput`, connect/disconnect,
@@ -313,16 +313,37 @@ spine.
     downstream (M1-17); `OutputText` is `String`-backed for M1 and M1-13 swaps it
     for styled text. `encode`/`decode` helpers wrap postcard (`SchemaError` via
     `thiserror`); length-prefixing is M1-11.
-- **M1-11 — IPC transport + resume handshake + single-process mode.**
-  Length-prefixed postcard over a unix socket, multiplexed by `session_id`,
-  with the resume handshake carrying `world_id` + schema version + live
-  session set (§2.1.3.2). **Single-process mode** uses an in-memory channel
-  with the same frame contract (§2.1.3.3). Feature-flag/config selects split
-  vs. single (§2.1.3.4).
-  - *Spec:* §2.1.3. *Verify:* in-proc and unix-socket transports pass the
-    same frame round-trip; resume-handshake replays a live session set.
-  - *Out of scope:* admin RPC sibling socket (§2.1.3.5 — M7); World-restart
-    "reconnecting" banner (M7).
+- **M1-11 — IPC transport + resume handshake + single-process mode.** Split
+  into two PRs so each touches one crate's public API (principle #3) and the
+  wire/IPC change starts in `mud-schema` (§8 rule 4): **M1-11a** defines the
+  handshake frame *types*, **M1-11b** builds the transport that carries them in
+  the new `mud-ipc` crate.
+  - **M1-11a — `mud-schema` resume-handshake vocabulary.** Add `WorldId` (a
+    `NonZeroU64` newtype mirroring `SessionId`, the §2.1.3.1 per-World address);
+    the `ResumeHandshake { world_id, schema_version, live_sessions }` and
+    `HandshakeAck { world_id, schema_version }` payloads; and the directional
+    variants `GatewayFrame::Resume` (G→W announce) / `WorldFrame::ResumeAck`
+    (W→G). Both enums are `#[non_exhaustive]`, so appending is wire-additive and
+    the M1-10 golden-bytes pin is unperturbed.
+    - *Spec:* §2.1.3.1–2.1.3.2, §2.8.5.7. *Verify:* `WorldId` niche/round-trip;
+      handshake-frame round-trips; golden pin unchanged.
+  - **M1-11b — `mud-ipc` transport + single-process mode.** New `mud-ipc` crate
+    (the IPC transport's home — kept out of the tokio-free, codegen-source
+    `mud-schema` leaf, §5.1). Length-prefixed postcard over a unix socket,
+    multiplexed by `session_id` (`SocketEndpoint` over `tokio-util`'s
+    `LengthDelimitedCodec` with a `MAX_FRAME_BYTES` cap); **single-process mode**
+    via an in-memory channel (`InMemoryEndpoint` over `tokio::mpsc`) with the same
+    frame contract (§2.1.3.3). A duplex `Endpoint` trait (two impls = the
+    legitimate single-vs-split seam) lets the resume-handshake exchange
+    (`announce_sessions`/`accept_resume`, carrying `world_id` + `SCHEMA_VERSION` +
+    the live session set, §2.1.3.2) be written once over both transports.
+    Feature-flag/config selection of split vs. single (§2.1.3.4) is the `mudd`
+    binary's call (M1-22); M1-11b ships both transports.
+    - *Spec:* §2.1.3. *Verify:* in-proc and unix-socket transports pass the same
+      frame round-trip; resume-handshake replays a live session set;
+      schema/world-id mismatch and frame-size cap rejected.
+    - *Out of scope:* admin RPC sibling socket (§2.1.3.5 — M7); World-restart
+      "reconnecting" banner (M7); per-session demultiplexing (M1-21/22).
 
 ### World loading (`mud-world`) and config
 
