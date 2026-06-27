@@ -600,3 +600,32 @@ truth when this log drifts.
 - **Next:** **M1-12** — `mud-world` KDL room loader + tenant config (the `world_id` minted
   from tenant config feeds M1-11's handshake). The scheduler driver loop wiring the in-proc
   channel to `World` is M1-22; per-session demux + rate-limit live in M1-20/21.
+
+## 2026-06-27 — Architecture checkpoint: unify the write-model dispatch
+
+- **Spec:** §2.5.3.3, §2.5.3.5 — no behavior change; a cross-crate review at the
+  M1-11b boundary found the write model duplicated.
+- **Done:** Fanned out a 3-agent review of `crates/`. Verdict: architecture sound
+  (inward layering, leaf `mud-schema`, 3NF schema, newtype discipline, no
+  unwrap/panic). One real finding, invisible per-crate: the `Effect → World-op +
+  TickEvent` dispatch and the `Precondition` semantics were implemented twice —
+  once in `mud-core`'s `scheduler.rs` (free `apply`/`holds`) and again in
+  `mud-db`'s `PersistentWorld`, whose copies were forced into `#[non_exhaustive]`
+  catch-alls (`_ => false`, `_ => UnsupportedEffect`) that would silently mis-handle
+  a future variant. Centralized both as the single source of truth on `World`:
+  new `World::apply_effect(Effect) -> Option<TickEvent>` and `World::satisfies(
+  Precondition) -> bool`. `Scheduler::tick` now calls them (free `apply`/`holds`
+  deleted). `PersistentWorld` routes its in-memory mutation/precondition through
+  them and deleted its own `holds`, keeping only the per-effect durable SQL write
+  (and the explicit `Create` DB-first path). `Effect::Create` remains the one
+  documented exception (DB-first for the `AUTOINCREMENT` key).
+- **Verify:** `cargo test --workspace` green (mud-core 92 unit +3 new direct
+  tests for `apply_effect`/`satisfies`; mud-db 7+8 unchanged; others unchanged);
+  `cargo clippy --workspace --all-targets -D warnings` and `cargo fmt --all
+  --check` clean. No docs-site change (internal plumbing).
+- **Next:** M1-12 (unchanged). The remaining split — `Scheduler` ordering vs.
+  `PersistentWorld` durability are still two apply paths — is now a recorded
+  **open design decision for M1-22** (PLAN M1-22): compose them into one path via
+  the shared `World::apply_effect` seam (candidate: `PersistentWorld` owns the
+  `Scheduler`; a `mud-core` `MutationSink` port is the clean alternative, deferred
+  under the trait-for-one-impl rule).

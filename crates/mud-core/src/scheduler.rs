@@ -219,7 +219,7 @@ impl Scheduler {
         let mut events = Vec::new();
         while let Some(command) = self.queue.pop_front() {
             if let Some(precondition) = command.precondition
-                && !holds(world, precondition)
+                && !world.satisfies(precondition)
             {
                 events.push(TickEvent::PreconditionFailed {
                     precondition,
@@ -227,40 +227,12 @@ impl Scheduler {
                 });
                 continue;
             }
-            if let Some(event) = apply(world, command.effect) {
+            if let Some(event) = world.apply_effect(command.effect) {
                 events.push(event);
             }
         }
         events
     }
-}
-
-/// Evaluates a precondition against the world's current state (§2.5.3.5).
-fn holds(world: &World, precondition: Precondition) -> bool {
-    match precondition {
-        Precondition::LocatedIn { entity, place } => world.is_located_in(entity, place),
-        Precondition::Contains { container, item } => world.contains(container, item),
-    }
-}
-
-/// Applies one effect to the world, returning an event when the outcome must be
-/// observed (a minted handle or an arena rejection) and `None` otherwise.
-fn apply(world: &mut World, effect: Effect) -> Option<TickEvent> {
-    let result = match effect {
-        Effect::Create => {
-            return Some(match world.create() {
-                Ok(entity) => TickEvent::Created { entity },
-                Err(error) => TickEvent::Rejected { effect, error },
-            });
-        }
-        Effect::Teardown { entity } => world.teardown(entity),
-        Effect::MoveTo { entity, place } => world.move_to(entity, place),
-        Effect::InventoryAdd { container, item } => world.inventory_add(container, item),
-        Effect::InventoryRemove { container, item } => world.inventory_remove(container, item),
-    };
-    result
-        .err()
-        .map(|error| TickEvent::Rejected { effect, error })
 }
 
 #[cfg(test)]

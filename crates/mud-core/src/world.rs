@@ -19,7 +19,10 @@
 //! tenant-owned handle. The side-tables stay ignorant of liveness; `World` is
 //! where the two are joined.
 
-use crate::{ArenaError, EntityArena, EntityId, Inventory, LocationOf, PlaceId, TenantTag};
+use crate::{
+    ArenaError, Effect, EntityArena, EntityId, Inventory, LocationOf, PlaceId, Precondition,
+    TenantTag, TickEvent,
+};
 
 /// The mutable world for one tenant: liveness arena plus the hot side-tables.
 ///
@@ -107,6 +110,46 @@ impl World {
         let _ = self.arena.resolve(container)?;
         self.inventory.remove(container, item);
         Ok(())
+    }
+
+    /// Applies one [`Effect`] to this world, returning a [`TickEvent`] when the
+    /// outcome must be observed (a minted handle or an arena rejection) and
+    /// `None` on a silent success.
+    ///
+    /// This is the single source of truth for the `Effect` → semantic-operation
+    /// mapping and the arena-error → [`TickEvent::Rejected`] classification, so
+    /// every apply path — the scheduler's in-memory drain and the persistence
+    /// layer's write-through — shares one dispatch rather than re-deriving it.
+    pub fn apply_effect(&mut self, effect: Effect) -> Option<TickEvent> {
+        let result = match effect {
+            Effect::Create => {
+                return Some(match self.create() {
+                    Ok(entity) => TickEvent::Created { entity },
+                    Err(error) => TickEvent::Rejected { effect, error },
+                });
+            }
+            Effect::Teardown { entity } => self.teardown(entity),
+            Effect::MoveTo { entity, place } => self.move_to(entity, place),
+            Effect::InventoryAdd { container, item } => self.inventory_add(container, item),
+            Effect::InventoryRemove { container, item } => self.inventory_remove(container, item),
+        };
+        result
+            .err()
+            .map(|error| TickEvent::Rejected { effect, error })
+    }
+
+    /// Whether `precondition` holds against this world's current state
+    /// (§2.5.3.5).
+    ///
+    /// The single source of truth for precondition semantics, shared by the
+    /// scheduler and the persistence layer so a guard is evaluated identically
+    /// on every apply path.
+    #[must_use]
+    pub fn satisfies(&self, precondition: Precondition) -> bool {
+        match precondition {
+            Precondition::LocatedIn { entity, place } => self.is_located_in(entity, place),
+            Precondition::Contains { container, item } => self.contains(container, item),
+        }
     }
 
     /// Whether `entity` is a live handle currently located at `place`.
@@ -263,5 +306,81 @@ mod tests {
 
         assert!(!world.is_located_in(entity, place(HALL)));
         assert!(!world.contains(entity, entity));
+    }
+
+    #[test]
+    fn apply_effect_create_reports_the_minted_handle() {
+        let mut world = World::new(tenant(1));
+
+        let entity = match world.apply_effect(Effect::Create) {
+            Some(TickEvent::Created { entity }) => Some(entity),
+            Some(TickEvent::PreconditionFailed { .. } | TickEvent::Rejected { .. }) | None => None,
+        }
+        .expect("apply_effect(Create) must report a Created event");
+
+        // The reported handle is live: a follow-up move applies cleanly.
+        assert!(
+            world
+                .apply_effect(Effect::MoveTo {
+                    entity,
+                    place: place(HALL),
+                })
+                .is_none()
+        );
+        assert!(world.is_located_in(entity, place(HALL)));
+    }
+
+    #[test]
+    fn apply_effect_rejects_a_stale_handle_without_mutating() {
+        let mut world = World::new(tenant(1));
+        let entity = world.create().expect("create must succeed");
+        world.teardown(entity).expect("teardown must succeed");
+
+        let event = world.apply_effect(Effect::MoveTo {
+            entity,
+            place: place(HALL),
+        });
+
+        assert_eq!(
+            event,
+            Some(TickEvent::Rejected {
+                effect: Effect::MoveTo {
+                    entity,
+                    place: place(HALL),
+                },
+                error: ArenaError::StaleHandle,
+            })
+        );
+        // The rejected move left no trace: the stale handle is located nowhere.
+        assert!(!world.is_located_in(entity, place(HALL)));
+    }
+
+    #[test]
+    fn satisfies_reflects_current_location_and_containment() {
+        let mut world = World::new(tenant(1));
+        let chest = world.create().expect("create chest must succeed");
+        let sword = world.create().expect("create sword must succeed");
+        let coin = world.create().expect("create coin must succeed");
+        world
+            .move_to(chest, place(HALL))
+            .expect("move must succeed");
+        world.inventory_add(chest, sword).expect("add must succeed");
+
+        assert!(world.satisfies(Precondition::LocatedIn {
+            entity: chest,
+            place: place(HALL),
+        }));
+        assert!(world.satisfies(Precondition::Contains {
+            container: chest,
+            item: sword,
+        }));
+        assert!(!world.satisfies(Precondition::LocatedIn {
+            entity: chest,
+            place: place(STUDY),
+        }));
+        assert!(!world.satisfies(Precondition::Contains {
+            container: chest,
+            item: coin,
+        }));
     }
 }
