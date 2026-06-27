@@ -1,6 +1,6 @@
 //! Errors raised by the IPC transport.
 
-use mud_schema::SchemaError;
+use mud_schema::{SchemaError, SchemaVersion, WorldId};
 
 /// An error on the Gateway↔World IPC channel (§2.1.3).
 #[derive(Debug, thiserror::Error)]
@@ -18,18 +18,18 @@ pub enum IpcError {
     #[error("ipc schema version mismatch: this build speaks {expected}, peer announced {got}")]
     SchemaMismatch {
         /// The schema version this build was compiled against.
-        expected: u32,
+        expected: SchemaVersion,
         /// The version the peer announced in the handshake.
-        got: u32,
+        got: SchemaVersion,
     },
 
     /// The peer addressed a different World than this channel serves (§2.1.3.2).
     #[error("ipc world id mismatch: channel serves {expected}, peer announced {got}")]
     WorldIdMismatch {
         /// The World this channel serves.
-        expected: u64,
+        expected: WorldId,
         /// The World the peer announced in the handshake.
-        got: u64,
+        got: WorldId,
     },
 
     /// A frame exceeded the maximum on-wire size (§3.6.4-adjacent untrusted-input bound).

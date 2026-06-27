@@ -87,13 +87,13 @@ fn check_schema_version(got: SchemaVersion) -> Result<(), IpcError> {
         return Ok(());
     }
     tracing::warn!(
-        expected = SCHEMA_VERSION.get(),
-        got = got.get(),
+        expected = %SCHEMA_VERSION,
+        got = %got,
         "ipc resume handshake rejected: schema version mismatch",
     );
     Err(IpcError::SchemaMismatch {
-        expected: SCHEMA_VERSION.get(),
-        got: got.get(),
+        expected: SCHEMA_VERSION,
+        got,
     })
 }
 
@@ -102,12 +102,9 @@ fn check_world_id(expected: WorldId, got: WorldId) -> Result<(), IpcError> {
         return Ok(());
     }
     tracing::warn!(
-        expected = expected.get().get(),
-        got = got.get().get(),
+        expected = %expected,
+        got = %got,
         "ipc resume handshake rejected: world id mismatch",
     );
-    Err(IpcError::WorldIdMismatch {
-        expected: expected.get().get(),
-        got: got.get().get(),
-    })
+    Err(IpcError::WorldIdMismatch { expected, got })
 }

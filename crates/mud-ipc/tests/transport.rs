@@ -168,3 +168,63 @@ async fn socket_rejects_an_oversized_frame() {
         Err(IpcError::FrameTooLarge { .. })
     ));
 }
+
+#[tokio::test]
+async fn socket_recv_rejects_an_oversized_inbound_frame() {
+    use tokio::io::AsyncWriteExt;
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let path = dir.path().join("world.sock");
+    let listener = UnixListener::bind(&path).expect("bind unix socket");
+    let accept_task = tokio::spawn(async move { accept(&listener).await });
+    let mut raw = tokio::net::UnixStream::connect(&path)
+        .await
+        .expect("raw gateway connects");
+    let mut world = accept_task
+        .await
+        .expect("accept task joins")
+        .expect("world accepts");
+
+    // A peer-supplied length prefix one byte past the cap. The codec must reject
+    // it on the header alone, before allocating the body — this is the
+    // untrusted-input bound `MAX_FRAME_BYTES` exists to enforce.
+    let oversized_len = u32::try_from(MAX_FRAME_BYTES + 1).expect("cap fits in u32");
+    raw.write_all(&oversized_len.to_be_bytes())
+        .await
+        .expect("write oversized length prefix");
+    raw.flush().await.expect("flush length prefix");
+
+    assert!(matches!(world.recv().await, Err(IpcError::Io(_))));
+}
+
+#[tokio::test]
+async fn accept_resume_rejects_a_non_handshake_frame() {
+    let (mut gateway, mut world) = in_memory_pair();
+    let stray = GatewayFrame::Input(SessionInput {
+        session_id: session(1),
+        line: InputLine::new("look"),
+    });
+    let (sent, accepted) =
+        tokio::join!(gateway.send(stray), accept_resume(&mut world, world_id(1)),);
+    sent.expect("gateway sends a stray frame");
+    assert!(matches!(accepted, Err(IpcError::UnexpectedFrame)));
+}
+
+#[tokio::test]
+async fn announce_sessions_rejects_a_non_ack_reply() {
+    let (mut gateway, mut world) = in_memory_pair();
+    let stray = WorldFrame::Output(SessionOutput {
+        session_id: session(1),
+        text: OutputText::new("not an ack"),
+    });
+    let (announced, replied) = tokio::join!(
+        announce_sessions(&mut gateway, world_id(1), vec![]),
+        async {
+            // Consume the Gateway's resume, then reply with a non-ack frame.
+            world.recv().await.expect("world receives the resume");
+            world.send(stray).await
+        },
+    );
+    replied.expect("world sends a stray reply");
+    assert!(matches!(announced, Err(IpcError::UnexpectedFrame)));
+}

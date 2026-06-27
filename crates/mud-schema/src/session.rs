@@ -1,5 +1,6 @@
 //! Session identity and the IPC schema version (§2.1.3.1).
 
+use std::fmt;
 use std::num::NonZeroU64;
 
 use serde::{Deserialize, Serialize};
@@ -59,6 +60,12 @@ impl SchemaVersion {
     }
 }
 
+impl fmt::Display for SchemaVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// The IPC schema version this build speaks (§2.1.3.1).
 pub const SCHEMA_VERSION: SchemaVersion = SchemaVersion(1);
 
@@ -87,6 +94,12 @@ impl WorldId {
     /// Returns the underlying id value.
     pub const fn get(self) -> NonZeroU64 {
         self.0
+    }
+}
+
+impl fmt::Display for WorldId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 

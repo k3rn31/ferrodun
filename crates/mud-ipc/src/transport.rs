@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use std::path::Path;
 
 use bytes::Bytes;
-use futures::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt};
 use mud_schema::{GatewayFrame, WorldFrame, decode, encode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
