@@ -56,8 +56,7 @@
 use std::collections::HashMap;
 
 use mud_core::{
-    Effect, EntityId, EntityKey, MutationCommand, PlaceId, Precondition, TenantTag, TickEvent,
-    World,
+    Effect, EntityId, EntityKey, MutationCommand, PlaceId, TenantTag, TickEvent, World,
 };
 
 use crate::error::DbError;
@@ -149,11 +148,13 @@ impl PersistentWorld {
 
     /// Applies one [`MutationCommand`] to the arena and the database.
     ///
-    /// Mirrors the in-memory apply semantics of `mud-core`'s scheduler: a
-    /// successful non-`Create` effect yields `Ok(None)`; a `Create` yields
-    /// [`TickEvent::Created`]; a failed precondition or arena rejection yields
-    /// the corresponding [`TickEvent`] in `Ok(Some(..))`. [`DbError`] is reserved
-    /// for genuine database failures.
+    /// The in-memory mutation, precondition check, and arena-error → event
+    /// classification are delegated to `mud-core`'s single source of truth
+    /// (`World::satisfies` and `World::apply_effect`); this method layers the
+    /// durable write per effect. A successful non-`Create` effect yields
+    /// `Ok(None)`; a `Create` yields [`TickEvent::Created`]; a failed
+    /// precondition or arena rejection yields the corresponding [`TickEvent`] in
+    /// `Ok(Some(..))`. [`DbError`] is reserved for genuine database failures.
     ///
     /// # Errors
     ///
@@ -162,7 +163,7 @@ impl PersistentWorld {
     pub async fn apply(&mut self, command: MutationCommand) -> Result<Option<TickEvent>, DbError> {
         let effect = command.effect();
         if let Some(precondition) = command.precondition()
-            && !self.holds(precondition)
+            && !self.world.satisfies(precondition)
         {
             return Ok(Some(TickEvent::PreconditionFailed {
                 precondition,
@@ -170,6 +171,11 @@ impl PersistentWorld {
             }));
         }
 
+        // INVARIANT: each helper receives the same `effect` it is routed for, so
+        // the in-memory mutation it drives through `World::apply_effect(effect)`
+        // and the durable write it builds from the destructured fields always
+        // act on the same entity/place. Routing here is the only place that pairs
+        // them; keep them consistent.
         match effect {
             Effect::Create => self.apply_create(effect).await,
             Effect::MoveTo { entity, place } => self.apply_move(effect, entity, place).await,
@@ -201,19 +207,6 @@ impl PersistentWorld {
     /// The in-memory world, for read predicates against re-minted handles.
     pub fn world(&self) -> &World {
         &self.world
-    }
-
-    /// Evaluates a precondition against the current world (mirrors
-    /// `scheduler.rs::holds`, since `mud-core` stays untouched).
-    fn holds(&self, precondition: Precondition) -> bool {
-        match precondition {
-            Precondition::LocatedIn { entity, place } => self.world.is_located_in(entity, place),
-            Precondition::Contains { container, item } => self.world.contains(container, item),
-            // `Precondition` is `#[non_exhaustive]`; a future variant cannot be
-            // evaluated here, so it conservatively does not hold and the guarded
-            // effect is skipped rather than applied on an unverified guard.
-            _ => false,
-        }
     }
 
     /// `Create` is database-first: the row's `AUTOINCREMENT` key is the durable
@@ -248,8 +241,8 @@ impl PersistentWorld {
         entity: EntityId,
         place: PlaceId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Err(error) = self.world.move_to(entity, place) {
-            return Ok(Some(TickEvent::Rejected { effect, error }));
+        if let Some(event) = self.world.apply_effect(effect) {
+            return Ok(Some(event));
         }
         let entity_key = entity_key_to_db(self.key_of(entity)?)?;
         let place_id = place_id_to_db(place)?;
@@ -270,8 +263,8 @@ impl PersistentWorld {
         container: EntityId,
         item: EntityId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Err(error) = self.world.inventory_add(container, item) {
-            return Ok(Some(TickEvent::Rejected { effect, error }));
+        if let Some(event) = self.world.apply_effect(effect) {
+            return Ok(Some(event));
         }
         let item_key = entity_key_to_db(self.key_of(item)?)?;
         let container_key = entity_key_to_db(self.key_of(container)?)?;
@@ -292,8 +285,8 @@ impl PersistentWorld {
         container: EntityId,
         item: EntityId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Err(error) = self.world.inventory_remove(container, item) {
-            return Ok(Some(TickEvent::Rejected { effect, error }));
+        if let Some(event) = self.world.apply_effect(effect) {
+            return Ok(Some(event));
         }
         let item_key = entity_key_to_db(self.key_of(item)?)?;
         let container_key = entity_key_to_db(self.key_of(container)?)?;
@@ -317,8 +310,8 @@ impl PersistentWorld {
         effect: Effect,
         entity: EntityId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Err(error) = self.world.teardown(entity) {
-            return Ok(Some(TickEvent::Rejected { effect, error }));
+        if let Some(event) = self.world.apply_effect(effect) {
+            return Ok(Some(event));
         }
         let key = self.key_of(entity)?;
         let entity_key = entity_key_to_db(key)?;

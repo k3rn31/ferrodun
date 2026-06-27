@@ -444,6 +444,19 @@ spine.
   M1-06 ships only the logical `tick()` and the cadence constants.
   - *Spec:* §2.1.3.3, §5.2. *Verify:* `cargo run -p mudd` serves a telnet
     login locally.
+  - **Open design decision (resolve in this PR):** how the `mud-core`
+    `Scheduler` (ordering/serialization) and the `mud-db` `PersistentWorld`
+    (durability) compose into a **single** write path. Today they are two apply
+    paths: `Scheduler::tick(&mut World)` mutates without persisting, and
+    `PersistentWorld::apply` persists without the scheduler. The shared
+    `World::apply_effect` / `World::satisfies` (single source of dispatch +
+    precondition semantics, added at the M1-11b checkpoint) is the seam both must
+    route through. Candidate: `PersistentWorld` owns the `Scheduler` and its
+    drain calls `World::apply_effect` then the durable write; a `MutationSink`
+    output port in `mud-core` is the textbook-clean alternative but is
+    trait-for-one-impl under current YAGNI rules — revisit when a second sink
+    exists. If §2.5.3.3's "same transaction" framing is what forces apply logic
+    into `mud-db`, refine the spec wording rather than working around it.
 - **M1-23 — M1 acceptance integration test.** Drive two scripted telnet
   sessions through login, movement, mutual visibility, and chat; assert ANSI
   + NAWS; kill and restart the process and assert credentials, location, and
