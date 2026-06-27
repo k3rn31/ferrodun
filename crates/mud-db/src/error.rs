@@ -1,10 +1,13 @@
 //! Persistence error type, shared across database backends.
 
+use mud_core::{ArenaError, EntityKey};
+
 /// Errors raised by the persistence layer.
 ///
 /// Backend-agnostic: both the SQLite backend and the future PostgreSQL backend
 /// surface failures through this single type.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum DbError {
     /// A query or connection failure from the underlying driver.
     ///
@@ -34,14 +37,24 @@ pub enum DbError {
     #[error("internal map inconsistency: a live entity has no persisted key")]
     EntityNotMapped,
 
-    /// Boot load could not resolve a persisted `EntityKey` to a live arena
-    /// entity: either a `location`/`inventory` row referenced a key with no
-    /// matching entity (foreign keys make this unreachable in a consistent
-    /// database), or minting a handle for an `entities` row failed (arena
-    /// exhaustion). Surfaced rather than panicked on so a corrupt file fails
-    /// loudly.
+    /// Boot load found a `location`/`inventory` row referencing an `EntityKey`
+    /// with no matching entity. Foreign keys make this unreachable in a
+    /// consistent database, so it signals corruption; surfaced rather than
+    /// panicked on so a corrupt file fails loudly.
     #[error("dangling entity reference during load: entity_key {0}")]
     DanglingReference(i64),
+
+    /// Boot load could not mint an arena handle for a persisted `entities` row
+    /// because the tenant's arena is exhausted. Surfaced rather than panicked on
+    /// so the failure is recoverable by the caller.
+    #[error("arena exhausted while loading entity_key {entity_key}")]
+    LoadArenaExhausted {
+        /// The persisted key whose handle could not be minted.
+        entity_key: EntityKey,
+        /// The arena failure that prevented minting.
+        #[source]
+        source: ArenaError,
+    },
 
     /// A `MutationCommand` carried an `Effect` variant this backend cannot
     /// persist. Unreachable today (every variant is handled); the arm exists

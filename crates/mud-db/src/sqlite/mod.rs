@@ -54,8 +54,11 @@ impl TenantDb {
     }
 
     /// Returns the underlying connection pool for issuing queries.
+    ///
+    /// Crate-internal: the `sqlx` pool is an implementation detail and must not
+    /// cross the public API boundary.
     #[must_use]
-    pub fn pool(&self) -> &SqlitePool {
+    pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 }
@@ -181,5 +184,25 @@ mod tests {
             .await;
 
         assert!(second.is_err(), "item must not occupy two containers");
+    }
+
+    // Accounts written before a restart are still present after reopening the
+    // file — the accounts table is as durable as the entity state.
+    #[tokio::test]
+    async fn accounts_survive_restart() {
+        let dir = TempDir::new().expect("temp dir");
+
+        {
+            let db = open_in(&dir).await;
+            sqlx::query("INSERT INTO accounts (username, password_hash) VALUES (?, ?)")
+                .bind("alice")
+                .bind("hash")
+                .execute(db.pool())
+                .await
+                .expect("insert account");
+        } // pool dropped — simulates a process restart.
+
+        let db = open_in(&dir).await;
+        assert_eq!(accounts_count(&db).await, 1, "the account persisted");
     }
 }

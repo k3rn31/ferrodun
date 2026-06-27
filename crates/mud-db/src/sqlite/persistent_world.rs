@@ -107,7 +107,10 @@ impl PersistentWorld {
             let key = entity_key_from_db(row.entity_key)?;
             let id = world
                 .create()
-                .map_err(|_| DbError::DanglingReference(row.entity_key))?;
+                .map_err(|source| DbError::LoadArenaExhausted {
+                    entity_key: key,
+                    source,
+                })?;
             by_key.insert(key, id);
             by_id.insert(id, key);
         }
@@ -324,5 +327,41 @@ impl PersistentWorld {
     /// inconsistency surfaced as [`DbError::EntityNotMapped`] rather than a panic.
     fn key_of(&self, id: EntityId) -> Result<EntityKey, DbError> {
         self.by_id.get(&id).copied().ok_or(DbError::EntityNotMapped)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mud_core::TenantTag;
+    use tempfile::TempDir;
+
+    fn tenant() -> TenantTag {
+        TenantTag::new(1).expect("test tenant tag must be in range")
+    }
+
+    // A corrupt file must fail the boot load loudly, not silently. SQLite permits
+    // an explicit non-positive rowid, which no normal AUTOINCREMENT path produces;
+    // loading it must surface DbError::InvalidId rather than minting a bogus key.
+    // Lives in-crate because it pokes raw SQL through the crate-private pool.
+    #[tokio::test]
+    async fn boot_load_rejects_a_corrupt_entity_key() {
+        let dir = TempDir::new().expect("temp dir");
+        let db = TenantDb::open(dir.path()).await.expect("open tenant db");
+
+        sqlx::query("INSERT INTO entities (entity_key) VALUES (?)")
+            .bind(-1_i64)
+            .execute(db.pool())
+            .await
+            .expect("insert a corrupt entity row");
+
+        let error = PersistentWorld::load(db, tenant())
+            .await
+            .err()
+            .expect("a corrupt key must fail the boot load");
+        assert!(
+            matches!(error, DbError::InvalidId(-1)),
+            "a non-positive persisted key must fail boot load with InvalidId, got {error:?}"
+        );
     }
 }

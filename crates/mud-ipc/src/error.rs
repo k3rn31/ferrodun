@@ -1,6 +1,6 @@
 //! Errors raised by the IPC transport.
 
-use mud_schema::{SchemaError, SchemaVersion, WorldId};
+use mud_schema::{SchemaVersion, WorldId};
 
 /// An error on the Gateway↔World IPC channel (§2.1.3).
 #[derive(Debug, thiserror::Error)]
@@ -11,8 +11,11 @@ pub enum IpcError {
     Io(#[from] std::io::Error),
 
     /// A frame could not be encoded to or decoded from `postcard` bytes.
+    ///
+    /// The codec error is boxed so neither `mud_schema` nor `postcard` leaks
+    /// into this crate's public API.
     #[error("ipc frame codec error: {0}")]
-    Codec(#[from] SchemaError),
+    Codec(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// The peer announced a schema version this build does not speak (§2.8.5.7).
     #[error("ipc schema version mismatch: this build speaks {expected}, peer announced {got}")]
