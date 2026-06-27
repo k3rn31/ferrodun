@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::session::SessionId;
+use crate::session::{SchemaVersion, SessionId, WorldId};
 
 /// A single line of raw player input, as decoded from telnet/IAC by the Gateway
 /// (§2.7 step 2).
@@ -105,6 +105,36 @@ pub struct SessionClose {
     pub session_id: SessionId,
 }
 
+/// The resume handshake a Gateway sends to (re-)announce a World the set of live
+/// sessions it is holding (§2.1.3.2).
+///
+/// Sent once when an IPC channel is established — including after a World restart,
+/// so a freshly started World learns the sessions already connected through the
+/// Gateway. Carries the `world_id` the channel addresses and the build's
+/// [`SchemaVersion`](crate::SchemaVersion) so both sides confirm they speak the
+/// same version-locked schema (§2.8.5.7) before any gameplay frame flows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
+pub struct ResumeHandshake {
+    /// The World this channel addresses.
+    pub world_id: WorldId,
+    /// The frame-schema version the Gateway was built against.
+    pub schema_version: SchemaVersion,
+    /// The sessions the Gateway currently holds for this World.
+    pub live_sessions: Vec<SessionId>,
+}
+
+/// The World's acknowledgement of a [`ResumeHandshake`], confirming both sides
+/// agree on the World and the schema version (§2.1.3.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
+pub struct HandshakeAck {
+    /// The World confirming it is the addressed World.
+    pub world_id: WorldId,
+    /// The frame-schema version the World was built against.
+    pub schema_version: SchemaVersion,
+}
+
 /// A frame sent from Gateway to World (§2.1.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -116,6 +146,8 @@ pub enum GatewayFrame {
     Input(SessionInput),
     /// A client connection dropped.
     Disconnect(SessionDisconnect),
+    /// The channel-establishing resume handshake (§2.1.3.2).
+    Resume(ResumeHandshake),
 }
 
 /// A frame sent from World to Gateway (§2.1.3).
@@ -127,6 +159,8 @@ pub enum WorldFrame {
     Output(SessionOutput),
     /// A World-initiated request to close a session's connection.
     Close(SessionClose),
+    /// Acknowledgement of a [`ResumeHandshake`] (§2.1.3.2).
+    ResumeAck(HandshakeAck),
 }
 
 #[cfg(test)]
@@ -138,6 +172,10 @@ mod tests {
 
     fn session(value: u64) -> SessionId {
         SessionId::new(NonZeroU64::new(value).expect("test session id must be non-zero"))
+    }
+
+    fn world(value: u64) -> WorldId {
+        WorldId::new(NonZeroU64::new(value).expect("test world id must be non-zero"))
     }
 
     #[test]
@@ -187,12 +225,34 @@ mod tests {
         assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
     }
 
+    #[test]
+    fn gateway_resume_round_trips() {
+        let frame = GatewayFrame::Resume(ResumeHandshake {
+            world_id: world(7),
+            schema_version: crate::SCHEMA_VERSION,
+            live_sessions: vec![session(1), session(2), session(3)],
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<GatewayFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn world_resume_ack_round_trips() {
+        let frame = WorldFrame::ResumeAck(HandshakeAck {
+            world_id: world(7),
+            schema_version: crate::SCHEMA_VERSION,
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
+    }
+
     // Pins the postcard encoding of a representative frame so an accidental field
     // reorder or variant-order change is caught loudly. postcard encodes the enum
     // variant index as a varint, then the struct fields in declaration order:
     // GatewayFrame::Input = index 1; session_id = NonZeroU64 varint 2; line =
     // length-prefixed "hi" (len 2, bytes 0x68 0x69). The `InputLine` newtype is
-    // serde-transparent, so wrapping the string does not change the bytes.
+    // serde-transparent, so wrapping the string does not change the bytes. Appending
+    // the `Resume` variant must not perturb this — `Input` keeps index 1.
     #[test]
     fn input_frame_has_a_stable_encoding() {
         let frame = GatewayFrame::Input(SessionInput {
