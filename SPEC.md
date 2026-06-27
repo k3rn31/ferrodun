@@ -2232,6 +2232,9 @@ The following layout is normative for the 1.0 source tree.
 ```
 crates/
   mud-schema      // wire protocol; codegen source
+  mud-ipc         // Gateway↔World IPC transport: length-prefixed
+                  // postcard framing, unix-socket + in-memory channel,
+                  // resume handshake (carries mud-schema frames)
   mud-core        // entity arena, components, archetypes, Place trait,
                   // locks, scheduler, hook dispatch
   mud-db          // SQLx schema, write-through cache, snapshots,

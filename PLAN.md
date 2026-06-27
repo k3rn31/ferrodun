@@ -438,9 +438,10 @@ spine.
   a `mud_core::Scheduler` and running the driver loop M1-06 deferred:** every
   `mud_core::TICK_PERIOD` (50 ms / `TICK_HZ`), call `scheduler.tick(&mut
   world)` and consume the returned `Vec<TickEvent>` (`Created` reports minted
-  handles; `PreconditionFailed`/`Rejected` are surfaced to the caller). This
-  is where the async runtime / timer is introduced; M1-06 ships only the
-  logical `tick()` and the cadence constants.
+  handles; `PreconditionFailed`/`Rejected` are surfaced to the caller). The
+  async **runtime** first appears at M1-11b (the `mud-ipc` unix-socket
+  transport); M1-22 adds the scheduler **timer / driver loop** on top of it.
+  M1-06 ships only the logical `tick()` and the cadence constants.
   - *Spec:* §2.1.3.3, §5.2. *Verify:* `cargo run -p mudd` serves a telnet
     login locally.
 - **M1-23 — M1 acceptance integration test.** Drive two scripted telnet

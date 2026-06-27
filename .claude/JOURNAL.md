@@ -547,13 +547,56 @@ truth when this log drifts.
   enum; both enums are already `#[non_exhaustive]`, so appending is wire-additive and
   the M1-10 golden-bytes pin (which targets `Input` = index 1) is unperturbed. Re-exported
   the new public items from `lib.rs`.
-- **Verify:** `cargo test -p mud-schema` (15: +`WorldId` round-trip/order/`Option` niche
-  = 8 bytes, +`GatewayFrame::Resume`/`WorldFrame::ResumeAck` postcard round-trips; the
-  existing `input_frame_has_a_stable_encoding` golden test still passes). `cargo clippy
-  -p mud-schema --all-targets -D warnings` and `cargo fmt` clean. No `unwrap`/`expect`/
-  `panic` outside tests. No docs-site change (IPC is internal plumbing).
+- **Verify:** `cargo test -p mud-schema` (16: +`WorldId` round-trip/order/`Option` niche
+  = 8 bytes, +`SchemaVersion::new` round-trip, +`GatewayFrame::Resume`/`WorldFrame::
+  ResumeAck` postcard round-trips; the existing `input_frame_has_a_stable_encoding` golden
+  test still passes). `cargo clippy -p mud-schema --all-targets -D warnings` and `cargo
+  fmt` clean. No `unwrap`/`expect`/`panic` outside tests. No docs-site change (IPC is
+  internal plumbing).
 - **Next:** **M1-11b** — the `mud-ipc` crate: `Endpoint` duplex trait + `InMemoryEndpoint`
   (single-process channel) + `SocketEndpoint` (length-prefixed postcard over a unix
   socket), and the resume-handshake exchange (`announce_sessions`/`accept_resume`) written
   generically over `Endpoint` so both transports share one code path. Adds the SPEC §5
   `mud-ipc` layout line and the first async runtime (tokio).
+
+## 2026-06-27 — M1-11b `mud-ipc` transport + resume handshake + single-process mode
+
+- **Spec:** §2.1.3.1 (length-prefixed postcard over a unix socket, multiplexed by
+  `session_id`), §2.1.3.2 (resume handshake: `world_id` + schema version + live session
+  set), §2.1.3.3 (single-process in-memory channel, same frame contract) — the transport
+  that carries the M1-11a frame vocabulary.
+- **Done:** Created `crates/mud-ipc` (new SPEC §5 crate; layout line added). Deps via
+  `cargo add`: `tokio` (net/io-util/sync/rt/macros), `tokio-util` (codec), `futures`,
+  `bytes`, `serde` (trait bounds), `thiserror`, `tracing`, `mud-schema`; dev `tokio`
+  (rt-multi-thread/macros/time) + `tempfile`. **First async runtime in the workspace.**
+  `transport.rs`: an `Endpoint` duplex trait (associated `Outbound`/`Inbound` frame types
+  encode direction; methods declared `-> impl Future + Send` so consumers can spawn
+  endpoints across threads — impls satisfy it with `async fn`, sidestepping both
+  `async_fn_in_trait` and `manual_async_fn`). Two impls (the legitimate single-vs-split
+  seam): `InMemoryEndpoint` over a pair of `tokio::mpsc` channels passing **typed frames
+  directly** (no serialization), built crosswise by `in_memory_pair()`; `SocketEndpoint`
+  over `Framed<UnixStream, LengthDelimitedCodec>` with `max_frame_length(MAX_FRAME_BYTES =
+  1 MiB)` — an explicit untrusted-payload bound, also re-checked on send → `FrameTooLarge`.
+  `connect`/`accept` build the Gateway/World socket endpoints (World binds + accepts, per
+  §2.1.1/§2.1.2). `handshake.rs`: `announce_sessions` (Gateway sends `GatewayFrame::Resume`,
+  awaits `WorldFrame::ResumeAck`, validates) / `accept_resume` (World awaits the resume,
+  validates `schema_version == SCHEMA_VERSION` and `world_id == expected`, acks, returns the
+  live set to re-adopt) — written generically over `Endpoint`, so one implementation runs
+  over both transports. Mismatches emit a `tracing::warn` then a typed error (no silent
+  failure). `error.rs`: `IpcError` (`thiserror`, `#[non_exhaustive]`) —
+  `Io`/`Codec`/`SchemaMismatch`/`WorldIdMismatch`/`FrameTooLarge`/`UnexpectedFrame`/
+  `PeerClosed`; no third-party error in a public variant. Multiplexing is a property of the
+  frames (each carries its `session_id`); demuxing into per-session sinks is the M1-21/22
+  consumer's job, not the transport's. Feature-flag split-vs-single selection (§2.1.3.4) is
+  M1-22; M1-11b ships both transports.
+- **Verify:** `crates/mud-ipc/tests/transport.rs` (TDD) — 9 `#[tokio::test]`s: round-trips
+  both directions over **both** transports (shared generic helper = the same-contract
+  proof), resume handshake replays `{1,2,3}` over both, schema-version mismatch and
+  world-id mismatch rejected, in-memory and socket peer-close → `recv` `Ok(None)`, oversized
+  frame → `FrameTooLarge`. `cargo test --workspace` green (mud-ipc 9; 16 mud-schema; others
+  unchanged); `cargo clippy --workspace --all-targets -D warnings` and `cargo fmt --all
+  --check` clean. No `unwrap`/`expect`/`panic` outside tests. No docs-site change (IPC is
+  internal plumbing — no player/builder/operator-observable surface).
+- **Next:** **M1-12** — `mud-world` KDL room loader + tenant config (the `world_id` minted
+  from tenant config feeds M1-11's handshake). The scheduler driver loop wiring the in-proc
+  channel to `World` is M1-22; per-session demux + rate-limit live in M1-20/21.
