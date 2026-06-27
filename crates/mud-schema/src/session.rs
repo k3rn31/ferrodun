@@ -32,6 +32,12 @@ impl SessionId {
     }
 }
 
+impl fmt::Display for SessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// The version of the IPC frame schema declared in this crate (§2.1.3.1,
 /// §2.8.5.2).
 ///

@@ -20,8 +20,10 @@ pub enum SchemaError {
     Postcard(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl From<postcard::Error> for SchemaError {
-    fn from(err: postcard::Error) -> Self {
+impl SchemaError {
+    /// Wraps a `postcard` failure, boxing it so the dependency stays out of the
+    /// public API. Crate-internal: callers convert at the codec boundary only.
+    pub(crate) fn from_postcard(err: postcard::Error) -> Self {
         Self::Postcard(Box::new(err))
     }
 }
@@ -32,7 +34,7 @@ impl From<postcard::Error> for SchemaError {
 ///
 /// Returns [`SchemaError::Postcard`] if serialization fails.
 pub fn encode<T: Serialize>(frame: &T) -> Result<Vec<u8>, SchemaError> {
-    Ok(postcard::to_stdvec(frame)?)
+    postcard::to_stdvec(frame).map_err(SchemaError::from_postcard)
 }
 
 /// Deserializes an IPC frame from `postcard` bytes.
@@ -42,5 +44,5 @@ pub fn encode<T: Serialize>(frame: &T) -> Result<Vec<u8>, SchemaError> {
 /// Returns [`SchemaError::Postcard`] if the bytes are not a valid encoding of
 /// `T`.
 pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, SchemaError> {
-    Ok(postcard::from_bytes(bytes)?)
+    postcard::from_bytes(bytes).map_err(SchemaError::from_postcard)
 }

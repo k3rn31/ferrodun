@@ -1,7 +1,7 @@
 //! Per-tenant generational arena (§2.3.1–2.3.2, §3.11.4).
 //!
 //! The arena mints and validates the [`EntityId`] handles defined in
-//! [`crate::entity_id`]. It is the engine's liveness authority: every entity
+//! [`super::id`]. It is the engine's liveness authority: every entity
 //! lookup resolves a handle here first, so a stale handle (the slot was freed
 //! and possibly reused) and a foreign handle (minted by another tenant) are
 //! both caught at this boundary rather than silently dereferencing the wrong
@@ -107,14 +107,13 @@ impl EntityArena {
     }
 
     /// Re-activates a slot taken from the free list, minting the next handle.
-    ///
-    /// INVARIANT: the free list holds only in-range indices that `free` set to
-    /// `Free`, and `slots` never shrinks, so both lookups always succeed. A
-    /// miss is an internal bookkeeping bug, not a recoverable condition — and
-    /// because `alloc` takes no handle from the caller, reporting it as a
-    /// `StaleHandle` would misattribute that bug to the caller — so it is
-    /// `unreachable!` rather than an error.
     fn reuse(&mut self, slot: SlotIndex) -> EntityId {
+        // INVARIANT: the free list holds only in-range indices that `free` set to
+        // `Free`, and `slots` never shrinks, so both lookups always succeed. A
+        // miss is an internal bookkeeping bug, not a recoverable condition — and
+        // because `alloc` takes no handle from the caller, reporting it as a
+        // `StaleHandle` would misattribute that bug to the caller — so it is
+        // `unreachable!` rather than an error.
         let Some(state) = slot.to_index().and_then(|index| self.slots.get_mut(index)) else {
             unreachable!("free-list slot {} is out of range", slot.get());
         };

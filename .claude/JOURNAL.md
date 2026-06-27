@@ -629,3 +629,34 @@ truth when this log drifts.
   the shared `World::apply_effect` seam (candidate: `PersistentWorld` owns the
   `Scheduler`; a `mud-core` `MutationSink` port is the clean alternative, deferred
   under the trait-for-one-impl rule).
+
+## 2026-06-27 — Checkpoint: error boundaries & visibility audit + fixes
+
+- **Spec:** §1.7 (mandatory engineering rules) — own error types per crate, no
+  third-party error leaks across public APIs, minimal `pub` surface.
+- **Done:** Four-crate audit (mud-core/-schema/-db/-ipc) then fixes, HIGH→LOW:
+  - **mud-db:** `TenantDb::pool()` → `pub(crate)` (was the only `sqlx` type
+    leaking through the public API). Relocated the two raw-SQL tests out of the
+    `tests/restart.rs` integration crate into in-crate `#[cfg(test)]` modules:
+    `boot_load_rejects_a_corrupt_entity_key` → `persistent_world.rs`,
+    account durability → new `accounts_survive_restart` in `sqlite/mod.rs`;
+    `state_survives_a_clean_restart` stays an integration test (now pure public
+    API). Added `#[non_exhaustive]` to `DbError`. New `DbError::LoadArenaExhausted
+    { entity_key, source }` so arena exhaustion during load no longer masquerades
+    as `DanglingReference` (doc narrowed to the genuine dangling cases).
+  - **mud-core:** `EntityId::to_bits`/`from_bits` were `pub` but test-only and
+    spec-internal (§2.3.1.4) → `#[cfg(test)] pub(crate)`. Fixed dangling intra-doc
+    link (`crate::entity_id` → `super::id`) and converted the `reuse` INVARIANT
+    doc block to an inline `// INVARIANT:` for grep-consistency.
+  - **mud-ipc:** `IpcError::Codec(#[from] SchemaError)` →
+    `Codec(#[source] Box<dyn Error + Send + Sync>)` so neither `mud_schema` nor
+    `postcard` crosses the public boundary; transport call sites map explicitly.
+  - **mud-schema:** replaced public `From<postcard::Error>` with a `pub(crate)`
+    `SchemaError::from_postcard` constructor (postcard now absent from the public
+    API). Added `Display` for `SessionId` (parity with `WorldId`/`SchemaVersion`).
+- **Verify:** `cargo clippy --workspace --all-targets` clean; `cargo test
+  --workspace` green (mud-db lib 9, restart.rs 7 — relocated tests confirmed
+  running; all other crates unchanged); `cargo fmt --all --check` clean. No
+  behavior change, so no docs-site update.
+- **Next:** Resume PLAN order (M1-12). Audit found no other boundary leaks; the
+  remaining `std::io::Error` in `IpcError` is a deliberate std surface, kept.

@@ -128,7 +128,7 @@ where
     type Inbound = R;
 
     async fn send(&mut self, frame: S) -> Result<(), IpcError> {
-        let bytes = encode(&frame)?;
+        let bytes = encode(&frame).map_err(|e| IpcError::Codec(Box::new(e)))?;
         if bytes.len() > MAX_FRAME_BYTES {
             return Err(IpcError::FrameTooLarge {
                 size: bytes.len(),
@@ -142,7 +142,9 @@ where
     async fn recv(&mut self) -> Result<Option<R>, IpcError> {
         match self.framed.next().await {
             None => Ok(None),
-            Some(Ok(bytes)) => Ok(Some(decode(&bytes)?)),
+            Some(Ok(bytes)) => decode(&bytes)
+                .map(Some)
+                .map_err(|e| IpcError::Codec(Box::new(e))),
             Some(Err(err)) => Err(IpcError::Io(err)),
         }
     }

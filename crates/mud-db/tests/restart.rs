@@ -7,7 +7,7 @@
 use std::num::NonZeroU64;
 
 use mud_core::{Effect, EntityId, MutationCommand, PlaceId, Precondition, TenantTag, TickEvent};
-use mud_db::{DbError, PersistentWorld, TenantDb};
+use mud_db::{PersistentWorld, TenantDb};
 use tempfile::TempDir;
 
 fn tenant() -> TenantTag {
@@ -45,13 +45,6 @@ async fn create_entity(world: &mut PersistentWorld) -> EntityId {
         .expect("Create must emit a Created event")
 }
 
-async fn account_count(db: &TenantDb) -> i64 {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM accounts")
-        .fetch_one(db.pool())
-        .await
-        .expect("count accounts")
-}
-
 #[tokio::test]
 async fn state_survives_a_clean_restart() {
     let dir = TempDir::new().expect("temp dir");
@@ -59,13 +52,6 @@ async fn state_survives_a_clean_restart() {
     // --- First boot: create entities, place one, fill a container. ---
     let (mover_key, container_key, item_key) = {
         let db = TenantDb::open(dir.path()).await.expect("open tenant db");
-        sqlx::query("INSERT INTO accounts (username, password_hash) VALUES (?, ?)")
-            .bind("alice")
-            .bind("hash")
-            .execute(db.pool())
-            .await
-            .expect("insert account");
-
         let mut world = PersistentWorld::load(db, tenant())
             .await
             .expect("boot load on empty world");
@@ -110,8 +96,6 @@ async fn state_survives_a_clean_restart() {
 
     // --- Second boot: reload from disk and assert state intact. ---
     let db = TenantDb::open(dir.path()).await.expect("reopen tenant db");
-    assert_eq!(account_count(&db).await, 1, "the account persisted");
-
     let world = PersistentWorld::load(db, tenant())
         .await
         .expect("boot load on a populated world");
@@ -374,29 +358,5 @@ async fn teardown_of_a_contained_item_leaves_no_dangling_containment() {
     assert!(
         world.entity_id(item_key).is_none(),
         "a destroyed item must not resurrect"
-    );
-}
-
-// A corrupt file must fail the boot load loudly, not silently. SQLite permits
-// an explicit non-positive rowid, which no normal AUTOINCREMENT path produces;
-// loading it must surface DbError::InvalidId rather than minting a bogus key.
-#[tokio::test]
-async fn boot_load_rejects_a_corrupt_entity_key() {
-    let dir = TempDir::new().expect("temp dir");
-    let db = TenantDb::open(dir.path()).await.expect("open tenant db");
-
-    sqlx::query("INSERT INTO entities (entity_key) VALUES (?)")
-        .bind(-1_i64)
-        .execute(db.pool())
-        .await
-        .expect("insert a corrupt entity row");
-
-    let error = PersistentWorld::load(db, tenant())
-        .await
-        .err()
-        .expect("a corrupt key must fail the boot load");
-    assert!(
-        matches!(error, DbError::InvalidId(-1)),
-        "a non-positive persisted key must fail boot load with InvalidId, got {error:?}"
     );
 }

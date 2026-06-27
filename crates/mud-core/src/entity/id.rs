@@ -185,14 +185,16 @@ impl EntityId {
 
     /// The raw 64-bit in-memory encoding. An internal detail — `EntityId` is
     /// not persisted or sent on the wire (§2.3.1.4); durable identity is
-    /// `EntityKey` (§2.3.1.5).
-    pub const fn to_bits(self) -> u64 {
+    /// `EntityKey` (§2.3.1.5). Test-only: exercises the bit-layout invariants.
+    #[cfg(test)]
+    pub(crate) const fn to_bits(self) -> u64 {
         self.0
     }
 
     /// Reconstructs an id from its raw encoding. Total: every `u64` maps to a
-    /// well-formed id because each field occupies its full bit width.
-    pub const fn from_bits(bits: u64) -> Self {
+    /// well-formed id because each field occupies its full bit width. Test-only.
+    #[cfg(test)]
+    pub(crate) const fn from_bits(bits: u64) -> Self {
         Self(bits)
     }
 }
