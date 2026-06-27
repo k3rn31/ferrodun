@@ -471,3 +471,56 @@ truth when this log drifts.
 - **Next:** unchanged — M1-10 `mud-schema` IPC frames. Genuinely-unreachable arms
   (`DanglingReference` under FK enforcement, `UnsupportedEffect`, arena-exhaustion
   rollback) remain untested by design.
+
+## 2026-06-27 — M1-10 `mud-schema` IPC frames
+
+- **Spec:** §2.1.3 (IPC contract: postcard frames, multiplexed by `session_id`,
+  schema declared in `mud-schema`), §2.7 step 2 (`SessionInput`), §2.8.3/§2.8.5.7
+  (IPC frames version-locked at build time, excluded from the codegen'd wire
+  protocol) — the typed frame vocabulary the Gateway↔World IPC channel speaks.
+- **Done:** Created `crates/mud-schema` (leaf crate, **no `mud-core` dep**). Deps
+  via `cargo add`: `serde` (derive), `postcard` (use-std), `thiserror`.
+  `session.rs`: `SessionId` newtype over `NonZeroU64` (niche-friendly, the §2.1.3.1
+  multiplexing key; minting is M1-11) + `SchemaVersion` newtype and the
+  build-time `SCHEMA_VERSION = 1` const (carried by M1-11's resume handshake, not
+  stamped per frame, §2.8.5.7). `frame.rs`: payload structs `SessionInput
+  {session_id, line}` (§2.7 step 2 verbatim), `SessionOutput {session_id, text}`,
+  `SessionConnect`, `SessionDisconnect`, `SessionClose`; and **two directional
+  enums** —
+  `GatewayFrame` (Connect/Input/Disconnect, G→W) and `WorldFrame` (Output/Close,
+  W→G), both `#[non_exhaustive]` — so an illegal direction is unrepresentable
+  (type-driven). `codec.rs`: `encode`/`decode` helpers over `postcard::to_stdvec`/
+  `from_bytes` returning a crate-owned `SchemaError` (`thiserror`); the
+  underlying `postcard::Error` is **boxed** (`Box<dyn Error + Send + Sync>` via a
+  manual `From`) so the codec dependency never leaks into the public API. **No
+  `EntityKey`
+  crosses any M1 frame** (§2.3.1.4) — entity-bearing frames are M3+. Text payloads
+  are **marker newtypes** `InputLine`/`OutputText` (mirroring `mud-core`'s
+  `Description`) rather than raw `String`, per the newtype mandate; no invariant is
+  enforced at the IPC boundary because §3.6.4's content cap / control-char
+  stripping is command-scoped and applied downstream (M1-17), and they are
+  serde-transparent so the golden-bytes encoding is unchanged. `OutputText` stays
+  `String`-backed for M1; M1-13 swaps it for styled text.
+  **Decision (confirmed with user):** the PLAN's "codegen scaffold emits Rust now"
+  was dropped per YAGNI — IPC frames are hand-written and version-locked; the
+  codegen mechanism (Rust + TS + GMCP docs, §2.8.3.1) is deferred to **M3-D** with
+  the first real wire protocol. PLAN M1-10 rewritten + an *As built* note added;
+  M3-D broadened from "TypeScript" to the full codegen mechanism. Length-prefixing
+  and transport stay in **M1-11**.
+  **Review fixes (this PR):** boxed third-party errors out of public APIs to honor
+  the no-dependency-leak rule — `SchemaError::Postcard` and, in **mud-db**,
+  `DbError::{Sqlx,Migrate}` now hold `Box<dyn Error + Send + Sync>` with manual
+  `From` impls (was `#[from]`). Added `#[must_use]` to the frame structs/enums and
+  fixed a `SessionClose` doc wording nit.
+- **Verify:** 10 unit tests — round-trip per frame variant (`GatewayFrame::{Connect,
+  Input,Disconnect}`, `WorldFrame::{Output,Close}`), a **golden-bytes pin** of
+  `GatewayFrame::Input` (`[0x01,0x02,0x02,0x68,0x69]`) catching variant/field
+  reorders, `Option<SessionId>` niche = 8 bytes, `SCHEMA_VERSION == 1`. `cargo test
+  --workspace` green (mud-schema 10; 89+7+3+4 core, 7+8 db unchanged); `cargo clippy
+  --workspace --all-targets -D warnings` and `cargo fmt --all --check` clean. No
+  `unwrap`/`expect`/`panic` outside tests. No docs-site change (IPC is internal
+  plumbing — no player/builder/operator-observable surface).
+- **Next:** **M1-11** — IPC transport: length-prefixed postcard over a unix socket
+  multiplexed by `session_id`, in-memory channel for single-process mode, and the
+  resume handshake carrying `world_id` + `SCHEMA_VERSION` + the live session set
+  (§2.1.3.2). The handshake `world_id` type and any handshake frame land there.

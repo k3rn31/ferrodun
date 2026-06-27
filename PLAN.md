@@ -292,9 +292,27 @@ spine.
 
 - **M1-10 — `mud-schema` IPC frames.** `mud-schema` crate; postcard IPC
   frame types for M1: `SessionInput`, `SessionOutput`, connect/disconnect,
-  schema version (§2.1.3.1). Codegen scaffold emits Rust now; TS target
-  stubbed but **not generated until a TS consumer exists** (M3).
+  schema version (§2.1.3.1). Ships **hand-written `serde`-derived postcard
+  frame types — no codegen**: §2.8.5.7 version-locks IPC frames at build time
+  and excludes them from the code-generated wire protocol, and the wire
+  protocol that §2.8.3.1 actually generates (map/vitals/NPC actions → Rust +
+  TS + GMCP docs) does not exist until M3. The **codegen mechanism is deferred
+  to M3** (see M3-D).
   - *Spec:* §2.1.3, §2.8.3. *Verify:* frame round-trip encode/decode tests.
+  - *As built:* two **directional enums** `GatewayFrame` (Connect/Input/
+    Disconnect, G→W) and `WorldFrame` (Output/Close, W→G) make an illegal
+    direction unrepresentable; both `#[non_exhaustive]`. `SessionId` is a
+    `NonZeroU64` newtype (niche-friendly); `SCHEMA_VERSION` is a build-time
+    const (1), carried by the M1-11 resume handshake, not stamped per frame.
+    `mud-schema` is a **leaf crate** (no `mud-core` dep): **no M1 frame carries
+    an `EntityKey`** — `SessionInput`/`SessionOutput` carry text, connect/
+    disconnect carry only a `SessionId`; entity-bearing frames arrive in M3+.
+    Text payloads are **marker newtypes** (`InputLine`, `OutputText`, mirroring
+    `mud-core`'s `Description`) not raw `String`, per the newtype mandate — no
+    invariant enforced here since §3.6.4's cap/stripping is command-scoped and
+    downstream (M1-17); `OutputText` is `String`-backed for M1 and M1-13 swaps it
+    for styled text. `encode`/`decode` helpers wrap postcard (`SchemaError` via
+    `thiserror`); length-prefixing is M1-11.
 - **M1-11 — IPC transport + resume handshake + single-process mode.**
   Length-prefixed postcard over a unix socket, multiplexed by `session_id`,
   with the resume handshake carrying `world_id` + schema version + live
@@ -489,9 +507,14 @@ Epics (decompose into PRs when reached):
 - **M3-C — MSDP** as the alternative out-of-band channel; **MXP** clickable
   links/styling; **MSSP** server status; round out TTYPE/NAWS/CHARSET edge
   cases (§2.8.2).
-- **M3-D — Wire codegen for TypeScript.** Generate the TS types from
-  `mud-schema` into `clients/schema-ts/`; unknown-field tolerance on
-  generated decoders both sides (§2.8.3.1, §2.8.5.7).
+- **M3-D — Wire-protocol codegen (Rust + TS + GMCP docs).** Establish the
+  code-generation mechanism §2.8.3.1 mandates — defined once in `mud-schema`,
+  generated to Rust types, TypeScript types (into `clients/schema-ts/`), and
+  auto-rendered GMCP docs. M1-10 deliberately left this out (its IPC frames are
+  hand-written and version-locked, §2.8.5.7); the mechanism first earns its
+  keep here, with the structured wire protocol (map/vitals/NPC actions) and a
+  TS consumer (the M3-G webclient). Unknown-field tolerance on generated
+  decoders both sides (§2.8.3.1, §2.8.5.7).
 - **M3-E — Telnet-over-TLS** (`rustls`) and **SSH** (`russh`, key auth,
   optional per deployment) (§2.8.2).
 - **M3-F — WebSocket transport** (`tokio-tungstenite`) carrying the logical

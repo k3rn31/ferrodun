@@ -7,12 +7,15 @@
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
     /// A query or connection failure from the underlying driver.
+    ///
+    /// The driver error is boxed so the `sqlx` dependency does not leak into the
+    /// public API; this type stays backend-agnostic across SQLite and Postgres.
     #[error("database error: {0}")]
-    Sqlx(#[from] sqlx::Error),
+    Sqlx(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// A schema migration failed to apply.
     #[error("migration error: {0}")]
-    Migrate(#[from] sqlx::migrate::MigrateError),
+    Migrate(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// A persisted integer id read from the database was not a valid id —
     /// negative or zero where a positive `AUTOINCREMENT` key was expected.
@@ -46,4 +49,16 @@ pub enum DbError {
     /// variant surfaces here at runtime rather than as a compile error.
     #[error("unsupported effect variant")]
     UnsupportedEffect,
+}
+
+impl From<sqlx::Error> for DbError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::Sqlx(Box::new(err))
+    }
+}
+
+impl From<sqlx::migrate::MigrateError> for DbError {
+    fn from(err: sqlx::migrate::MigrateError) -> Self {
+        Self::Migrate(Box::new(err))
+    }
 }
