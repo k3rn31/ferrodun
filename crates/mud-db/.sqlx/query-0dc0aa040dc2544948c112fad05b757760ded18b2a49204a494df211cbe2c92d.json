@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM inventory WHERE item_key = ? AND container_key = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0dc0aa040dc2544948c112fad05b757760ded18b2a49204a494df211cbe2c92d"
+}

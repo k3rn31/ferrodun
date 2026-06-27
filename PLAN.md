@@ -270,6 +270,23 @@ spine.
     until working sets exceed the cache, M7-ish); background snapshot (§2.5.3.4
     — crash recovery, deferred until M7 hardening; clean restart needs only
     write-through).
+  - *As built:* the `EntityKey`↔`EntityId` mapping and write-through live in a
+    `PersistentWorld` in **`mud-db`** (`src/sqlite/write_through.rs`), wrapping an
+    untouched `mud-core` `World`; the arena-as-cache (§2.3.1.6) is the map →
+    `EntityId` → arena slot. `mud-core` gained only two read accessors
+    (`MutationCommand::effect`/`precondition`) so `mud-db` can inspect a command.
+    Since an in-memory arena cannot enlist in a SQL transaction, "one
+    transaction" (§2.5.3.3) is realized as **apply-in-memory-then-commit**:
+    `Create` is DB-first (key from `AUTOINCREMENT`), all other effects apply to
+    the arena first (preserving the precise `ArenaError` classification) then
+    write the DB. **Teardown deletes the entity's `entities` row** (destruction,
+    not eviction — a destroyed entity must not resurrect; key non-reuse still
+    holds via `AUTOINCREMENT`); every entity-referencing FK is `ON DELETE
+    CASCADE`, so its dependent rows go with it and the destroy path stays
+    table-agnostic. First compile-time `query!` macros land here with the
+    committed `crates/mud-db/.sqlx` offline cache and `SQLX_OFFLINE: "true"` in
+    CI; `Effect`/`Precondition` being `#[non_exhaustive]` forces a defensive
+    wildcard arm (`DbError::UnsupportedEffect`).
 
 ### Wire/IPC seam (`mud-schema`) and Gateway/World split
 

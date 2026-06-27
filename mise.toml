@@ -1,2 +1,34 @@
 [tools]
 "aqua:quarylabs/sqruff" = "0.38.0"
+
+[tasks.run]
+description = "Run Ferrodun"
+run = "cargo run"
+
+[tasks.test]
+description = "Run automated tests"
+run = "cargo test --workspace"
+
+[tasks.clippy]
+description = "Lint Rust"
+run = "cargo clippy --workspace --all-targets -- -D warnings"
+
+[tasks.sqruff]
+description = "Lint SQL"
+run = "sqruff lint crates/mud-db/migrations"
+
+[tasks.sqlx-prepare]
+description = "Regenerate the SQLx offline query cache (crates/mud-db/.sqlx)"
+dir = "crates/mud-db"
+run = """
+set -eu
+DB="$(mktemp -u "${TMPDIR:-/tmp}/ferrodun-sqlx-XXXXXX").db"
+trap 'rm -f "$DB" "$DB-wal" "$DB-shm"' EXIT
+export DATABASE_URL="sqlite://$DB"
+sqlx database create
+sqlx migrate run --source migrations/sqlite
+cargo sqlx prepare
+"""
+
+[tasks.lint]
+depends = ["clippy", "sqruff"]

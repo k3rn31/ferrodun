@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT item_key AS \"item_key!\", container_key AS \"container_key!\" FROM inventory",
+  "describe": {
+    "columns": [
+      {
+        "name": "item_key!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "inventory",
+            "name": "item_key"
+          }
+        }
+      },
+      {
+        "name": "container_key!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "inventory",
+            "name": "container_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8999c0f366de8bafc2aa88c187e87ab511b4aa33bf2dd173e26c6916ff598a70"
+}

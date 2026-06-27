@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO entities DEFAULT VALUES RETURNING entity_key AS \"entity_key!\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "entity_key!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "entities",
+            "name": "entity_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2c51b1afdaa64f33c5bffa51813c3b997796ff2b95b0b85838a992c6d4f195b0"
+}

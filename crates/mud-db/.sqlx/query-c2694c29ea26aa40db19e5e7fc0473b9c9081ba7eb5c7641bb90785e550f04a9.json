@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT entity_key AS \"entity_key!\" FROM entities ORDER BY entity_key",
+  "describe": {
+    "columns": [
+      {
+        "name": "entity_key!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "entities",
+            "name": "entity_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c2694c29ea26aa40db19e5e7fc0473b9c9081ba7eb5c7641bb90785e550f04a9"
+}

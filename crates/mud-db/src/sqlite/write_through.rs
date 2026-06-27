@@ -1,0 +1,385 @@
+//! Write-through persistence and boot load for a single tenant's world
+//! (SPEC §1.2, §2.3.1.4–2.3.1.6, §2.5.3).
+//!
+//! [`PersistentWorld`] joins the in-memory [`World`] (a `mud-core`
+//! `EntityId`/slot model) to the durable per-tenant database. The database is
+//! the source of truth (§2.5.3.1); the arena is a **cache keyed by `EntityKey`**
+//! (§2.3.1.6), realized here as a one-to-one `EntityKey`↔`EntityId` map in front
+//! of the `EntityId`-based `World`. Loading an entity mints a *fresh* `EntityId`
+//! for its durable `EntityKey`, so `EntityId` values are never expected to
+//! survive a restart while `EntityKey` is stable across one.
+//!
+//! ## Consistency model (§2.5.3.3)
+//!
+//! Every mutation flows through a [`MutationCommand`] and applies to the arena
+//! and the database. An in-memory structure cannot enlist in a SQL transaction,
+//! so the spec's "same transaction" is realized as: validate and apply
+//! in-memory, then commit the database write immediately. The database is
+//! authoritative on restart, so a lost commit merely means the mutation did not
+//! durably happen and the volatile in-memory state is discarded on the next
+//! [`load`](PersistentWorld::load) — the two cannot *durably* diverge.
+//!
+//! There is a transient in-process **inconsistency window**: when a non-`Create`
+//! effect applies in-memory but its database write then fails, memory is briefly
+//! ahead of the database and [`apply`](PersistentWorld::apply) returns
+//! [`DbError`]. Rolling memory back, crash-on-failure, and the background
+//! snapshot (§2.5.3.4) are later hardening; for now `DbError` propagates to the
+//! caller.
+//!
+//! Per effect:
+//! - [`Effect::Create`] is database-first — the `EntityKey` comes from
+//!   `AUTOINCREMENT`. The row is inserted, then the arena handle minted; on the
+//!   astronomically unlikely arena exhaustion the row is rolled back.
+//! - All other effects apply in-memory first, so the arena's precise
+//!   [`ArenaError`] classification (cross-tenant vs. stale handle) is preserved;
+//!   only on success is the database written.
+//!
+//! ## Teardown is destruction, not eviction
+//!
+//! [`Effect::Teardown`] *destroys* an entity: deleting its `entities` row
+//! cascades (`ON DELETE CASCADE`, see the migration) to every dependent row —
+//! its location, its containment as an item, and any items it held as a
+//! container — so it does not resurrect on reload (a destroyed entity must stay
+//! destroyed, §2.5.3.1). `EntityKey` non-reuse still holds via `AUTOINCREMENT`
+//! (§2.3.1.5). Cache eviction (drop the arena handle, keep the row, §2.5.3.2) is
+//! a distinct, out-of-scope concept.
+//!
+//! One memory-vs-database asymmetry follows from keeping `mud-core` untouched:
+//! `World::teardown` clears the entity's *own* location and contents but cannot
+//! remove it from a container that holds it *as an item* (the in-memory
+//! inventory has no reverse item→container index). The database cascade does
+//! remove that containment row, so the arena briefly reports the destroyed item
+//! as still contained while the database does not. The stale handle makes the
+//! entry unobservable through any live id, and the next [`load`] rebuilds memory
+//! from the (correct) database, so the two reconcile on reload.
+
+use std::collections::HashMap;
+use std::num::NonZeroU64;
+
+use mud_core::{
+    Effect, EntityId, EntityKey, MutationCommand, PlaceId, Precondition, TenantTag, TickEvent,
+    World,
+};
+
+use crate::error::DbError;
+use crate::sqlite::TenantDb;
+
+/// A tenant's in-memory world backed by write-through persistence.
+///
+/// Owns the durable database, the in-memory [`World`] cache, and the
+/// one-to-one `EntityKey`↔`EntityId` mapping (§2.3.1.6). Construct it with
+/// [`load`](PersistentWorld::load), which rebuilds the world from the database;
+/// mutate it through [`apply`](PersistentWorld::apply).
+#[must_use]
+pub struct PersistentWorld {
+    db: TenantDb,
+    world: World,
+    by_key: HashMap<EntityKey, EntityId>,
+    // Keyed by the full `EntityId`: a stale handle to a reused slot carries an
+    // older generation and so misses, never resolving to the new occupant.
+    by_id: HashMap<EntityId, EntityKey>,
+}
+
+impl PersistentWorld {
+    /// Rebuilds a tenant's world from its database (the boot load).
+    ///
+    /// Mints a fresh [`EntityId`] for every persisted [`EntityKey`] (§2.3.1.6)
+    /// and replays the location and inventory tables so a clean restart restores
+    /// where every entity is and what every container holds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DbError`] on a query failure, an out-of-range persisted id, a
+    /// dangling reference (a `location`/`inventory` row pointing at an absent
+    /// entity — foreign keys make this unreachable in a consistent file), or
+    /// arena exhaustion while minting handles.
+    pub async fn load(db: TenantDb, tenant: TenantTag) -> Result<Self, DbError> {
+        let mut world = World::new(tenant);
+        let mut by_key = HashMap::new();
+        let mut by_id = HashMap::new();
+
+        let keys =
+            sqlx::query!(r#"SELECT entity_key AS "entity_key!" FROM entities ORDER BY entity_key"#)
+                .fetch_all(db.pool())
+                .await?;
+        for row in keys {
+            let key = entity_key_from_db(row.entity_key)?;
+            let id = world
+                .create()
+                .map_err(|_| DbError::DanglingReference(row.entity_key))?;
+            by_key.insert(key, id);
+            by_id.insert(id, key);
+        }
+
+        let locations = sqlx::query!(
+            r#"SELECT entity_key AS "entity_key!", place_id AS "place_id!" FROM location"#
+        )
+        .fetch_all(db.pool())
+        .await?;
+        for row in locations {
+            let id = resolve_loaded(&by_key, row.entity_key)?;
+            let place = place_id_from_db(row.place_id)?;
+            world
+                .move_to(id, place)
+                .map_err(|_| DbError::DanglingReference(row.entity_key))?;
+        }
+
+        let inventory = sqlx::query!(
+            r#"SELECT item_key AS "item_key!", container_key AS "container_key!" FROM inventory"#
+        )
+        .fetch_all(db.pool())
+        .await?;
+        for row in inventory {
+            let item = resolve_loaded(&by_key, row.item_key)?;
+            let container = resolve_loaded(&by_key, row.container_key)?;
+            world
+                .inventory_add(container, item)
+                .map_err(|_| DbError::DanglingReference(row.item_key))?;
+        }
+
+        Ok(Self {
+            db,
+            world,
+            by_key,
+            by_id,
+        })
+    }
+
+    /// Applies one [`MutationCommand`] to the arena and the database.
+    ///
+    /// Mirrors the in-memory apply semantics of `mud-core`'s scheduler: a
+    /// successful non-`Create` effect yields `Ok(None)`; a `Create` yields
+    /// [`TickEvent::Created`]; a failed precondition or arena rejection yields
+    /// the corresponding [`TickEvent`] in `Ok(Some(..))`. [`DbError`] is reserved
+    /// for genuine database failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DbError`] if a database write fails, or if a persisted id is out
+    /// of range.
+    pub async fn apply(&mut self, command: MutationCommand) -> Result<Option<TickEvent>, DbError> {
+        let effect = command.effect();
+        if let Some(precondition) = command.precondition()
+            && !self.holds(precondition)
+        {
+            return Ok(Some(TickEvent::PreconditionFailed {
+                precondition,
+                effect,
+            }));
+        }
+
+        match effect {
+            Effect::Create => self.apply_create(effect).await,
+            Effect::MoveTo { entity, place } => self.apply_move(effect, entity, place).await,
+            Effect::InventoryAdd { container, item } => {
+                self.apply_inventory_add(effect, container, item).await
+            }
+            Effect::InventoryRemove { container, item } => {
+                self.apply_inventory_remove(effect, container, item).await
+            }
+            Effect::Teardown { entity } => self.apply_teardown(effect, entity).await,
+            // `Effect` is `#[non_exhaustive]`; a future variant this backend has
+            // no persistence path for is rejected rather than silently dropped.
+            _ => Err(DbError::UnsupportedEffect),
+        }
+    }
+
+    /// The current `EntityId` mapped to `key`, if the entity is resident.
+    #[must_use]
+    pub fn entity_id(&self, key: EntityKey) -> Option<EntityId> {
+        self.by_key.get(&key).copied()
+    }
+
+    /// The durable `EntityKey` of a resident `id`, if it maps to one.
+    #[must_use]
+    pub fn entity_key(&self, id: EntityId) -> Option<EntityKey> {
+        self.by_id.get(&id).copied()
+    }
+
+    /// The in-memory world, for read predicates against re-minted handles.
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+
+    /// Evaluates a precondition against the current world (mirrors
+    /// `scheduler.rs::holds`, since `mud-core` stays untouched).
+    fn holds(&self, precondition: Precondition) -> bool {
+        match precondition {
+            Precondition::LocatedIn { entity, place } => self.world.is_located_in(entity, place),
+            Precondition::Contains { container, item } => self.world.contains(container, item),
+            // `Precondition` is `#[non_exhaustive]`; a future variant cannot be
+            // evaluated here, so it conservatively does not hold and the guarded
+            // effect is skipped rather than applied on an unverified guard.
+            _ => false,
+        }
+    }
+
+    /// `Create` is database-first: the row's `AUTOINCREMENT` key is the durable
+    /// identity. Mint the arena handle only after the row exists; roll the row
+    /// back if the arena is exhausted.
+    async fn apply_create(&mut self, effect: Effect) -> Result<Option<TickEvent>, DbError> {
+        let mut tx = self.db.pool().begin().await?;
+        let row = sqlx::query!(
+            r#"INSERT INTO entities DEFAULT VALUES RETURNING entity_key AS "entity_key!""#
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        let key = entity_key_from_db(row.entity_key)?;
+
+        match self.world.create() {
+            Ok(id) => {
+                tx.commit().await?;
+                self.by_key.insert(key, id);
+                self.by_id.insert(id, key);
+                Ok(Some(TickEvent::Created { entity: id }))
+            }
+            Err(error) => {
+                tx.rollback().await?;
+                Ok(Some(TickEvent::Rejected { effect, error }))
+            }
+        }
+    }
+
+    async fn apply_move(
+        &mut self,
+        effect: Effect,
+        entity: EntityId,
+        place: PlaceId,
+    ) -> Result<Option<TickEvent>, DbError> {
+        if let Err(error) = self.world.move_to(entity, place) {
+            return Ok(Some(TickEvent::Rejected { effect, error }));
+        }
+        let entity_key = entity_key_to_db(self.key_of(entity)?)?;
+        let place_id = place_id_to_db(place)?;
+        sqlx::query!(
+            "INSERT INTO location (entity_key, place_id) VALUES (?, ?) \
+             ON CONFLICT(entity_key) DO UPDATE SET place_id = excluded.place_id",
+            entity_key,
+            place_id
+        )
+        .execute(self.db.pool())
+        .await?;
+        Ok(None)
+    }
+
+    async fn apply_inventory_add(
+        &mut self,
+        effect: Effect,
+        container: EntityId,
+        item: EntityId,
+    ) -> Result<Option<TickEvent>, DbError> {
+        if let Err(error) = self.world.inventory_add(container, item) {
+            return Ok(Some(TickEvent::Rejected { effect, error }));
+        }
+        let item_key = entity_key_to_db(self.key_of(item)?)?;
+        let container_key = entity_key_to_db(self.key_of(container)?)?;
+        sqlx::query!(
+            "INSERT INTO inventory (item_key, container_key) VALUES (?, ?) \
+             ON CONFLICT(item_key) DO UPDATE SET container_key = excluded.container_key",
+            item_key,
+            container_key
+        )
+        .execute(self.db.pool())
+        .await?;
+        Ok(None)
+    }
+
+    async fn apply_inventory_remove(
+        &mut self,
+        effect: Effect,
+        container: EntityId,
+        item: EntityId,
+    ) -> Result<Option<TickEvent>, DbError> {
+        if let Err(error) = self.world.inventory_remove(container, item) {
+            return Ok(Some(TickEvent::Rejected { effect, error }));
+        }
+        let item_key = entity_key_to_db(self.key_of(item)?)?;
+        let container_key = entity_key_to_db(self.key_of(container)?)?;
+        sqlx::query!(
+            "DELETE FROM inventory WHERE item_key = ? AND container_key = ?",
+            item_key,
+            container_key
+        )
+        .execute(self.db.pool())
+        .await?;
+        Ok(None)
+    }
+
+    /// Teardown destroys the entity: free the handle in-memory, then delete its
+    /// `entities` row. The schema's `ON DELETE CASCADE` removes every dependent
+    /// row (location, containment, items held) in the same statement, so the
+    /// entity cannot resurrect on reload and the destroy path needs no knowledge
+    /// of which tables reference it.
+    async fn apply_teardown(
+        &mut self,
+        effect: Effect,
+        entity: EntityId,
+    ) -> Result<Option<TickEvent>, DbError> {
+        if let Err(error) = self.world.teardown(entity) {
+            return Ok(Some(TickEvent::Rejected { effect, error }));
+        }
+        let key = self.key_of(entity)?;
+        let entity_key = entity_key_to_db(key)?;
+
+        sqlx::query!("DELETE FROM entities WHERE entity_key = ?", entity_key)
+            .execute(self.db.pool())
+            .await?;
+
+        self.by_key.remove(&key);
+        self.by_id.remove(&entity);
+        Ok(None)
+    }
+
+    /// The durable `EntityKey` of a resident `id`. A live handle that just passed
+    /// an arena op is always in the map, so an absent entry is an internal
+    /// inconsistency surfaced as [`DbError::EntityNotMapped`] rather than a panic.
+    fn key_of(&self, id: EntityId) -> Result<EntityKey, DbError> {
+        self.by_id.get(&id).copied().ok_or(DbError::EntityNotMapped)
+    }
+}
+
+/// Resolves a persisted `entity_key` to its loaded `EntityId`, failing if no
+/// arena handle was minted for it.
+fn resolve_loaded(by_key: &HashMap<EntityKey, EntityId>, value: i64) -> Result<EntityId, DbError> {
+    let key = entity_key_from_db(value)?;
+    by_key
+        .get(&key)
+        .copied()
+        .ok_or(DbError::DanglingReference(value))
+}
+
+/// Parses a database `i64` into an [`EntityKey`], rejecting non-positive values.
+fn entity_key_from_db(value: i64) -> Result<EntityKey, DbError> {
+    nonzero_from_db(value).map(EntityKey::new)
+}
+
+/// Parses a database `i64` into a [`PlaceId`], rejecting non-positive values.
+fn place_id_from_db(value: i64) -> Result<PlaceId, DbError> {
+    nonzero_from_db(value).map(PlaceId::new)
+}
+
+/// Narrows an [`EntityKey`] to the `i64` its column stores.
+fn entity_key_to_db(key: EntityKey) -> Result<i64, DbError> {
+    nonzero_to_db(key.get())
+}
+
+/// Narrows a [`PlaceId`] to the `i64` its column stores.
+fn place_id_to_db(place: PlaceId) -> Result<i64, DbError> {
+    nonzero_to_db(place.get())
+}
+
+/// `i64` → `NonZeroU64`, rejecting negative or zero values (defensive: keys are
+/// positive `AUTOINCREMENT` rowids).
+fn nonzero_from_db(value: i64) -> Result<NonZeroU64, DbError> {
+    u64::try_from(value)
+        .ok()
+        .and_then(NonZeroU64::new)
+        .ok_or(DbError::InvalidId(value))
+}
+
+/// `NonZeroU64` → `i64`, rejecting values beyond the signed range (defensive:
+/// rowids never approach `i64::MAX`).
+fn nonzero_to_db(value: NonZeroU64) -> Result<i64, DbError> {
+    let raw = value.get();
+    i64::try_from(raw).map_err(|_| DbError::KeyOutOfRange(raw))
+}

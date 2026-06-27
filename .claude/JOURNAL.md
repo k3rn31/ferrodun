@@ -397,3 +397,59 @@ truth when this log drifts.
   `EntityKey`, every mutation applies to arena + DB in one transaction, restart
   integration test. Introduces the first compile-time-checked `query!` (+ `.sqlx`
   offline cache + `SQLX_OFFLINE` CI step) and the `mud-core` dependency.
+
+## 2026-06-26 — M1-09 write-through + boot load (cache keyed by `EntityKey`)
+
+- **Spec:** §1.2, §2.3.1.4–2.3.1.6 (arena as a cache keyed by `EntityKey`;
+  loading mints a fresh `EntityId`), §2.5.3.1–2.5.3.3 (DB is source of truth;
+  write-through via `MutationCommand`) — connect the volatile `mud-core` `World`
+  to the durable `mud-db` SQLite backend so a clean restart restores state.
+- **Done:** New `PersistentWorld` in `crates/mud-db/src/sqlite/write_through.rs`
+  wraps an **untouched** `mud-core` `World` plus a one-to-one
+  `EntityKey`↔`EntityId` map (`by_key`/`by_id`, the latter keyed on the full
+  `EntityId` so a stale handle to a reused slot misses). `load()` rebuilds the
+  world: `SELECT entities ORDER BY entity_key` → `world.create()` per key, then
+  replays `location` and `inventory`. `apply(MutationCommand)` mirrors the
+  scheduler's semantics (`Ok(None)` for a successful non-`Create`; `Created`/
+  `Rejected`/`PreconditionFailed` events; `DbError` only for real DB failures).
+  Consistency: an in-memory arena can't join a SQL tx, so "one transaction"
+  (§2.5.3.3) = apply-in-memory-then-commit — `Create` is DB-first (key from
+  `AUTOINCREMENT`, arena handle minted after, row rolled back on arena
+  `Exhausted`); `MoveTo`/`InventoryAdd`/`InventoryRemove`/`Teardown` apply to the
+  arena first (preserving `ArenaError` `CrossTenant`/`StaleHandle`
+  classification) then write the DB. **Teardown = destruction:** deletes the
+  entity's `entities` row, and every entity-referencing FK is declared
+  `ON DELETE CASCADE` so the location/containment/items-held rows go in the same
+  statement — the destroy path needs no knowledge of which tables reference an
+  entity, and a dangling child row is unrepresentable (cache *eviction* is a
+  separate M7 concern). One asymmetry, documented: `mud-core`'s `teardown` can't
+  remove a destroyed item from a container holding it (no reverse index), so the
+  arena briefly disagrees with the DB cascade and reconciles on the next `load`.
+  Centralized `i64`↔`NonZeroU64` conversions (no `as`, no `unwrap`); `DbError`
+  variants `InvalidId`/`KeyOutOfRange` (out-of-range each direction),
+  `EntityNotMapped` (internal map miss), `DanglingReference` (corrupt load),
+  `UnsupportedEffect` (`#[non_exhaustive]` guard). `mud-core`
+  gained only two read accessors `MutationCommand::effect`/`precondition`.
+  First compile-time `query!` macros: committed `crates/mud-db/.sqlx` offline
+  cache (SQLite needs `AS "col!"` to force non-null), `cargo add mud-core` path
+  dep, and `SQLX_OFFLINE: "true"` in the CI top-level `env`.
+- **Verify:** `crates/mud-db/tests/restart.rs` (TDD) — `state_survives_a_clean_
+  restart` (write → drop `PersistentWorld` → reopen → location + inventory intact
+  via re-minted ids resolved through stable `EntityKey`s; account row persists),
+  `teardown_does_not_resurrect_on_restart`, plus the apply-path branches that the
+  restart test didn't cover: `failed_precondition_skips_effect_and_persists_
+  nothing`, `rejected_effect_persists_nothing`, `inventory_remove_persists_across_
+  restart`, `re_move_persists_only_the_last_destination`, and `teardown_of_a_
+  contained_item_leaves_no_dangling_containment` (a clean reload is itself proof
+  the cascade dropped the containment row). `cargo test --workspace` green
+  (mud-db 4 unit + 7 integ). `cargo clippy --workspace --all-targets -D warnings`
+  and `cargo fmt --all --check` clean (offline); `sqruff lint` clean against the
+  CASCADE schema change. No `unwrap`/`expect`/`panic` outside tests. No docs-site
+  change (persistence is internal — no player/builder/operator-observable
+  surface).
+- **Next:** M1-10 `mud-schema` IPC frames. The IPC boundary will carry
+  `EntityKey` (§2.3.1.4) and translate to the in-memory `EntityId` via
+  `PersistentWorld`'s maps; wiring the scheduler drain to `apply` is the M1-22
+  driver loop. Known gaps deferred to M7: LRU cache eviction + cache-miss
+  reload, background snapshot (§2.5.3.4), and rollback/crash-on DB-write failure
+  (today the transient in-process inconsistency window just returns `DbError`).

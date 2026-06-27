@@ -7,6 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Compile the `query!` macros against the committed `crates/mud-db/.sqlx`
+  # cache; CI needs no database or `sqlx-cli` (SPEC §2.5.1.2).
+  SQLX_OFFLINE: "true"
 
 jobs:
   check:

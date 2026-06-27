@@ -128,6 +128,18 @@ impl MutationCommand {
         self.precondition = Some(precondition);
         self
     }
+
+    /// The effect this command applies.
+    #[must_use]
+    pub fn effect(&self) -> Effect {
+        self.effect
+    }
+
+    /// The precondition guarding this command, if any.
+    #[must_use]
+    pub fn precondition(&self) -> Option<Precondition> {
+        self.precondition
+    }
 }
 
 /// The outcome of applying one [`MutationCommand`] during a tick.
