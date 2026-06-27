@@ -171,23 +171,33 @@ impl PersistentWorld {
             }));
         }
 
-        // INVARIANT: each helper receives the same `effect` it is routed for, so
-        // the in-memory mutation it drives through `World::apply_effect(effect)`
-        // and the durable write it builds from the destructured fields always
-        // act on the same entity/place. Routing here is the only place that pairs
-        // them; keep them consistent.
+        // `Create` is the one database-first effect: the row's `AUTOINCREMENT` key
+        // is the entity's durable identity, so the row must exist before the arena
+        // handle is minted. See `apply_create`.
+        if let Effect::Create = effect {
+            return self.apply_create(effect).await;
+        }
+
+        // Every other effect is memory-first: apply it through `mud-core`'s single
+        // source of truth, then persist only once the arena has accepted it. A
+        // rejection (stale/foreign handle, exhaustion) is observable and never
+        // reaches the database.
+        if let Some(event) = self.world.apply_effect(effect) {
+            return Ok(Some(event));
+        }
+
         match effect {
-            Effect::Create => self.apply_create(effect).await,
-            Effect::MoveTo { entity, place } => self.apply_move(effect, entity, place).await,
+            Effect::MoveTo { entity, place } => self.persist_move(entity, place).await,
             Effect::InventoryAdd { container, item } => {
-                self.apply_inventory_add(effect, container, item).await
+                self.persist_inventory_add(container, item).await
             }
             Effect::InventoryRemove { container, item } => {
-                self.apply_inventory_remove(effect, container, item).await
+                self.persist_inventory_remove(container, item).await
             }
-            Effect::Teardown { entity } => self.apply_teardown(effect, entity).await,
-            // `Effect` is `#[non_exhaustive]`; a future variant this backend has
-            // no persistence path for is rejected rather than silently dropped.
+            Effect::Teardown { entity } => self.persist_teardown(entity).await,
+            // `Create` is handled above; `Effect` is `#[non_exhaustive]`, so a
+            // future variant with no persistence path here is rejected rather than
+            // silently dropped.
             _ => Err(DbError::UnsupportedEffect),
         }
     }
@@ -235,15 +245,12 @@ impl PersistentWorld {
         }
     }
 
-    async fn apply_move(
+    /// Persists a move already applied in memory: upsert the entity's location.
+    async fn persist_move(
         &mut self,
-        effect: Effect,
         entity: EntityId,
         place: PlaceId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Some(event) = self.world.apply_effect(effect) {
-            return Ok(Some(event));
-        }
         let entity_key = entity_key_to_db(self.key_of(entity)?)?;
         let place_id = place_id_to_db(place)?;
         sqlx::query!(
@@ -257,15 +264,12 @@ impl PersistentWorld {
         Ok(None)
     }
 
-    async fn apply_inventory_add(
+    /// Persists an inventory add already applied in memory: upsert containment.
+    async fn persist_inventory_add(
         &mut self,
-        effect: Effect,
         container: EntityId,
         item: EntityId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Some(event) = self.world.apply_effect(effect) {
-            return Ok(Some(event));
-        }
         let item_key = entity_key_to_db(self.key_of(item)?)?;
         let container_key = entity_key_to_db(self.key_of(container)?)?;
         sqlx::query!(
@@ -279,15 +283,12 @@ impl PersistentWorld {
         Ok(None)
     }
 
-    async fn apply_inventory_remove(
+    /// Persists an inventory remove already applied in memory: delete containment.
+    async fn persist_inventory_remove(
         &mut self,
-        effect: Effect,
         container: EntityId,
         item: EntityId,
     ) -> Result<Option<TickEvent>, DbError> {
-        if let Some(event) = self.world.apply_effect(effect) {
-            return Ok(Some(event));
-        }
         let item_key = entity_key_to_db(self.key_of(item)?)?;
         let container_key = entity_key_to_db(self.key_of(container)?)?;
         sqlx::query!(
@@ -300,19 +301,12 @@ impl PersistentWorld {
         Ok(None)
     }
 
-    /// Teardown destroys the entity: free the handle in-memory, then delete its
+    /// Persists a teardown already applied in memory: delete the entity's
     /// `entities` row. The schema's `ON DELETE CASCADE` removes every dependent
     /// row (location, containment, items held) in the same statement, so the
     /// entity cannot resurrect on reload and the destroy path needs no knowledge
     /// of which tables reference it.
-    async fn apply_teardown(
-        &mut self,
-        effect: Effect,
-        entity: EntityId,
-    ) -> Result<Option<TickEvent>, DbError> {
-        if let Some(event) = self.world.apply_effect(effect) {
-            return Ok(Some(event));
-        }
+    async fn persist_teardown(&mut self, entity: EntityId) -> Result<Option<TickEvent>, DbError> {
         let key = self.key_of(entity)?;
         let entity_key = entity_key_to_db(key)?;
 
