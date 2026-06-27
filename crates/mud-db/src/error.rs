@@ -31,9 +31,12 @@ pub enum DbError {
     #[error("internal map inconsistency: a live entity has no persisted key")]
     EntityNotMapped,
 
-    /// A row referenced an `EntityKey` with no matching arena entity during boot
-    /// load. Foreign keys make this unreachable in a consistent database; it is
-    /// surfaced rather than panicked on so a corrupt file fails loudly.
+    /// Boot load could not resolve a persisted `EntityKey` to a live arena
+    /// entity: either a `location`/`inventory` row referenced a key with no
+    /// matching entity (foreign keys make this unreachable in a consistent
+    /// database), or minting a handle for an `entities` row failed (arena
+    /// exhaustion). Surfaced rather than panicked on so a corrupt file fails
+    /// loudly.
     #[error("dangling entity reference during load: entity_key {0}")]
     DanglingReference(i64),
 
