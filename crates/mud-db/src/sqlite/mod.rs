@@ -5,9 +5,10 @@
 //! `TenantDb` is constructed against one directory and never sees another
 //! tenant's file, so cross-tenant queries are impossible by construction.
 
-mod write_through;
+mod keys;
+mod persistent_world;
 
-pub use write_through::PersistentWorld;
+pub use persistent_world::PersistentWorld;
 
 use std::path::Path;
 

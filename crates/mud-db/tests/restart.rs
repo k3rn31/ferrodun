@@ -7,7 +7,7 @@
 use std::num::NonZeroU64;
 
 use mud_core::{Effect, EntityId, MutationCommand, PlaceId, Precondition, TenantTag, TickEvent};
-use mud_db::{PersistentWorld, TenantDb};
+use mud_db::{DbError, PersistentWorld, TenantDb};
 use tempfile::TempDir;
 
 fn tenant() -> TenantTag {
@@ -374,5 +374,29 @@ async fn teardown_of_a_contained_item_leaves_no_dangling_containment() {
     assert!(
         world.entity_id(item_key).is_none(),
         "a destroyed item must not resurrect"
+    );
+}
+
+// A corrupt file must fail the boot load loudly, not silently. SQLite permits
+// an explicit non-positive rowid, which no normal AUTOINCREMENT path produces;
+// loading it must surface DbError::InvalidId rather than minting a bogus key.
+#[tokio::test]
+async fn boot_load_rejects_a_corrupt_entity_key() {
+    let dir = TempDir::new().expect("temp dir");
+    let db = TenantDb::open(dir.path()).await.expect("open tenant db");
+
+    sqlx::query("INSERT INTO entities (entity_key) VALUES (?)")
+        .bind(-1_i64)
+        .execute(db.pool())
+        .await
+        .expect("insert a corrupt entity row");
+
+    let error = PersistentWorld::load(db, tenant())
+        .await
+        .err()
+        .expect("a corrupt key must fail the boot load");
+    assert!(
+        matches!(error, DbError::InvalidId(-1)),
+        "a non-positive persisted key must fail boot load with InvalidId, got {error:?}"
     );
 }

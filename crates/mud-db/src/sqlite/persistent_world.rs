@@ -54,7 +54,6 @@
 //! from the (correct) database, so the two reconcile on reload.
 
 use std::collections::HashMap;
-use std::num::NonZeroU64;
 
 use mud_core::{
     Effect, EntityId, EntityKey, MutationCommand, PlaceId, Precondition, TenantTag, TickEvent,
@@ -63,6 +62,9 @@ use mud_core::{
 
 use crate::error::DbError;
 use crate::sqlite::TenantDb;
+use crate::sqlite::keys::{
+    entity_key_from_db, entity_key_to_db, place_id_from_db, place_id_to_db, resolve_loaded,
+};
 
 /// A tenant's in-memory world backed by write-through persistence.
 ///
@@ -336,50 +338,4 @@ impl PersistentWorld {
     fn key_of(&self, id: EntityId) -> Result<EntityKey, DbError> {
         self.by_id.get(&id).copied().ok_or(DbError::EntityNotMapped)
     }
-}
-
-/// Resolves a persisted `entity_key` to its loaded `EntityId`, failing if no
-/// arena handle was minted for it.
-fn resolve_loaded(by_key: &HashMap<EntityKey, EntityId>, value: i64) -> Result<EntityId, DbError> {
-    let key = entity_key_from_db(value)?;
-    by_key
-        .get(&key)
-        .copied()
-        .ok_or(DbError::DanglingReference(value))
-}
-
-/// Parses a database `i64` into an [`EntityKey`], rejecting non-positive values.
-fn entity_key_from_db(value: i64) -> Result<EntityKey, DbError> {
-    nonzero_from_db(value).map(EntityKey::new)
-}
-
-/// Parses a database `i64` into a [`PlaceId`], rejecting non-positive values.
-fn place_id_from_db(value: i64) -> Result<PlaceId, DbError> {
-    nonzero_from_db(value).map(PlaceId::new)
-}
-
-/// Narrows an [`EntityKey`] to the `i64` its column stores.
-fn entity_key_to_db(key: EntityKey) -> Result<i64, DbError> {
-    nonzero_to_db(key.get())
-}
-
-/// Narrows a [`PlaceId`] to the `i64` its column stores.
-fn place_id_to_db(place: PlaceId) -> Result<i64, DbError> {
-    nonzero_to_db(place.get())
-}
-
-/// `i64` → `NonZeroU64`, rejecting negative or zero values (defensive: keys are
-/// positive `AUTOINCREMENT` rowids).
-fn nonzero_from_db(value: i64) -> Result<NonZeroU64, DbError> {
-    u64::try_from(value)
-        .ok()
-        .and_then(NonZeroU64::new)
-        .ok_or(DbError::InvalidId(value))
-}
-
-/// `NonZeroU64` → `i64`, rejecting values beyond the signed range (defensive:
-/// rowids never approach `i64::MAX`).
-fn nonzero_to_db(value: NonZeroU64) -> Result<i64, DbError> {
-    let raw = value.get();
-    i64::try_from(raw).map_err(|_| DbError::KeyOutOfRange(raw))
 }

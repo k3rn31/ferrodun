@@ -453,3 +453,21 @@ truth when this log drifts.
   driver loop. Known gaps deferred to M7: LRU cache eviction + cache-miss
   reload, background snapshot (§2.5.3.4), and rollback/crash-on DB-write failure
   (today the transient in-process inconsistency window just returns `DbError`).
+
+## 2026-06-27 — mud-db crate review & polish
+
+- **Spec:** §2.3.1.6, §2.5.3 — no behavior change; review pass on the M1-08/09 crate.
+- **Done:** Reviewed `crates/mud-db` (layout, modules, tests). Layout judged sound
+  and tests genuine (no makeshift ones). Two polish changes: (1) extracted the six
+  pure `i64`↔newtype boundary conversions out of the apply/load logic into a new
+  `src/sqlite/keys.rs` (`pub(super)`, no sqlx macros → `.sqlx` cache untouched);
+  (2) renamed `src/sqlite/write_through.rs` → `persistent_world.rs` to match the
+  `PersistentWorld` type (it owns boot load too, not only write-through).
+- **Verify:** `cargo test -p mud-db` green — added 3 unit tests in `keys.rs`
+  (InvalidId on zero/negatives, KeyOutOfRange past `i64::MAX`, valid round-trip)
+  and one integration test `boot_load_rejects_a_corrupt_entity_key` (raw-insert a
+  negative rowid → `PersistentWorld::load` fails loudly with `DbError::InvalidId`).
+  `cargo clippy -p mud-db --all-targets` clean. No docs-site change (internal).
+- **Next:** unchanged — M1-10 `mud-schema` IPC frames. Genuinely-unreachable arms
+  (`DanglingReference` under FK enforcement, `UnsupportedEffect`, arena-exhaustion
+  rollback) remain untested by design.
