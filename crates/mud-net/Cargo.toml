@@ -1,0 +1,13 @@
+[package]
+name = "mud-net"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anstyle = "1.0.14"
+anstyle-lossy = "1.1.5"
+mud-core = { version = "0.1.0", path = "../mud-core" }
+tracing = "0.1.44"
+
+[lints]
+workspace = true

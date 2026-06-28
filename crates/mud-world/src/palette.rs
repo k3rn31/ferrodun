@@ -114,7 +114,7 @@ fn attributes(node: &KdlNode) -> Attributes {
         .into_iter()
         .fold(Attributes::NONE, |acc, (key, flag)| {
             if node.get(key).and_then(KdlValue::as_bool) == Some(true) {
-                acc.insert(flag)
+                acc.union(flag)
             } else {
                 acc
             }

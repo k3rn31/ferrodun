@@ -47,7 +47,7 @@ impl FieldStyle {
         default: Style::new(),
         allow_colors: true,
         allowed_attrs: Attributes::BOLD
-            .insert(Attributes::ITALIC)
-            .insert(Attributes::UNDERLINE),
+            .union(Attributes::ITALIC)
+            .union(Attributes::UNDERLINE),
     };
 }

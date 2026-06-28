@@ -157,20 +157,23 @@ impl Compiler<'_> {
         }
         if let Some(name) = tag.strip_prefix("fg=") {
             return self
-                .color_style(name)
+                .color(tag, name)
                 .map(|color| Style::new().with_fg(color));
         }
         if let Some(name) = tag.strip_prefix("bg=") {
             return self
-                .color_style(name)
+                .color(tag, name)
                 .map(|color| Style::new().with_bg(color));
         }
         Err(MarkupDiagnostic::DisallowedTag(tag.to_owned()))
     }
 
-    fn color_style(&self, name: &str) -> Result<Color, MarkupDiagnostic> {
+    /// Resolves the color `name` of a `tag` (`fg=…`/`bg=…`) against the field
+    /// policy and palette. `tag` is the full tag so a policy rejection names what
+    /// the builder actually wrote, not a synthesized stand-in.
+    fn color(&self, tag: &str, name: &str) -> Result<Color, MarkupDiagnostic> {
         if !self.field.allow_colors {
-            return Err(MarkupDiagnostic::DisallowedTag(format!("color {name:?}")));
+            return Err(MarkupDiagnostic::DisallowedTag(tag.to_owned()));
         }
         self.palette
             .color(name)
@@ -253,6 +256,17 @@ mod tests {
     }
 
     #[test]
+    fn a_bg_tag_sets_the_background_from_a_palette_name() {
+        let result = compile_markup("{bg=blue}x{/}", &FieldStyle::DESCRIPTION, &palette());
+        assert!(result.diagnostics.is_empty());
+        let blue = palette().color("blue").expect("blue in baseline");
+        assert_eq!(
+            result.text,
+            StyledText::new().styled("x", Style::new().with_bg(blue))
+        );
+    }
+
+    #[test]
     fn an_attribute_tag_styles_its_inner_text() {
         let result = compile_markup("{b}danger{/}!", &FieldStyle::DESCRIPTION, &palette());
         assert!(result.diagnostics.is_empty());
@@ -303,6 +317,37 @@ mod tests {
             vec![MarkupDiagnostic::UnknownColor("#1a53ff".to_owned())]
         );
         assert_eq!(result.text, StyledText::from("x"));
+    }
+
+    #[test]
+    fn each_bad_tag_yields_its_own_diagnostic() {
+        let result = compile_markup(
+            "{fg=chartreuse}a{/} {fg=mauve}b{/}",
+            &FieldStyle::DESCRIPTION,
+            &palette(),
+        );
+        assert_eq!(
+            result.diagnostics,
+            vec![
+                MarkupDiagnostic::UnknownColor("chartreuse".to_owned()),
+                MarkupDiagnostic::UnknownColor("mauve".to_owned()),
+            ]
+        );
+        assert_eq!(
+            result.text,
+            StyledText::new().plain("a").plain(" ").plain("b")
+        );
+    }
+
+    #[test]
+    fn a_disallowed_color_diagnostic_names_the_actual_tag() {
+        // TITLE allows no colors; the diagnostic carries the written tag,
+        // `fg=cyan`, not a synthesized stand-in.
+        let result = compile_markup("{fg=cyan}x{/}", &FieldStyle::TITLE, &palette());
+        assert_eq!(
+            result.diagnostics,
+            vec![MarkupDiagnostic::DisallowedTag("fg=cyan".to_owned())]
+        );
     }
 
     #[test]

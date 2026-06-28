@@ -9,7 +9,7 @@
 
 /// A set of text attributes (§3.20.1.1).
 ///
-/// Flags are combined with [`insert`](Attributes::insert) and tested with
+/// Flags are combined with [`union`](Attributes::union) and tested with
 /// [`contains`](Attributes::contains); the bit order of the constants is the
 /// canonical SGR emission order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -31,7 +31,7 @@ impl Attributes {
     pub const REVERSE: Self = Self(1 << 4);
 
     /// Returns the union of `self` and `other`.
-    pub const fn insert(self, other: Self) -> Self {
+    pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
@@ -61,8 +61,8 @@ mod tests {
     #[test]
     fn insert_unions_flags_and_is_idempotent() {
         let attrs = Attributes::BOLD
-            .insert(Attributes::UNDERLINE)
-            .insert(Attributes::BOLD);
+            .union(Attributes::UNDERLINE)
+            .union(Attributes::BOLD);
         assert!(attrs.contains(Attributes::BOLD));
         assert!(attrs.contains(Attributes::UNDERLINE));
         assert!(!attrs.contains(Attributes::ITALIC));
@@ -71,9 +71,9 @@ mod tests {
 
     #[test]
     fn contains_requires_all_queried_flags() {
-        let attrs = Attributes::BOLD.insert(Attributes::ITALIC);
-        assert!(attrs.contains(Attributes::BOLD.insert(Attributes::ITALIC)));
-        assert!(!attrs.contains(Attributes::BOLD.insert(Attributes::BLINK)));
+        let attrs = Attributes::BOLD.union(Attributes::ITALIC);
+        assert!(attrs.contains(Attributes::BOLD.union(Attributes::ITALIC)));
+        assert!(!attrs.contains(Attributes::BOLD.union(Attributes::BLINK)));
     }
 
     // The five flags occupy distinct bits, so no two attributes collide.
@@ -86,7 +86,7 @@ mod tests {
             Attributes::BLINK,
             Attributes::REVERSE,
         ];
-        let union = all.iter().fold(Attributes::NONE, |acc, a| acc.insert(*a));
+        let union = all.iter().fold(Attributes::NONE, |acc, a| acc.union(*a));
         for attr in all {
             assert!(union.contains(attr));
         }

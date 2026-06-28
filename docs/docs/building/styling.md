@@ -79,3 +79,22 @@ unknown styling, and logs a warning so you can spot the typo. Malformed markup
     Markup in builder-authored files is compiled normally. Markup typed by
     *players* is a separate, locked-down path (it is escaped by default), so
     players cannot inject styling into other players' output.
+
+## How color reaches each player
+
+You author colors once, in 24-bit truecolor. The engine downsamples to whatever
+each player's client can show, **once per session at the output edge** — you
+never think about a player's terminal while building.
+
+A session renders at one of four **tiers**: `mono`, `ansi16`, `xterm256`, or
+`truecolor`. The tier is resolved like this (first match wins):
+
+1. The player's saved color preference *(a later feature)*.
+2. `NO_COLOR` set in the player's environment → **`mono`** (no color, attributes
+   like bold/underline preserved). See [no-color.org](https://no-color.org/).
+3. What the client advertises it can do *(a later feature)*.
+4. The **tenant default**, which is `ansi16` for the widest compatibility.
+
+Downsampling is deterministic: the same authored color always becomes the same
+ansi16 / xterm256 code, so output is reproducible. You can author freely in
+truecolor knowing it degrades cleanly on a 16-color client.

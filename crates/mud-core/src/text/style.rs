@@ -40,7 +40,7 @@ impl Style {
 
     /// Returns `self` with `attrs` added to its attribute set.
     pub const fn with_attrs(mut self, attrs: Attributes) -> Self {
-        self.attrs = self.attrs.insert(attrs);
+        self.attrs = self.attrs.union(attrs);
         self
     }
 
@@ -170,7 +170,7 @@ mod tests {
         assert!(
             style
                 .attrs()
-                .contains(Attributes::BOLD.insert(Attributes::ITALIC))
+                .contains(Attributes::BOLD.union(Attributes::ITALIC))
         );
     }
 
