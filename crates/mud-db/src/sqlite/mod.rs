@@ -7,8 +7,10 @@
 
 mod keys;
 mod persistent_world;
+mod place_map;
 
 pub use persistent_world::PersistentWorld;
+pub use place_map::PlaceMap;
 
 use std::path::Path;
 

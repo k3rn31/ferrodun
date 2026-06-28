@@ -660,3 +660,39 @@ truth when this log drifts.
   behavior change, so no docs-site update.
 - **Next:** Resume PLAN order (M1-12). Audit found no other boundary leaks; the
   remaining `std::io::Error` in `IpcError` is a deliberate std surface, kept.
+
+## 2026-06-28 — M1-12 `mud-world` KDL room loader + tenant config
+
+- **Spec:** §4.1 (KDL for static structure), §3.19.1 (welcome banner), §2.3.5
+  (minimal archetype), plus new §2.2.6 (durable `PlaceKey` / ephemeral `PlaceId`
+  split) and §2.5.1.5 (locations persisted by durable key) added this PR; §6 gains
+  a `kdl` row.
+- **Done:** New `crates/mud-world` (SPEC §5 crate). Loads builder content and lowers
+  it to typed values: KDL rooms via the **`kdl` crate** (`rooms.rs` →
+  `Rooms`/`Place` registry), tenant `config.toml` via `figment` (TOML +
+  `FERRODUN_` env, `config.rs`), and the welcome banner (`banner.rs`); minimal
+  `PlayerArchetype { start_room }` (`archetype.rs`); `LoadedWorld` + `load_world`
+  seam (`lib.rs`). Own `WorldError` (`thiserror`, `#[non_exhaustive]`; `kdl`/
+  `figment` errors boxed so they don't leak). **Design (with user, several
+  rounds):** rooms are keyed by a **durable slug** — builders author no numeric ids
+  — so `PlaceId` became the *ephemeral* in-process handle mirroring
+  `EntityKey`/`EntityId`. Rippled into **`mud-core`** (new `PlaceKey` slug newtype +
+  `PlaceKeyError`; optional room `title` via `with_title`/`Place::title`) and
+  **`mud-db`** (the `location` table now stores `place_key TEXT`; new public
+  `PlaceMap` injected into `PersistentWorld::load`, which translates `PlaceId`↔slug
+  on write/read; new `DbError::{UnknownPlaceKey, PlaceNotMapped}`; removed the now-
+  unused `place_id`↔`i64` helpers; regenerated `.sqlx`). One folder per tenant
+  (SPEC §5): `config.toml` carries content only (`start_room`, optional `banner`);
+  `world/` scanned recursively for `*.kdl`. `mud-world` builds no `World` and holds
+  no `world_id`/`tenant_tag` — those plus `clap` flag-overrides moved to **M1-22**
+  (recorded in PLAN). Docs: new `building/world-files.md` + nav.
+- **Verify:** `cargo test --workspace` green (mud-core 96, mud-db 11+8 incl. a new
+  removed-room-slug load-rejection test, mud-world 4 config + 8 integration over a
+  checked-in fixture incl. nested subfolder + all malformed-input error paths);
+  `cargo clippy --workspace --all-targets -D warnings`, `cargo fmt --all --check`,
+  `sqruff lint` clean; `uv run mkdocs build --strict` clean. No `unwrap`/`expect`/
+  `panic` outside tests.
+- **Next:** **M1-13** — styled text + ANSI renderer. M1-22 will consume
+  `LoadedWorld` (build the `PlaceMap` from `rooms().place_keys()`, feed
+  `PersistentWorld::load`) and owns the deferred `world_id`/`tenant_tag`/`clap`
+  decisions.

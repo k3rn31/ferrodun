@@ -1,0 +1,18 @@
+[package]
+name = "mud-world"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+figment = { version = "0.10.19", features = ["toml", "env"] }
+kdl = "6.7.1"
+mud-core = { version = "0.1.0", path = "../mud-core" }
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+figment = { version = "0.10.19", features = ["test"] }
+tempfile = "3.27.0"

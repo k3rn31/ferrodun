@@ -1,0 +1,12 @@
+room "town_square" {
+    title "Town Square"
+    description "A bustling cobbled square ringed by shuttered stalls."
+    exit "north" "market"
+    exit "down" "cellar"
+}
+
+room "market" {
+    title "Market Row"
+    description "Stalls crowd the narrow lane, awnings snapping in the wind."
+    exit "south" "town_square"
+}

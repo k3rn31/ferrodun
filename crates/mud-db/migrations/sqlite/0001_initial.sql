@@ -36,13 +36,15 @@ CREATE TABLE puppets (
 );
 
 -- Where an entity is. One row per entity (PK) = at most one location.
--- `place_id` is a loose reference: the Place graph is in-memory (§2.2), there
--- is no places table in M1.
+-- `place_key` is the room's durable slug (§2.2, the `PlaceKey`): rooms are
+-- authored content held in memory, not rows, so this is a soft reference with
+-- no foreign key. Storing the durable slug (not the ephemeral in-memory
+-- `PlaceId`) is what lets a location survive a restart, mirroring EntityKey.
 CREATE TABLE location (
     entity_key INTEGER PRIMARY KEY REFERENCES entities (
         entity_key
     ) ON DELETE CASCADE,
-    place_id INTEGER NOT NULL
+    place_key TEXT NOT NULL
 );
 
 -- Containment. Making `item_key` the primary key encodes the invariant that an

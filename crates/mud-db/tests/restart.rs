@@ -6,8 +6,10 @@
 
 use std::num::NonZeroU64;
 
-use mud_core::{Effect, EntityId, MutationCommand, PlaceId, Precondition, TenantTag, TickEvent};
-use mud_db::{PersistentWorld, TenantDb};
+use mud_core::{
+    Effect, EntityId, MutationCommand, PlaceId, PlaceKey, Precondition, TenantTag, TickEvent,
+};
+use mud_db::{DbError, PersistentWorld, PlaceMap, TenantDb};
 use tempfile::TempDir;
 
 fn tenant() -> TenantTag {
@@ -22,10 +24,25 @@ const HALL: u64 = 10;
 const STUDY: u64 = 11;
 const LIBRARY: u64 = 12;
 
+/// The fixture's slug↔PlaceId map, as a loaded world would supply. The numeric
+/// ids are arbitrary ephemeral handles; the slugs are the durable identities
+/// persisted in `location`.
+fn places() -> PlaceMap {
+    PlaceMap::from_pairs([
+        (place(HALL), slug("hall")),
+        (place(STUDY), slug("study")),
+        (place(LIBRARY), slug("library")),
+    ])
+}
+
+fn slug(value: &str) -> PlaceKey {
+    PlaceKey::parse(value).expect("test slug must be valid")
+}
+
 /// Opens the tenant database under `dir` and boot-loads its world.
 async fn open_world(dir: &TempDir) -> PersistentWorld {
     let db = TenantDb::open(dir.path()).await.expect("open tenant db");
-    PersistentWorld::load(db, tenant())
+    PersistentWorld::load(db, tenant(), places())
         .await
         .expect("boot load")
 }
@@ -52,7 +69,7 @@ async fn state_survives_a_clean_restart() {
     // --- First boot: create entities, place one, fill a container. ---
     let (mover_key, container_key, item_key) = {
         let db = TenantDb::open(dir.path()).await.expect("open tenant db");
-        let mut world = PersistentWorld::load(db, tenant())
+        let mut world = PersistentWorld::load(db, tenant(), places())
             .await
             .expect("boot load on empty world");
 
@@ -96,7 +113,7 @@ async fn state_survives_a_clean_restart() {
 
     // --- Second boot: reload from disk and assert state intact. ---
     let db = TenantDb::open(dir.path()).await.expect("reopen tenant db");
-    let world = PersistentWorld::load(db, tenant())
+    let world = PersistentWorld::load(db, tenant(), places())
         .await
         .expect("boot load on a populated world");
 
@@ -124,7 +141,7 @@ async fn teardown_does_not_resurrect_on_restart() {
 
     let destroyed_key = {
         let db = TenantDb::open(dir.path()).await.expect("open tenant db");
-        let mut world = PersistentWorld::load(db, tenant())
+        let mut world = PersistentWorld::load(db, tenant(), places())
             .await
             .expect("boot load");
 
@@ -138,7 +155,7 @@ async fn teardown_does_not_resurrect_on_restart() {
     };
 
     let db = TenantDb::open(dir.path()).await.expect("reopen tenant db");
-    let world = PersistentWorld::load(db, tenant())
+    let world = PersistentWorld::load(db, tenant(), places())
         .await
         .expect("boot load after teardown");
 
@@ -358,5 +375,37 @@ async fn teardown_of_a_contained_item_leaves_no_dangling_containment() {
     assert!(
         world.entity_id(item_key).is_none(),
         "a destroyed item must not resurrect"
+    );
+}
+
+// A location is persisted by its durable slug. If the room is removed from the
+// world before the next boot, the slug names nothing — content drift that must
+// surface loudly as `UnknownPlaceKey`, not silently relocate the entity.
+#[tokio::test]
+async fn boot_load_rejects_a_location_in_a_removed_room() {
+    let dir = TempDir::new().expect("temp dir");
+
+    {
+        let mut world = open_world(&dir).await;
+        let entity = create_entity(&mut world).await;
+        world
+            .apply(MutationCommand::new(Effect::MoveTo {
+                entity,
+                place: place(HALL),
+            }))
+            .await
+            .expect("move applies");
+    }
+
+    // Reload with a world that no longer defines the "hall" slug.
+    let db = TenantDb::open(dir.path()).await.expect("reopen tenant db");
+    let drifted = PlaceMap::from_pairs([(place(STUDY), slug("study"))]);
+    let error = PersistentWorld::load(db, tenant(), drifted)
+        .await
+        .err()
+        .expect("a location in a removed room must fail boot load");
+    assert!(
+        matches!(error, DbError::UnknownPlaceKey(ref s) if s == "hall"),
+        "a removed room's slug must surface as UnknownPlaceKey, got {error:?}"
     );
 }

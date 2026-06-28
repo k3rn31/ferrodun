@@ -47,6 +47,8 @@ extra:
 
 nav:
   - Home: index.md
+  - Building:
+      - World files: building/world-files.md
 
 plugins:
   - search

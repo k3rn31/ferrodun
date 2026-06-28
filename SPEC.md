@@ -354,6 +354,20 @@ able to exit into a room.
 object). Per-tick code on hot paths MUST NOT pay a virtual-call cost
 for `Place` dispatch.
 
+2.2.6 A `Place` MUST have two identities with distinct lifetimes,
+mirroring the entity split (§2.3.1.4):
+- A **durable** `PlaceKey` — the human-authored slug that names the
+  Place in world files. It is the only Place reference that may be
+  persisted (e.g. an entity's stored location) or cross a restart, so
+  it MUST be stable across the add/remove/rename authoring lifecycle.
+- An **ephemeral** `PlaceId` — the in-process handle used on hot
+  paths, minted when the world is loaded and valid only for that
+  process lifetime. `PlaceId` values MUST NOT be persisted; loading a
+  world MAY mint different `PlaceId`s for the same `PlaceKey`.
+
+A Room's title MAY be authored; it is OPTIONAL and distinct from the
+viewer-conditional description (§2.2.2).
+
 Type sketch (illustrative):
 
 ```rust
@@ -710,6 +724,14 @@ tenant column. Specifically:
 The tenant tag in `EntityId` (§2.3.1.1) is therefore a
 **defense-in-depth** check on top of physical DB isolation, not the
 sole tenant boundary.
+
+2.5.1.5 **Place references are persisted by durable key.** A stored
+location (or any persisted Place reference) MUST record the Place's
+durable `PlaceKey` (§2.2.6), never its ephemeral `PlaceId`. Rooms are
+authored content held in memory, not rows, so a persisted location is
+a soft reference resolved against the loaded world at boot; a slug
+that names no loaded room MUST surface as a structured error, not a
+silent relocation.
 
 #### 2.5.2 Vector storage
 
@@ -2302,6 +2324,7 @@ unless this SPEC or §9 marks it as deferred.
 | Schema | postcard for IPC, JSON+CBOR for wire | small, fast, versioned |
 | Scripting | Lua 5.4 via mlua; WASM via wasmtime for polyglot/perf-critical plugins | MUD lingua franca; mature tooling; one dialect to learn |
 | Parser | chumsky | locks DSL, command parser |
+| KDL parser | kdl (kdl-rs) | reference KDL v2 parser for world files |
 | Web | Axum + utoipa | OpenAPI for free |
 | Admin/Webclient | Svelte + TypeScript (single stack for both SPAs) | one toolchain, shared schema-ts types and UI primitives |
 | Observability | tracing + tracing-subscriber + opentelemetry; metrics + prometheus exporter | standard stack |

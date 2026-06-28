@@ -1,0 +1,6 @@
+// A room in a nested subfolder, authored without a title, with an exit that
+// targets a room defined in a different file.
+room "cellar" {
+    description "A damp stone cellar smelling of old casks."
+    exit "up" "town_square"
+}
