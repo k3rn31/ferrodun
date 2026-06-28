@@ -755,3 +755,26 @@ truth when this log drifts.
   outside tests (the impossible default-slug parse is `?`-propagated with an `INVARIANT`).
 - **Next:** M1-13 — styled text + ANSI renderer. Region *behaviours* (PvP, token budget,
   ambient/spawn, tile grid) attach at their milestones (M4-B/M5-F/M6-C).
+
+## 2026-06-28 — M1-12c: regions mandatory (drop the implicit default)
+
+- **Spec:** §2.2.7.3 — every `Place` MUST belong to a declared Region; no implicit fallback.
+- **Done:** Removed the implicit per-tenant **default** region. `RegionBinder::region_for`
+  now returns `Option<RegionId>`; `load_rooms` rejects a room covered by no manifest with the
+  new `WorldError::RoomOutsideRegion`. A `region.kdl` at the `world/` root is rejected with the
+  new `WorldError::RegionManifestAtWorldRoot` (root slot reserved for a future world-wide
+  defaults manifest). Dropped the reserved `default` slug and `WorldError::ReservedRegionSlug`.
+  `Regions` gained `is_empty()` (a roomless world now has zero regions). Fixture migrated:
+  `world/town.kdl` → `world/town/{region.kdl,town.kdl}` (region `town`). Rewrote the spec
+  authoring paragraph; added `PLAN.md` M1-12c + a deferred world-defaults entry. The integration
+  `load()` room-error cases now nest rooms under a `ZONE` manifest; the `rooms.rs` `load()`
+  helper wraps rooms in a `zone` region. Post-review: split the builder docs into
+  `building/{world-files,rooms,regions}.md` (world-files is now the overview; rooms and regions
+  each got their own page, wired into `mkdocs.yml` nav); corrected the `Regions`/`is_empty` doc
+  comments (region count tracks authored manifests, not rooms — a region folder may hold no
+  rooms) and pinned that with a `roomless region loads` unit test.
+- **Verify:** `cargo test -p mud-world` green (31 unit + 21 integration, incl. uncovered-room,
+  root-manifest, folder-binding, empty-world-has-no-regions, and roomless-region); `cargo clippy
+  --workspace --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs build --strict` clean.
+- **Next:** M1-13 — styled text + ANSI renderer. World-wide Region defaults manifest lands
+  with the first tenant-defaultable region property.

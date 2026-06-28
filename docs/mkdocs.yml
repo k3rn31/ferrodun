@@ -49,6 +49,8 @@ nav:
   - Home: index.md
   - Building:
       - World files: building/world-files.md
+      - Rooms: building/rooms.md
+      - Regions: building/regions.md
 
 plugins:
   - search

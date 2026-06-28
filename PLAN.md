@@ -392,6 +392,26 @@ spine.
     re-derived authored content, an entity's stored location stays a `PlaceKey`,
     so **no `mud-db` change**.
 
+- **M1-12c — Regions mandatory (drop the implicit default).** Reverses M1-12b's
+  implicit per-tenant default Region: every `Place` MUST be covered by an
+  authored `region.kdl` (§2.2.7.3), so a room under no manifest is rejected, and
+  a `region.kdl` at the `world/` **root** is rejected (reserved for the future
+  world defaults manifest, see below). Region config is coming (name, PvP,
+  budget, ambient/spawn); a configurable region needs a manifest, so the
+  unconfigurable default is removed rather than special-cased (§2.2.7 forbids
+  special-casing).
+  - *Spec:* §2.2.7.3. *Verify:* a room outside every region yields
+    `RoomOutsideRegion`; a root `region.kdl` yields `RegionManifestAtWorldRoot`;
+    a single-region world loads when its one region is a subfolder; an empty
+    world loads with zero regions.
+  - *Out of scope:* the world-root **defaults** manifest itself (deferred).
+
+- **M-later — World-wide Region defaults manifest.** A `region.kdl` at the
+  `world/` root holds default Region properties (everything *except* the region
+  name) that each per-region manifest inherits unless it overrides them. Lands
+  with the first region config properties that have a sensible tenant-wide
+  default; until then the root slot stays reserved (rejected) by M1-12c.
+
 ### Styled output and engine strings (minimal seams)
 
 - **M1-13 — Styled text + ANSI renderer (minimal).** Transport-neutral
