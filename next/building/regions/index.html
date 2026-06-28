@@ -10,13 +10,11 @@
       
       
       
-        <link rel="canonical" href="https://k3rn31.github.io/ferrodun/next/building/world-files/">
+        <link rel="canonical" href="https://k3rn31.github.io/ferrodun/next/building/regions/">
       
       
-        <link rel="prev" href="../..">
+        <link rel="prev" href="../rooms/">
       
-      
-        <link rel="next" href="../rooms/">
       
       
         
@@ -27,7 +25,7 @@
     
     
       
-        <title>World files - Ferrodun</title>
+        <title>Regions - Ferrodun</title>
       
     
     
@@ -78,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#world-files" class="md-skip">
+        <a href="#regions-regionkdl" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              World files
+              Regions
             
           </span>
         </div>
@@ -347,37 +345,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    World files
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../world-files/" class="md-nav__link">
         
   
   
@@ -393,59 +364,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#tenant-configuration-configtoml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tenant configuration (config.toml)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#welcome-banner-welcomekdl" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Welcome banner (welcome.kdl)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Errors
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -483,10 +401,19 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../regions/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -502,6 +429,7 @@
   
 
       </a>
+      
     </li>
   
 
@@ -534,47 +462,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#tenant-configuration-configtoml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tenant configuration (config.toml)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#welcome-banner-welcomekdl" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Welcome banner (welcome.kdl)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Errors
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -593,51 +480,44 @@
   
 
 
-<h1 id="world-files">World files<a class="headerlink" href="#world-files" title="Permanent link">&para;</a></h1>
-<p>A Ferrodun game lives in a <strong>tenant folder</strong>: a directory holding the tenant's
-configuration, its rooms, and its welcome banner. Builders author all of this as
-plain text — <a href="https://kdl.dev">KDL</a> for structure and a small TOML config.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>my-game/
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  config.toml        # tenant configuration
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  welcome.kdl        # the pre-login welcome banner
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  world/             # rooms, scanned recursively
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    town/
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>      region.kdl     # declares the region the town&#39;s rooms belong to
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>      town.kdl
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    keep/
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>      region.kdl     # declares the region the keep&#39;s rooms belong to
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>      cellar.kdl
+<h1 id="regions-regionkdl">Regions (<code>region.kdl</code>)<a class="headerlink" href="#regions-regionkdl" title="Permanent link">&para;</a></h1>
+<p>A <strong>region</strong> is a named group of places — a town, a keep, a stretch of
+wilderness. Every room belongs to exactly one region, and <strong>regions are
+mandatory</strong>: you declare one by dropping a <code>region.kdl</code> file at the root of a
+subfolder of <code>world/</code>, and every room anywhere under that subfolder belongs to
+it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>// world/keep/region.kdl
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>region &quot;old_keep&quot; {
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    name &quot;The Old Keep&quot;   // optional display name
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>}
 </code></pre></div>
-<p>The two building blocks you author live on their own pages:</p>
+<p>With this file in place, <code>world/keep/cellar.kdl</code> — and any other <a href="../rooms/">room</a>
+under <code>world/keep/</code> — belongs to the <code>old_keep</code> region. Even a single-region game
+needs one region folder; group your rooms under it (<code>world/town/</code>, etc.).</p>
+<p>A few rules keep regions predictable:</p>
 <ul>
-<li><strong><a href="../rooms/">Rooms</a></strong> — the places players move through, written as <code>world/*.kdl</code>.</li>
-<li><strong><a href="../regions/">Regions</a></strong> — the named groups every room belongs to, declared by
-  a <code>region.kdl</code>. Every room lives inside a <strong>region folder</strong>; there are no room
-  files directly at the root of <code>world/</code>.</li>
+<li><strong>Every room must live in a region.</strong> A room not covered by any <code>region.kdl</code>
+  is rejected at load — there is no implicit fallback region. In particular, you
+  cannot place room files directly at the root of <code>world/</code>; put them inside a
+  region subfolder.</li>
+<li><strong>The slug is the identity, not the folder name.</strong> A region is named by the
+  slug inside its <code>region.kdl</code> (<code>old_keep</code>), never by the folder it lives in. You
+  can rename or move the folder freely without changing the region.</li>
+<li><strong>One region per folder subtree.</strong> All the rooms under a region's folder share
+  that region. Regions cannot nest: putting a <code>region.kdl</code> inside another
+  region's folder is rejected.</li>
+<li><strong>Slugs are unique.</strong> Two regions cannot share a slug.</li>
+<li><strong>The <code>world/</code> root is reserved.</strong> A <code>region.kdl</code> placed directly at the root
+  of <code>world/</code> is rejected; that slot is held for future world-wide region
+  defaults.</li>
 </ul>
-<h2 id="tenant-configuration-configtoml">Tenant configuration (<code>config.toml</code>)<a class="headerlink" href="#tenant-configuration-configtoml" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">start_room</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;town_square&quot;</span><span class="w">  </span><span class="c1"># required: the slug of the room new players start in</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">banner</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;welcome.kdl&quot;</span><span class="w">  </span><span class="c1"># optional: banner file, relative to the tenant folder</span>
-</code></pre></div>
-<p>Any value may be overridden by an environment variable prefixed with
-<code>FERRODUN_</code>. For example, <code>FERRODUN_START_ROOM=secret_lair</code> overrides
-<code>start_room</code> without editing the file.</p>
-<h2 id="welcome-banner-welcomekdl">Welcome banner (<code>welcome.kdl</code>)<a class="headerlink" href="#welcome-banner-welcomekdl" title="Permanent link">&para;</a></h2>
-<p>The banner is shown to a connection before login. It is a single KDL node with one
-string:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>banner &quot;Welcome to Ferrodun.\nType `register` or `login`; `help` for commands.&quot;
-</code></pre></div>
-<h2 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h2>
-<p>Loading is strict, so mistakes surface at load with a clear, specific error
-naming the offending file or field rather than failing silently later.</p>
-<p>For <strong>rooms</strong>: a malformed KDL file, a duplicate slug, an exit to an unknown room,
-an unknown direction, an invalid slug, a room without a description, an
-unrecognized node or field (such as a misspelled <code>descriptipn</code>), a <code>banner</code> path
-that points outside the tenant folder, or a <code>start_room</code> that names no room all
-stop the load.</p>
-<p>For <strong>regions</strong>: a room covered by no <code>region.kdl</code>, a <code>region.kdl</code> at the <code>world/</code>
-root, a duplicate region slug, a nested <code>region.kdl</code>, or a manifest that does not
-declare exactly one region each stop the load.</p>
+<div class="admonition note">
+<p class="admonition-title">Who may edit a region</p>
+<p>Ferrodun does not manage builder permissions itself. Because each region is a
+self-contained folder, "who may edit this region" is simply a question of who
+can write to that directory — handle it with your filesystem or version
+control (for example, a <code>CODEOWNERS</code> entry per region folder).</p>
+</div>
 
 
 
