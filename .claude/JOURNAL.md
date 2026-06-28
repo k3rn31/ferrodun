@@ -696,3 +696,20 @@ truth when this log drifts.
   `LoadedWorld` (build the `PlaceMap` from `rooms().place_keys()`, feed
   `PersistentWorld::load`) and owns the deferred `world_id`/`tenant_tag`/`clap`
   decisions.
+
+## 2026-06-28 — mud-world unit test coverage
+
+- **Spec:** §4.1, §5, §3.19.1 — loader behavior for tenant config, rooms, and banner.
+- **Done:** Added direct unit tests to `mud-world` modules that had none. `archetype.rs`:
+  `PlayerArchetype` construction/accessor + equality. `banner.rs`: `load_banner` happy
+  path, escaped newlines, and every error branch (io, malformed KDL, missing/non-string/
+  absent `banner` node). `rooms.rs`: pure helpers (`parse_direction` all six + unknown,
+  `direction_name` round-trip, `advance` increment + MAX saturation, `arg` string/missing/
+  non-string), `Rooms` accessors (`get`/`id_of`/`iter`/`len`/`is_empty`/`place_keys`),
+  empty world dir, non-`.kdl` files ignored, and missing-field paths (room slug, exit
+  direction, exit target). `tests/load_world.rs`: added the `InvalidSlug`-for-`start_room`
+  branch in `load_world` (distinct from `UnknownStartRoom`).
+- **Verify:** `cargo test -p mud-world` green (29 unit + 12 integration); `cargo clippy
+  -p mud-world --all-targets` clean. No `unwrap`/`panic` outside tests; `expect` only in
+  test helpers under the existing `allow-expect-in-tests`.
+- **Next:** unchanged — M1-13 (styled text + ANSI renderer).

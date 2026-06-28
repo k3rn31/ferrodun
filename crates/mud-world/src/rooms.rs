@@ -300,3 +300,186 @@ fn collect_kdl_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), WorldErro
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    /// Writes `(relative_path, contents)` files into a fresh world directory and
+    /// loads the rooms from it.
+    fn load(files: &[(&str, &str)]) -> Result<Rooms, WorldError> {
+        let dir = TempDir::new().expect("temp dir");
+        for (relative, contents) in files {
+            let path = dir.path().join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent dirs");
+            }
+            fs::write(&path, contents).expect("write room file");
+        }
+        load_rooms(dir.path())
+    }
+
+    fn slug(value: &str) -> PlaceKey {
+        PlaceKey::parse(value).expect("valid test slug")
+    }
+
+    fn first_node(text: &str) -> KdlNode {
+        let document = KdlDocument::parse(text).expect("valid kdl");
+        document.nodes().first().expect("at least one node").clone()
+    }
+
+    #[test]
+    fn parse_direction_maps_every_authored_word() {
+        assert_eq!(parse_direction("north").expect("north"), Direction::North);
+        assert_eq!(parse_direction("east").expect("east"), Direction::East);
+        assert_eq!(parse_direction("south").expect("south"), Direction::South);
+        assert_eq!(parse_direction("west").expect("west"), Direction::West);
+        assert_eq!(parse_direction("up").expect("up"), Direction::Up);
+        assert_eq!(parse_direction("down").expect("down"), Direction::Down);
+    }
+
+    #[test]
+    fn parse_direction_rejects_an_unknown_word() {
+        let error = parse_direction("sideways").expect_err("unknown direction");
+        assert!(
+            matches!(error, WorldError::UnknownDirection { ref value } if value == "sideways"),
+            "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn direction_name_round_trips_through_parse_direction() {
+        for direction in [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+            Direction::Up,
+            Direction::Down,
+        ] {
+            let name = direction_name(direction);
+            assert_eq!(
+                parse_direction(name).expect("round-trips"),
+                direction,
+                "{name} must parse back to its direction"
+            );
+        }
+    }
+
+    #[test]
+    fn advance_increments_the_counter() {
+        assert_eq!(advance(NonZeroU64::MIN).get(), 2);
+    }
+
+    #[test]
+    fn advance_saturates_at_max_rather_than_wrapping() {
+        // The overflow branch is unreachable in practice; assert it stays valid.
+        assert_eq!(advance(NonZeroU64::MAX), NonZeroU64::MAX);
+    }
+
+    #[test]
+    fn arg_reads_a_positional_string() {
+        let node = first_node("room \"town\" \"extra\"");
+        assert_eq!(arg(&node, 0), Some("town"));
+        assert_eq!(arg(&node, 1), Some("extra"));
+    }
+
+    #[test]
+    fn arg_is_none_past_the_last_argument() {
+        let node = first_node("room \"town\"");
+        assert_eq!(arg(&node, 5), None);
+    }
+
+    #[test]
+    fn arg_is_none_for_a_non_string_value() {
+        let node = first_node("room 42");
+        assert_eq!(arg(&node, 0), None);
+    }
+
+    #[test]
+    fn an_empty_world_directory_loads_no_rooms() {
+        let rooms = load(&[]).expect("empty world loads");
+        assert_eq!(rooms.len(), 0);
+        assert!(rooms.is_empty());
+        assert_eq!(rooms.iter().count(), 0);
+    }
+
+    #[test]
+    fn accessors_expose_loaded_rooms_and_their_slug_mapping() {
+        let rooms = load(&[(
+            "a.kdl",
+            "room \"town\" { description \"x\" }\nroom \"market\" { description \"y\" }",
+        )])
+        .expect("rooms load");
+
+        assert_eq!(rooms.len(), 2);
+        assert!(!rooms.is_empty());
+
+        let town = rooms.id_of(&slug("town")).expect("town present");
+        assert!(rooms.get(town).is_some());
+        assert_eq!(rooms.id_of(&slug("absent")), None);
+        assert_eq!(rooms.iter().count(), 2);
+
+        // place_keys round-trips every handle back to the slug it was minted for.
+        let pairs: HashMap<PlaceId, PlaceKey> = rooms.place_keys().collect();
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs.get(&town), Some(&slug("town")));
+    }
+
+    #[test]
+    fn non_kdl_files_are_ignored() {
+        let rooms = load(&[
+            ("a.kdl", "room \"town\" { description \"x\" }"),
+            ("notes.txt", "this is not a room file"),
+            ("README.md", "# world"),
+        ])
+        .expect("only kdl files are parsed");
+        assert_eq!(rooms.len(), 1);
+    }
+
+    #[test]
+    fn a_room_without_a_slug_is_a_missing_field() {
+        let error =
+            load(&[("a.kdl", "room { description \"x\" }")]).expect_err("a slugless room fails");
+        assert!(
+            matches!(error, WorldError::MissingField { field: "slug", .. }),
+            "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_exit_without_a_direction_is_a_missing_field() {
+        let error = load(&[("a.kdl", "room \"a\" { description \"x\"; exit }")])
+            .expect_err("an exit without a direction fails");
+        assert!(
+            matches!(
+                error,
+                WorldError::MissingField {
+                    field: "direction",
+                    ..
+                }
+            ),
+            "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn an_exit_without_a_target_is_a_missing_field() {
+        let error = load(&[("a.kdl", "room \"a\" { description \"x\"; exit \"north\" }")])
+            .expect_err("an exit without a target fails");
+        assert!(
+            matches!(
+                error,
+                WorldError::MissingField {
+                    field: "target",
+                    ..
+                }
+            ),
+            "got {error:?}"
+        );
+    }
+}
