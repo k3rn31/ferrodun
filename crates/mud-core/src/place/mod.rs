@@ -9,12 +9,13 @@
 //! A place carries two identities with distinct lifetimes (§2.2.6), mirroring
 //! entities: [`PlaceId`] is the ephemeral in-process handle ([`id`]); [`PlaceKey`]
 //! is the durable authored slug ([`key`]). The [`Place`] enum and its room content
-//! live in [`room`].
+//! live in [`room`]. The region a place belongs to ([`RegionId`](crate::RegionId))
+//! lives in its own [`region`](crate::region) module, since a region is not a place.
 
 mod id;
 mod key;
 mod room;
 
-pub use id::{PlaceId, RegionId};
+pub use id::PlaceId;
 pub use key::{PlaceKey, PlaceKeyError};
 pub use room::{Description, Direction, Place, RoomData, Title};

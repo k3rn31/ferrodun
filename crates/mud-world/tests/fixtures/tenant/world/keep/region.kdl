@@ -1,0 +1,6 @@
+// A region manifest (§2.2.7.3): every room under `world/keep/` — here, the
+// cellar — belongs to this region. The folder name is cosmetic; this slug is the
+// durable identity.
+region "old_keep" {
+    name "The Old Keep"
+}

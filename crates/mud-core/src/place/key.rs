@@ -4,9 +4,11 @@
 //! is the ephemeral in-process handle; `PlaceKey` is the durable identity — the
 //! human-authored slug that names a place in world files and is persisted for an
 //! entity's location, so it must survive a restart and the add/remove/rename
-//! authoring lifecycle.
+//! authoring lifecycle. The region analogue is [`RegionKey`](crate::RegionKey).
 
 use std::fmt;
+
+use crate::slug::first_invalid_slug_char;
 
 /// The **durable** identity of a [`Place`](super::Place): an authored slug
 /// (§2.2.6).
@@ -35,10 +37,7 @@ impl PlaceKey {
         if value.is_empty() {
             return Err(PlaceKeyError::Empty);
         }
-        if let Some(bad) = value
-            .chars()
-            .find(|c| !matches!(c, 'a'..='z' | '0'..='9' | '_' | '-'))
-        {
+        if let Some(bad) = first_invalid_slug_char(value) {
             return Err(PlaceKeyError::InvalidCharacter(bad));
         }
         Ok(Self(value.to_owned()))

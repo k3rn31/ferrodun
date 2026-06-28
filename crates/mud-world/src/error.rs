@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use mud_core::PlaceKeyError;
+use mud_core::{PlaceKeyError, RegionKeyError};
 
 /// A failure while loading a tenant's configuration or world files.
 ///
@@ -100,5 +100,48 @@ pub enum WorldError {
         field: &'static str,
         /// The offending path as authored.
         path: std::path::PathBuf,
+    },
+
+    /// A region manifest's slug is not a valid [`RegionKey`](mud_core::RegionKey).
+    #[error("invalid region slug {value:?}: {source}")]
+    InvalidRegionSlug {
+        /// The offending slug text.
+        value: String,
+        /// Why it is not a valid slug.
+        #[source]
+        source: RegionKeyError,
+    },
+
+    /// Two region manifests authored the same slug (§2.2.7.1: a `RegionKey` is
+    /// unique within a tenant).
+    #[error("duplicate region slug: {slug}")]
+    DuplicateRegionSlug {
+        /// The slug that appeared on more than one manifest.
+        slug: String,
+    },
+
+    /// A region manifest authored the reserved default-region slug, which names
+    /// the implicit per-tenant region (§2.2.7.3) and may not be declared.
+    #[error("region slug {slug:?} is reserved for the implicit default region")]
+    ReservedRegionSlug {
+        /// The reserved slug a manifest tried to author.
+        slug: String,
+    },
+
+    /// A region manifest sits under another region's folder. Regions are flat in
+    /// 1.0 (§2.2.7.3), so nesting is rejected at load.
+    #[error("nested region manifest is not allowed in 1.0: {path}")]
+    NestedRegion {
+        /// The offending manifest path.
+        path: PathBuf,
+    },
+
+    /// A `region.kdl` did not declare exactly one region.
+    #[error("invalid region manifest {path}: {reason}")]
+    InvalidRegionManifest {
+        /// The offending manifest path.
+        path: PathBuf,
+        /// Why the manifest is malformed.
+        reason: &'static str,
     },
 }
