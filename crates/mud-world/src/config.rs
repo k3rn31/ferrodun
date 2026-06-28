@@ -25,6 +25,8 @@ const WORLD_SUBDIR: &str = "world";
 pub struct TenantConfig {
     #[serde(default = "default_banner")]
     banner: PathBuf,
+    #[serde(default = "default_palette")]
+    palette: PathBuf,
     start_room: String,
     /// The tenant directory, supplied by [`load`](TenantConfig::load) rather than
     /// read from the file.
@@ -35,6 +37,11 @@ pub struct TenantConfig {
 /// The default welcome-banner file name, relative to the tenant directory.
 fn default_banner() -> PathBuf {
     PathBuf::from("welcome.kdl")
+}
+
+/// The default palette file name, relative to the tenant directory (§3.20.3.1).
+fn default_palette() -> PathBuf {
+    PathBuf::from("palette.kdl")
 }
 
 /// Rejects a configured path that would leave the tenant directory once joined to
@@ -71,6 +78,7 @@ impl TenantConfig {
             .extract()
             .map_err(|error| WorldError::Config(Box::new(error)))?;
         ensure_contained("banner", &config.banner)?;
+        ensure_contained("palette", &config.palette)?;
         config.tenant_dir = tenant_dir.to_path_buf();
         Ok(config)
     }
@@ -85,6 +93,13 @@ impl TenantConfig {
     #[must_use]
     pub fn banner_path(&self) -> PathBuf {
         self.tenant_dir.join(&self.banner)
+    }
+
+    /// The absolute path to the tenant palette KDL file (which may be absent,
+    /// §3.20.3.1).
+    #[must_use]
+    pub fn palette_path(&self) -> PathBuf {
+        self.tenant_dir.join(&self.palette)
     }
 
     /// The absolute path to the directory holding the KDL room files.

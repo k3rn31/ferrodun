@@ -20,7 +20,10 @@ use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
-use mud_core::{Description, Direction, Place, PlaceId, PlaceKey, RegionId, RoomData, Title};
+use mud_core::{
+    Description, Direction, FieldStyle, Palette, Place, PlaceId, PlaceKey, RegionId, RoomData,
+    StyledText, Title, compile_markup,
+};
 
 use crate::error::WorldError;
 use crate::regions::{REGION_MANIFEST, RegionBinder, Regions};
@@ -92,7 +95,7 @@ struct RawRoom {
 /// Returns [`WorldError`] if a file cannot be read or parsed, a slug is invalid
 /// or duplicated, an exit names an unknown direction or target room, a room omits
 /// its description, or a region manifest is malformed (§2.2.7).
-pub fn load_rooms(world_dir: &Path) -> Result<(Rooms, Regions), WorldError> {
+pub fn load_rooms(world_dir: &Path, palette: &Palette) -> Result<(Rooms, Regions), WorldError> {
     let mut files = Vec::new();
     collect_kdl_files(world_dir, &mut files)?;
 
@@ -131,7 +134,7 @@ pub fn load_rooms(world_dir: &Path) -> Result<(Rooms, Regions), WorldError> {
                     node: node.name().value().to_owned(),
                 });
             }
-            let room = parse_room(node, PlaceId::new(next_id), region)?;
+            let room = parse_room(node, PlaceId::new(next_id), region, palette)?;
             if slug_to_id.contains_key(&room.slug) {
                 return Err(WorldError::DuplicateSlug {
                     slug: room.slug.to_string(),
@@ -155,9 +158,14 @@ pub fn load_rooms(world_dir: &Path) -> Result<(Rooms, Regions), WorldError> {
     ))
 }
 
-/// Parses one `room` node into a [`RawRoom`], assigning it `id` and binding it to
-/// `region`.
-fn parse_room(node: &KdlNode, id: PlaceId, region: RegionId) -> Result<RawRoom, WorldError> {
+/// Parses one `room` node into a [`RawRoom`], assigning it `id`, binding it to
+/// `region`, and compiling its styled fields through `palette` (§3.20.2).
+fn parse_room(
+    node: &KdlNode,
+    id: PlaceId,
+    region: RegionId,
+    palette: &Palette,
+) -> Result<RawRoom, WorldError> {
     let slug_text = arg(node, 0).ok_or(WorldError::MissingField {
         node: "room".to_owned(),
         field: "slug",
@@ -174,8 +182,28 @@ fn parse_room(node: &KdlNode, id: PlaceId, region: RegionId) -> Result<RawRoom, 
 
     for child in children.into_iter().flat_map(KdlDocument::nodes) {
         match child.name().value() {
-            "title" => title = arg(child, 0).map(Title::new),
-            "description" => description = arg(child, 0).map(Description::new),
+            "title" => {
+                title = arg(child, 0).map(|raw| {
+                    Title::from(compile_field(
+                        raw,
+                        &FieldStyle::TITLE,
+                        palette,
+                        slug_text,
+                        "title",
+                    ))
+                });
+            }
+            "description" => {
+                description = arg(child, 0).map(|raw| {
+                    Description::from(compile_field(
+                        raw,
+                        &FieldStyle::DESCRIPTION,
+                        palette,
+                        slug_text,
+                        "description",
+                    ))
+                });
+            }
             "exit" => exits.push(parse_exit(child)?),
             // Reject unknown children for the same reason as unknown top-level
             // nodes: a misspelled field (`descriptipn`) must fail at the typo,
@@ -260,6 +288,23 @@ fn resolve_exit_target(
         })
 }
 
+/// Compiles one authored field's markup under `field`, resolving palette colors,
+/// and logs every degraded tag as a structured warning (§3.20.2.2). Builder
+/// markup never fails the load; a bad tag keeps its inner text.
+fn compile_field(
+    raw: &str,
+    field: &FieldStyle,
+    palette: &Palette,
+    room: &str,
+    field_name: &'static str,
+) -> StyledText {
+    let compiled = compile_markup(raw, field, palette);
+    for diagnostic in &compiled.diagnostics {
+        tracing::warn!(room, field = field_name, %diagnostic, "markup diagnostic");
+    }
+    compiled.text
+}
+
 /// The first positional string argument of `node` at `index`, if present.
 pub(crate) fn arg(node: &KdlNode, index: usize) -> Option<&str> {
     node.get(index).and_then(KdlValue::as_string)
@@ -342,7 +387,7 @@ mod tests {
             }
             fs::write(&path, contents).expect("write room file");
         }
-        load_rooms(dir.path()).map(|(rooms, _regions)| rooms)
+        load_rooms(dir.path(), &Palette::baseline()).map(|(rooms, _regions)| rooms)
     }
 
     fn slug(value: &str) -> PlaceKey {
@@ -425,7 +470,8 @@ mod tests {
     #[test]
     fn an_empty_world_directory_loads_no_rooms_and_no_regions() {
         let dir = TempDir::new().expect("temp dir");
-        let (rooms, regions) = load_rooms(dir.path()).expect("empty world loads");
+        let (rooms, regions) =
+            load_rooms(dir.path(), &Palette::baseline()).expect("empty world loads");
         assert_eq!(rooms.len(), 0);
         assert!(rooms.is_empty());
         assert_eq!(rooms.iter().count(), 0);
@@ -439,7 +485,8 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         fs::write(dir.path().join("a.kdl"), "room \"a\" { description \"x\" }")
             .expect("write room file");
-        let error = load_rooms(dir.path()).expect_err("an uncovered room must fail");
+        let error =
+            load_rooms(dir.path(), &Palette::baseline()).expect_err("an uncovered room must fail");
         assert!(
             matches!(error, WorldError::RoomOutsideRegion { .. }),
             "got {error:?}"
@@ -457,7 +504,8 @@ mod tests {
         fs::write(region_dir.join(REGION_MANIFEST), "region \"zone\"")
             .expect("write region manifest");
 
-        let (rooms, regions) = load_rooms(dir.path()).expect("roomless region loads");
+        let (rooms, regions) =
+            load_rooms(dir.path(), &Palette::baseline()).expect("roomless region loads");
         assert!(rooms.is_empty());
         assert_eq!(regions.len(), 1);
         assert!(!regions.is_empty());
@@ -535,6 +583,45 @@ mod tests {
                 }
             ),
             "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_title_is_bolded_by_the_field_policy() {
+        use mud_core::{Attributes, Style};
+
+        let rooms = load(&[(
+            "a.kdl",
+            "room \"a\" { title \"Great Hall\"; description \"x\" }",
+        )])
+        .expect("rooms load");
+        let id = rooms.id_of(&slug("a")).expect("room a present");
+        let title = rooms.get(id).expect("room").title().expect("title present");
+        assert_eq!(
+            title.styled(),
+            &StyledText::new().styled("Great Hall", Style::new().with_attrs(Attributes::BOLD))
+        );
+    }
+
+    #[test]
+    fn a_description_with_markup_compiles_through_the_palette() {
+        use mud_core::{EntityArena, Style, TenantTag};
+
+        let rooms = load(&[("a.kdl", "room \"a\" { description \"a {fg=cyan}rune{/}\" }")])
+            .expect("rooms load");
+        let id = rooms.id_of(&slug("a")).expect("room a present");
+
+        // describe() takes a viewer; mint one through the public arena API.
+        let mut arena = EntityArena::new(TenantTag::new(0).expect("tenant 0"));
+        let viewer = arena.alloc().expect("viewer entity");
+        let description = rooms.get(id).expect("room").describe(viewer);
+
+        let cyan = Palette::baseline().color("cyan").expect("cyan in baseline");
+        assert_eq!(
+            description.styled(),
+            &StyledText::new()
+                .plain("a ")
+                .styled("rune", Style::new().with_fg(cyan))
         );
     }
 }

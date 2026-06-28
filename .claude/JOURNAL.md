@@ -778,3 +778,83 @@ truth when this log drifts.
   --workspace --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs build --strict` clean.
 - **Next:** M1-13 — styled text + ANSI renderer. World-wide Region defaults manifest lands
   with the first tenant-defaultable region property.
+
+## 2026-06-28 — M1-13a: styled-text model + palette + builder markup
+
+- **Spec:** §3.20.1–3.20.4 — transport-neutral styled text, KDL palette (baseline
+  roles + named colors), builder markup with per-field policy. Authoring half of M1-13.
+- **Done:** New `mud-core::text` module — `Color` (24-bit, `from_hex`), `Attributes`
+  (manual bitflag newtype, no dep), `Style`, `RoleName` (open `Cow<'static,str>` newtype
+  with baseline consts), `SpanStyle` (Plain/Direct/Role — role survives to render,
+  §3.20.4.2), `Span`/`StyledText` (flat span sequence, §3.20.1.1), `Palette`
+  (`baseline()` built in Rust — 7 baseline roles + 16 named colors), `FieldStyle`
+  (per-field policy), and `compile_markup` (a tolerant single-pass `{tag}…{/}` scanner —
+  **not chumsky**; degrades unknown/disallowed/malformed tags to literal + a
+  `MarkupDiagnostic`, never aborts, §3.20.2.2). `Description`/`Title` now wrap
+  `StyledText` (`new(impl Into<String>)` kept source-compatible; `as_str`→`styled()`/
+  `to_plain_string()`). `mud-world`: new `load_palette` layering optional tenant
+  `palette.kdl` over the baseline (mirrors `config.rs` two-source pattern); room loader
+  compiles `title`/`description` markup via `FieldStyle::{TITLE,DESCRIPTION}` (title
+  bold-by-default, description = palette colors + b/i/u, **palette named colors only, no
+  raw hex**), logging diagnostics via `tracing::warn!`; `config.toml` gains an optional
+  `palette` path; `LoadedWorld::palette()`. New `WorldError::{InvalidColor,
+  UnknownColorName}`. Docs: `building/styling.md` (palette + markup) + nav. PLAN: rewrote
+  M1-13 bullet (a/b split, anstyle reuse for M1-13b, deferrals recorded in M1-17/M1-21-22/
+  M2-H/cross-cutting); `mud-schema/frame.rs` comments updated (OutputText swap deferred to
+  M1-21/22, not done in M1-13).
+- **Verify:** `cargo test --workspace` 258 green (mud-core 135 incl. text unit tests;
+  mud-world 41+21 incl. palette loader, title-bold, description-markup-through-palette);
+  `cargo clippy --workspace --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs
+  build --strict` clean. No `unwrap`/`expect`/`panic` outside tests; markup never aborts;
+  `Palette::baseline()` infallible. NB: KDL 2.0 booleans are `bold=#true`.
+- **Next:** M1-13b — per-session ANSI renderer in new `mud-net` crate (anstyle +
+  anstyle-lossy; Tier + resolver; `render(&StyledText,&Palette,Tier)->String`; ansi16 +
+  mono golden tests). Then the deferred OutputText swap at M1-21/22.
+
+## 2026-06-28 — M1-13b: per-session ANSI renderer (`mud-net`)
+
+- **Spec:** §3.20.5 — per-session ANSI rendering with deterministic downsampling;
+  §3.20.1.2 (escapes only in the renderer), §3.20.2.2 (unknown role degrades + warns).
+  Renderer half of M1-13.
+- **Done:** New `mud-net` crate (depends only on `mud-core` + `anstyle`/`anstyle-lossy`/
+  `tracing`; the IPC `OutputText` swap stays deferred, so no `mud-schema` dep). `Tier`
+  (Mono/Ansi16/Xterm256/Truecolor, §3.20.5.1) + `resolve_tier` (§3.20.5.2 steps 2+4:
+  `NO_COLOR`→Mono else tenant default `ansi16`) + `process_no_color`. `render(&StyledText,
+  &Palette, Tier) -> String`: resolves `SpanStyle::Role` against the session palette
+  (unknown → `tracing::warn!` + unstyled), maps `mud-core` Style/Color/Attributes →
+  `anstyle` in a `convert` adapter, downsamples via `anstyle-lossy` (`rgb_to_ansi` against
+  the **pinned VGA palette** for cross-platform reproducibility, `rgb_to_xterm` for 256),
+  drops color but keeps attributes under Mono, and emits per-span `render()` + reset
+  (plain spans → no escapes). **Reused `anstyle`/`anstyle-lossy`** instead of hand-rolling
+  nearest-color tables. Docs: extended `building/styling.md` with the tiers / `NO_COLOR` /
+  downsampling section.
+- **Verify:** `cargo test -p mud-net` 8 green incl. golden `assert_eq!` for ansi16 + mono
+  (the milestone gate) and xterm256 + truecolor + unknown-role + plain; `cargo test
+  --workspace` 266 green; `cargo clippy --workspace --all-targets` clean; `cargo fmt
+  --check` clean; `uv run mkdocs build --strict` clean. M1-13 complete.
+- **Next:** M1-14 — engine-string lookup seam (`t!`-style, static `en` table). The
+  deferred `OutputText`→`StyledText` IPC swap + wiring `render` into the session pipeline
+  land at M1-21/M1-22; player-input markup escaping (§3.20.7) at M1-17.
+
+## 2026-06-28 — M1-13 review fixes + SPEC §3.20.2.4
+
+- **Spec:** §3.20.2.1/§3.20.2.4 — reconciled the markup forms with the as-built
+  palette-only field policy. Removed the `{fg=#1a53ff}` truecolor example from the
+  direct-style form and added **§3.20.2.4**: which direct-style tags an authored field
+  admits is a per-field engine policy; room title/description express color only as
+  palette-curated named colors (raw `#rrggbb` MUST NOT be accepted), so every authored
+  color resolves through the palette and a tenant restyle reaches it. Direct truecolor
+  literals reserved for a later milestone.
+- **Done:** PR-review follow-ups. (1) Renamed `mud-net` `no_color_from_env` →
+  `process_no_color` with a docstring flagging it as a host-process default, **not** the
+  §3.20.5.2-step-2 per-session client signal (avoids one operator's shell blanking color
+  for all players when wired at M1-21/22). (2) Renamed `Attributes::insert` → `union`
+  (returns a new set; the old name implied in-place mutation). (3) Disallowed-color markup
+  diagnostics now carry the actual tag (`fg=cyan`) instead of a synthesized `color "cyan"`.
+  (4) Commented that Mono keeps all attributes pending per-terminal capability detection
+  (M3). New tests: `{bg=…}` markup, per-tag diagnostics, disallowed-color tag naming,
+  blink/reverse SGR.
+- **Verify:** `cargo test --workspace` 273 green (+4); `cargo clippy --workspace
+  --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs build --strict` clean.
+- **Next:** unchanged — M1-14 engine-string lookup seam; deferred OutputText→StyledText
+  IPC swap + renderer wiring at M1-21/22; player-input markup escaping (§3.20.7) at M1-17.

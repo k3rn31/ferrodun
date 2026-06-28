@@ -9,7 +9,7 @@
 //! buy nothing, so the surface stays inherent until a second variant earns it.
 
 use super::id::PlaceId;
-use crate::{EntityId, LocationOf, RegionId};
+use crate::{EntityId, LocationOf, RegionId, StyledText};
 
 /// A direction an exit can lead in (§2.2.2).
 ///
@@ -26,39 +26,65 @@ pub enum Direction {
     Down,
 }
 
-/// A rendered description of a [`Place`] as seen by a viewer (§2.2.2).
+/// A description of a [`Place`] as seen by a viewer (§2.2.2), carried as
+/// [`StyledText`] so builder markup survives to the render boundary (§3.20.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[must_use]
-pub struct Description(String);
+pub struct Description(StyledText);
 
 impl Description {
-    /// Wraps rendered description text.
+    /// Wraps plain (unstyled) description text.
     pub fn new(text: impl Into<String>) -> Self {
-        Self(text.into())
+        Self(StyledText::from(text.into()))
     }
 
-    /// Returns the description text.
-    pub fn as_str(&self) -> &str {
+    /// The styled description.
+    pub fn styled(&self) -> &StyledText {
         &self.0
+    }
+
+    /// The description text with styling dropped.
+    #[must_use]
+    pub fn to_plain_string(&self) -> String {
+        self.0.to_plain_string()
+    }
+}
+
+impl From<StyledText> for Description {
+    fn from(text: StyledText) -> Self {
+        Self(text)
     }
 }
 
 /// A [`Place`]'s short name (§2.2.2): a label like "Town Square", distinct from
 /// the prose [`Description`]. A separate type so a title cannot be passed where a
-/// description is meant, or the reverse.
+/// description is meant, or the reverse. Carried as [`StyledText`] like a
+/// description (§3.20.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[must_use]
-pub struct Title(String);
+pub struct Title(StyledText);
 
 impl Title {
-    /// Wraps title text.
+    /// Wraps plain (unstyled) title text.
     pub fn new(text: impl Into<String>) -> Self {
-        Self(text.into())
+        Self(StyledText::from(text.into()))
     }
 
-    /// Returns the title text.
-    pub fn as_str(&self) -> &str {
+    /// The styled title.
+    pub fn styled(&self) -> &StyledText {
         &self.0
+    }
+
+    /// The title text with styling dropped.
+    #[must_use]
+    pub fn to_plain_string(&self) -> String {
+        self.0.to_plain_string()
+    }
+}
+
+impl From<StyledText> for Title {
+    fn from(text: StyledText) -> Self {
+        Self(text)
     }
 }
 
@@ -328,7 +354,7 @@ mod tests {
         let to_alice = hall.describe(entity_id(1));
         let to_bob = hall.describe(entity_id(2));
 
-        assert_eq!(to_alice.as_str(), "A long stone hall.");
+        assert_eq!(to_alice.to_plain_string(), "A long stone hall.");
         assert_eq!(to_alice, to_bob);
     }
 
@@ -371,7 +397,10 @@ mod tests {
             )
             .with_title(Title::new("Great Hall")),
         );
-        assert_eq!(titled.title().map(Title::as_str), Some("Great Hall"));
+        assert_eq!(
+            titled.title().map(Title::to_plain_string).as_deref(),
+            Some("Great Hall")
+        );
     }
 
     #[test]
@@ -385,6 +414,9 @@ mod tests {
             .with_title(Title::new("Old Name"))
             .with_title(Title::new("New Name")),
         );
-        assert_eq!(room.title().map(Title::as_str), Some("New Name"));
+        assert_eq!(
+            room.title().map(Title::to_plain_string).as_deref(),
+            Some("New Name")
+        );
     }
 }

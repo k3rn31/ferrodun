@@ -2158,9 +2158,10 @@ forms (syntax illustrative):
 - **Semantic role** — `{error}…{/}`, `{channel.gossip}…{/}`.
   Resolved through the active palette (§3.20.3). This is the
   RECOMMENDED form.
-- **Direct style** — named color `{fg=cyan}…{/}`, truecolor
-  `{fg=#1a53ff}`, background `{bg=…}`, attributes `{b}…{/}`. For
-  builder flavor where a semantic role does not apply.
+- **Direct style** — named color `{fg=cyan}…{/}`, background
+  `{bg=…}`, attributes `{b}…{/}`. For builder flavor where a semantic
+  role does not apply. Named colors resolve through the active palette
+  (§3.20.3) so a tenant restyle reaches them.
 
 3.20.2.2 Unknown role or color names MUST resolve to "unstyled" and
 MUST emit a structured `tracing` warning (cf. §3.14.4.3 missing-key
@@ -2170,6 +2171,17 @@ handling). They MUST NOT abort rendering.
 translated (cf. §3.14.1.2). Translatable strings (§3.14) MAY contain
 markup; the RECOMMENDED practice is to apply roles at the emission
 site and keep prose in the bundle.
+
+3.20.2.4 Which direct-style tags a given authored field admits is an
+engine policy per field, not a global of the markup language. Authored
+room fields (title, description) MUST express color only as
+palette-curated **named colors**; a raw `#rrggbb` literal in field
+markup (e.g. `{fg=#1a53ff}`) MUST NOT be accepted, so every authored
+color resolves through the palette (§3.20.3.4) and a tenant restyle
+reaches it. A field MAY further restrict attributes. A disallowed tag
+MUST degrade per §3.20.2.2 — kept as literal text with a structured
+warning — never abort. Direct truecolor literals in markup are
+reserved for a later milestone and a non-field context.
 
 #### 3.20.3 Palette
 

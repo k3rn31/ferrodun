@@ -9,6 +9,7 @@ kdl = "6.7.1"
 mud-core = { version = "0.1.0", path = "../mud-core" }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
+tracing = "0.1.44"
 
 [lints]
 workspace = true

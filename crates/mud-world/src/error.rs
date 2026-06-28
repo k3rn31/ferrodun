@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use mud_core::{PlaceKeyError, RegionKeyError};
+use mud_core::{ColorParseError, PlaceKeyError, RegionKeyError};
 
 /// A failure while loading a tenant's configuration or world files.
 ///
@@ -155,5 +155,22 @@ pub enum WorldError {
         path: PathBuf,
         /// Why the manifest is malformed.
         reason: &'static str,
+    },
+
+    /// A palette color value is not a valid `#rrggbb` color (§3.20.3.1).
+    #[error("invalid palette color {value:?}: {source}")]
+    InvalidColor {
+        /// The offending color text.
+        value: String,
+        /// Why it is not a valid color.
+        #[source]
+        source: ColorParseError,
+    },
+
+    /// A palette `role` referenced a named color the palette does not define.
+    #[error("palette role references unknown color name {value:?}")]
+    UnknownColorName {
+        /// The unknown color name.
+        value: String,
     },
 }
