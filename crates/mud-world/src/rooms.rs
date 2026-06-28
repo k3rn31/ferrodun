@@ -110,7 +110,11 @@ pub fn load_rooms(world_dir: &Path) -> Result<(Rooms, Regions), WorldError> {
 
     for path in &room_files {
         // Every room in a file shares the region of the file's enclosing folder.
-        let region = binder.region_for(path.parent().unwrap_or(world_dir));
+        // A room covered by no manifest is rejected (§2.2.7.3): there is no
+        // implicit fallback region.
+        let region = binder
+            .region_for(path.parent().unwrap_or(world_dir))
+            .ok_or_else(|| WorldError::RoomOutsideRegion { path: path.clone() })?;
         let text = fs::read_to_string(path)?;
         let document = KdlDocument::parse(&text).map_err(|source| WorldError::Kdl {
             path: path.clone(),
@@ -321,12 +325,18 @@ mod tests {
 
     use super::*;
 
-    /// Writes `(relative_path, contents)` files into a fresh world directory and
-    /// loads the rooms from it, dropping the region registry these tests ignore.
+    /// Writes `(relative_path, contents)` files under a single region subfolder of
+    /// a fresh world directory and loads the rooms, dropping the region registry
+    /// these room-focused tests ignore. The manifest satisfies the mandatory-region
+    /// rule (§2.2.7.3) so the cases here exercise room parsing, not region binding.
     fn load(files: &[(&str, &str)]) -> Result<Rooms, WorldError> {
         let dir = TempDir::new().expect("temp dir");
+        let region_dir = dir.path().join("zone");
+        fs::create_dir_all(&region_dir).expect("create region dir");
+        fs::write(region_dir.join(REGION_MANIFEST), "region \"zone\"")
+            .expect("write region manifest");
         for (relative, contents) in files {
-            let path = dir.path().join(relative);
+            let path = region_dir.join(relative);
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).expect("create parent dirs");
             }
@@ -413,11 +423,44 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_world_directory_loads_no_rooms() {
-        let rooms = load(&[]).expect("empty world loads");
+    fn an_empty_world_directory_loads_no_rooms_and_no_regions() {
+        let dir = TempDir::new().expect("temp dir");
+        let (rooms, regions) = load_rooms(dir.path()).expect("empty world loads");
         assert_eq!(rooms.len(), 0);
         assert!(rooms.is_empty());
         assert_eq!(rooms.iter().count(), 0);
+        // No room authored means no region is mandatory (§2.2.7.3).
+        assert_eq!(regions.len(), 0);
+        assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn a_room_under_no_region_manifest_is_rejected() {
+        let dir = TempDir::new().expect("temp dir");
+        fs::write(dir.path().join("a.kdl"), "room \"a\" { description \"x\" }")
+            .expect("write room file");
+        let error = load_rooms(dir.path()).expect_err("an uncovered room must fail");
+        assert!(
+            matches!(error, WorldError::RoomOutsideRegion { .. }),
+            "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_region_folder_with_no_rooms_loads_the_region_without_rooms() {
+        // A builder may author a region before any of its rooms; the region loads
+        // and is counted even though it covers no `Place` yet (§2.2.7.3 mandates a
+        // region per room, not a room per region).
+        let dir = TempDir::new().expect("temp dir");
+        let region_dir = dir.path().join("zone");
+        fs::create_dir_all(&region_dir).expect("create region dir");
+        fs::write(region_dir.join(REGION_MANIFEST), "region \"zone\"")
+            .expect("write region manifest");
+
+        let (rooms, regions) = load_rooms(dir.path()).expect("roomless region loads");
+        assert!(rooms.is_empty());
+        assert_eq!(regions.len(), 1);
+        assert!(!regions.is_empty());
     }
 
     #[test]

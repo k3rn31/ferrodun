@@ -420,15 +420,19 @@ name is valid). A **wilderness** Region additionally owns a tile grid
 (§3.2.2.1); the tile grid is a property a Region MAY have, not the
 definition of a Region.
 
-2.2.7.3 **Authoring.** A Region MUST be declared by a manifest at the
-root of a world folder (a `region.kdl` file). Every `Place` authored
-anywhere under that folder subtree belongs to that Region. Region
-membership is therefore *folder-confined* but MUST NOT be derived from
-the folder's **name**: identity is the manifest's `RegionKey` slug, so
-renaming or moving the folder MUST NOT change the Region's identity. A
-`Place` authored under no manifest belongs to an implicit per-tenant
-default Region. In 1.0, Regions MUST be flat: a manifest nested under
-another Region's folder MUST be rejected at load.
+2.2.7.3 **Authoring.** A Region MUST be declared by a manifest (a
+`region.kdl` file) at the root of a **subfolder** of the tenant's world
+directory. Every `Place` authored anywhere under that subtree belongs to
+that Region. Region membership is therefore *folder-confined* but MUST
+NOT be derived from the folder's **name**: identity is the manifest's
+`RegionKey` slug, so renaming or moving the folder MUST NOT change the
+Region's identity. Every `Place` MUST belong to a declared Region: a
+`Place` covered by no manifest MUST be rejected at load, and a tenant
+that authors any `Place` MUST therefore declare at least one Region. A
+`region.kdl` at the world directory's **root** MUST be rejected; that
+slot is reserved for a future tenant-wide Region defaults manifest. In
+1.0, Regions MUST be flat: a manifest nested under another Region's
+folder MUST be rejected at load.
 
 2.2.7.4 **Builder permissions are out of scope for the engine.** Who may
 edit which Region's files is delegated to the filesystem and version

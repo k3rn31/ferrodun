@@ -120,12 +120,24 @@ pub enum WorldError {
         slug: String,
     },
 
-    /// A region manifest authored the reserved default-region slug, which names
-    /// the implicit per-tenant region (§2.2.7.3) and may not be declared.
-    #[error("region slug {slug:?} is reserved for the implicit default region")]
-    ReservedRegionSlug {
-        /// The reserved slug a manifest tried to author.
-        slug: String,
+    /// A room file is covered by no region manifest. Every `Place` MUST belong to
+    /// a declared Region (§2.2.7.3), so a room outside every region's folder is
+    /// rejected rather than placed in an unconfigurable fallback.
+    #[error("room file {path} is under no region; every room must live in a region subfolder")]
+    RoomOutsideRegion {
+        /// The offending room file.
+        path: PathBuf,
+    },
+
+    /// A region manifest sits at the world directory's root. Regions MUST be
+    /// declared in a subfolder (§2.2.7.3); the root slot is reserved for a future
+    /// tenant-wide defaults manifest.
+    #[error(
+        "region manifest at the world root is not allowed; declare regions in subfolders: {path}"
+    )]
+    RegionManifestAtWorldRoot {
+        /// The offending manifest path.
+        path: PathBuf,
     },
 
     /// A region manifest sits under another region's folder. Regions are flat in
