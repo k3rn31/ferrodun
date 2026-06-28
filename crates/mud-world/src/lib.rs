@@ -16,6 +16,7 @@ mod archetype;
 mod banner;
 mod config;
 mod error;
+mod palette;
 mod regions;
 mod rooms;
 
@@ -25,7 +26,7 @@ pub use error::WorldError;
 pub use regions::{RegionName, Regions};
 pub use rooms::Rooms;
 
-use mud_core::PlaceKey;
+use mud_core::{Palette, PlaceKey};
 
 /// A tenant's loaded static content.
 #[derive(Debug, Clone)]
@@ -33,6 +34,7 @@ use mud_core::PlaceKey;
 pub struct LoadedWorld {
     rooms: Rooms,
     regions: Regions,
+    palette: Palette,
     banner: String,
     player: PlayerArchetype,
 }
@@ -46,6 +48,12 @@ impl LoadedWorld {
     /// The loaded region registry (§2.2.7).
     pub fn regions(&self) -> &Regions {
         &self.regions
+    }
+
+    /// The tenant palette: the engine baseline with any tenant overrides layered
+    /// on top (§3.20.3).
+    pub fn palette(&self) -> &Palette {
+        &self.palette
     }
 
     /// The pre-login welcome banner text (§3.19.1).
@@ -68,10 +76,14 @@ impl LoadedWorld {
 ///
 /// # Errors
 ///
-/// Returns [`WorldError`] if a world file or the banner cannot be read or parsed,
-/// if a room is malformed, or if `start_room` names no loaded room.
+/// Returns [`WorldError`] if a world file, the palette, or the banner cannot be
+/// read or parsed, if a room is malformed, or if `start_room` names no loaded room.
 pub fn load_world(config: &TenantConfig) -> Result<LoadedWorld, WorldError> {
-    let (rooms, regions) = rooms::load_rooms(&config.world_dir())?;
+    // An absent palette.kdl leaves the engine baseline in force (§3.20.3.1); a
+    // present one is layered over it. Room markup resolves against the result.
+    let palette_path = config.palette_path();
+    let palette = palette::load_palette(palette_path.exists().then_some(palette_path.as_path()))?;
+    let (rooms, regions) = rooms::load_rooms(&config.world_dir(), &palette)?;
     let banner = banner::load_banner(&config.banner_path())?;
 
     let start_slug =
@@ -88,6 +100,7 @@ pub fn load_world(config: &TenantConfig) -> Result<LoadedWorld, WorldError> {
     Ok(LoadedWorld {
         rooms,
         regions,
+        palette,
         banner,
         player: PlayerArchetype::new(start_room),
     })

@@ -34,9 +34,11 @@ impl InputLine {
 
 /// Text rendered by the World for presentation to a client.
 ///
-/// A marker newtype over the M1 text payload. M1-13 replaces it with
-/// transport-neutral styled text (§3.20.1) rendered to ANSI per session on the
-/// Gateway side.
+/// A marker newtype over the M1 text payload. The transport-neutral styled-text
+/// model and per-session ANSI renderer exist as a library (`mud_core::text`,
+/// `mud-net`, M1-13); swapping this payload to carry styled text across the IPC
+/// boundary — rendered to ANSI per session on the Gateway side — is deferred to
+/// the milestone that wires the renderer into the session pipeline (M1-21/M1-22).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct OutputText(String);
@@ -65,9 +67,10 @@ pub struct SessionInput {
 
 /// Rendered output destined for one client session.
 ///
-/// Carries plain [`OutputText`] for M1. M1-13 swaps the payload for styled text;
-/// because the IPC schema is version-locked at build time (§2.8.5.7), Gateway and
-/// World rebuild together and the change is free.
+/// Carries plain [`OutputText`] for M1. The payload swap to styled text is
+/// deferred to M1-21/M1-22 (see [`OutputText`]); because the IPC schema is
+/// version-locked at build time (§2.8.5.7), Gateway and World rebuild together
+/// and the change is free when it lands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct SessionOutput {

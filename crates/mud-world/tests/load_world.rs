@@ -75,7 +75,7 @@ fn loads_the_fixture_world() {
 
     // Title is optional: town has one, the nested cellar does not.
     assert_eq!(
-        town_room.title().map(|t| t.as_str()),
+        town_room.title().map(|t| t.to_plain_string()).as_deref(),
         Some("Town Square"),
         "town_square keeps its authored title"
     );
@@ -84,6 +84,82 @@ fn loads_the_fixture_world() {
         cellar_room.title(),
         None,
         "cellar was authored without a title"
+    );
+}
+
+#[test]
+fn a_tenant_palette_is_layered_over_the_baseline() {
+    use mud_core::{Attributes, Color, RoleName, Style};
+
+    let world = load(&[
+        ("config.toml", "start_room = \"a\""),
+        ("welcome.kdl", "banner \"hi\""),
+        (
+            "palette.kdl",
+            "color \"flame\" \"#ff7733\"\nrole \"say\" fg=\"flame\" bold=#true",
+        ),
+        ZONE,
+        ("world/zone/a.kdl", "room \"a\" { description \"x\" }"),
+    ])
+    .expect("a world with a tenant palette loads");
+
+    let palette = world.palette();
+    // The added named color and the overridden baseline role are both present.
+    assert_eq!(palette.color("flame"), Some(Color::rgb(0xff, 0x77, 0x33)));
+    assert_eq!(
+        palette.resolve_role(&RoleName::SAY),
+        Some(
+            Style::new()
+                .with_fg(Color::rgb(0xff, 0x77, 0x33))
+                .with_attrs(Attributes::BOLD)
+        )
+    );
+}
+
+#[test]
+fn a_room_description_resolves_a_tenant_palette_color() {
+    use mud_core::{Color, EntityArena, Style, StyledText, TenantTag};
+
+    let world = load(&[
+        ("config.toml", "start_room = \"a\""),
+        ("welcome.kdl", "banner \"hi\""),
+        ("palette.kdl", "color \"flame\" \"#ff7733\""),
+        ZONE,
+        (
+            "world/zone/a.kdl",
+            "room \"a\" { description \"a {fg=flame}rune{/}\" }",
+        ),
+    ])
+    .expect("a world whose room markup uses a tenant color loads");
+
+    let id = world.rooms().id_of(&slug("a")).expect("room a present");
+    // describe() takes a viewer; mint one through the public arena API.
+    let mut arena = EntityArena::new(TenantTag::new(0).expect("tenant 0"));
+    let viewer = arena.alloc().expect("viewer entity");
+    let description = world.rooms().get(id).expect("room").describe(viewer);
+
+    // The tenant color resolved end-to-end, through the room loader's markup compiler.
+    assert_eq!(
+        description.styled(),
+        &StyledText::new()
+            .plain("a ")
+            .styled("rune", Style::new().with_fg(Color::rgb(0xff, 0x77, 0x33)))
+    );
+}
+
+#[test]
+fn an_invalid_tenant_palette_fails_the_load() {
+    let error = load(&[
+        ("config.toml", "start_room = \"a\""),
+        ("welcome.kdl", "banner \"hi\""),
+        ("palette.kdl", "color \"bad\" \"#zzzzzz\""),
+        ZONE,
+        ("world/zone/a.kdl", "room \"a\" { description \"x\" }"),
+    ])
+    .expect_err("an invalid palette must fail the load");
+    assert!(
+        matches!(error, WorldError::InvalidColor { .. }),
+        "got {error:?}"
     );
 }
 

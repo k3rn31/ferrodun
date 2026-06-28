@@ -778,3 +778,35 @@ truth when this log drifts.
   --workspace --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs build --strict` clean.
 - **Next:** M1-13 — styled text + ANSI renderer. World-wide Region defaults manifest lands
   with the first tenant-defaultable region property.
+
+## 2026-06-28 — M1-13a: styled-text model + palette + builder markup
+
+- **Spec:** §3.20.1–3.20.4 — transport-neutral styled text, KDL palette (baseline
+  roles + named colors), builder markup with per-field policy. Authoring half of M1-13.
+- **Done:** New `mud-core::text` module — `Color` (24-bit, `from_hex`), `Attributes`
+  (manual bitflag newtype, no dep), `Style`, `RoleName` (open `Cow<'static,str>` newtype
+  with baseline consts), `SpanStyle` (Plain/Direct/Role — role survives to render,
+  §3.20.4.2), `Span`/`StyledText` (flat span sequence, §3.20.1.1), `Palette`
+  (`baseline()` built in Rust — 7 baseline roles + 16 named colors), `FieldStyle`
+  (per-field policy), and `compile_markup` (a tolerant single-pass `{tag}…{/}` scanner —
+  **not chumsky**; degrades unknown/disallowed/malformed tags to literal + a
+  `MarkupDiagnostic`, never aborts, §3.20.2.2). `Description`/`Title` now wrap
+  `StyledText` (`new(impl Into<String>)` kept source-compatible; `as_str`→`styled()`/
+  `to_plain_string()`). `mud-world`: new `load_palette` layering optional tenant
+  `palette.kdl` over the baseline (mirrors `config.rs` two-source pattern); room loader
+  compiles `title`/`description` markup via `FieldStyle::{TITLE,DESCRIPTION}` (title
+  bold-by-default, description = palette colors + b/i/u, **palette named colors only, no
+  raw hex**), logging diagnostics via `tracing::warn!`; `config.toml` gains an optional
+  `palette` path; `LoadedWorld::palette()`. New `WorldError::{InvalidColor,
+  UnknownColorName}`. Docs: `building/styling.md` (palette + markup) + nav. PLAN: rewrote
+  M1-13 bullet (a/b split, anstyle reuse for M1-13b, deferrals recorded in M1-17/M1-21-22/
+  M2-H/cross-cutting); `mud-schema/frame.rs` comments updated (OutputText swap deferred to
+  M1-21/22, not done in M1-13).
+- **Verify:** `cargo test --workspace` 258 green (mud-core 135 incl. text unit tests;
+  mud-world 41+21 incl. palette loader, title-bold, description-markup-through-palette);
+  `cargo clippy --workspace --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs
+  build --strict` clean. No `unwrap`/`expect`/`panic` outside tests; markup never aborts;
+  `Palette::baseline()` infallible. NB: KDL 2.0 booleans are `bold=#true`.
+- **Next:** M1-13b — per-session ANSI renderer in new `mud-net` crate (anstyle +
+  anstyle-lossy; Tier + resolver; `render(&StyledText,&Palette,Tier)->String`; ansi16 +
+  mono golden tests). Then the deferred OutputText swap at M1-21/22.

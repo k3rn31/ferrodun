@@ -310,8 +310,11 @@ spine.
     Text payloads are **marker newtypes** (`InputLine`, `OutputText`, mirroring
     `mud-core`'s `Description`) not raw `String`, per the newtype mandate — no
     invariant enforced here since §3.6.4's cap/stripping is command-scoped and
-    downstream (M1-17); `OutputText` is `String`-backed for M1 and M1-13 swaps it
-    for styled text. `encode`/`decode` helpers wrap postcard (`SchemaError` via
+    downstream (M1-17); `OutputText` is `String`-backed for M1. (M1-13 builds the
+    styled-text model + per-session renderer as a self-contained library; the
+    `OutputText`→styled-text swap that pulls it across the IPC boundary is
+    **deferred to M1-21/M1-22**, where the renderer is wired into the session
+    pipeline.) `encode`/`decode` helpers wrap postcard (`SchemaError` via
     `thiserror`); length-prefixing is M1-11.
 - **M1-11 — IPC transport + resume handshake + single-process mode.** Split
   into two PRs so each touches one crate's public API (principle #3) and the
@@ -418,11 +421,41 @@ spine.
   styled-text spans in `mud-core` (§3.20.1); a KDL palette with the baseline
   roles (§3.20.3.2); per-session ANSI renderer in `mud-net` defaulting to
   `ansi16` with `NO_COLOR` → `mono` and fixed downsample tables (§3.20.5).
-  No raw escapes in internal pipelines (§3.20.1.2).
+  No raw escapes in internal pipelines (§3.20.1.2). Split into two PRs so each
+  leaves the tree green: **M1-13a** (authoring) and **M1-13b** (renderer).
   - *Spec:* §3.20.1–3.20.5. *Verify:* snapshot tests for ansi16 + mono
-    rendering of a styled fixture. *Out of scope:* truecolor/xterm256 tiers
-    beyond the downsample tables, webclient semantic spans (M3), per-account
-    color prefs (M7-ish), colorblind palette (ship by 1.0).
+    rendering of a styled fixture. *Out of scope (deferred to their steps):*
+    the IPC `OutputText`→styled-text swap (M1-21/M1-22, where the renderer is
+    wired into the session pipeline); player-input markup escaping (§3.20.7 →
+    M1-17); palette hot-reload (§3.20.3.3 → M2-H); truecolor/xterm256 beyond the
+    downsample tables and TTYPE/`Core.Hello` tier detection (§3.20.5.2 step 3 →
+    M3); webclient semantic spans (§3.20.5.3 → M3); per-account color prefs
+    (§3.20.6.1 → M7); colorblind palette (§3.20.6.3 → 1.0).
+  - **M1-13a — Styled authored content (`mud-core` + `mud-world`).** The
+    styling domain model — `Color`/`Attributes`/`Style`/`RoleName`/`SpanStyle`/
+    `Span`/`StyledText` — plus a `Palette` (roles + named colors) with a Rust
+    `baseline()` (§3.20.3.2), a per-field `FieldStyle` policy, and a tolerant
+    `{tag}…{/}` markup compiler (`compile_markup`). `Description`/`Title` now
+    carry `StyledText`; the `mud-world` room loader compiles their markup under
+    the field policy (title bold-by-default; description = palette colors +
+    bold/italic/underline; **palette named colors only, no raw hex**), and a new
+    `load_palette` layers an optional tenant `palette.kdl` over the baseline
+    (mirroring `config.rs` two-source discovery). Unknown/disallowed/malformed
+    tags degrade to literal text + a `tracing` warning (§3.20.2.2), never
+    aborting the load. *As built:* the markup compiler is a hand-written
+    single-pass scanner with a style stack (not `chumsky`) — the right shape for
+    "degrade every error in place and emit spans," and dependency-free. Builder
+    markup carries direct styling only; semantic roles are applied at engine
+    emission sites (M1-17), so `FieldStyle` gates colors/attributes, not roles.
+  - **M1-13b — Per-session ANSI renderer (`mud-net`, new crate).** Reuses
+    `anstyle` + `anstyle-lossy` (official rust-cli crates) for SGR emission and
+    deterministic truecolor→xterm256→ansi16 downsampling — no hand-written
+    nearest-color tables; pinned for reproducible snapshots. `Tier`
+    (mono/ansi16/xterm256/truecolor) + a resolver doing §3.20.5.2 steps 2+4
+    (`NO_COLOR`→mono else tenant default `ansi16`); `render(&StyledText,
+    &Palette, Tier) -> String` resolving roles against the session palette
+    (unknown role → unstyled + `tracing` warning). `mud-net` depends only on
+    `mud-core` (the IPC swap is deferred, so no `mud-schema` dep yet).
 - **M1-14 — Engine-string lookup seam.** Route engine-emitted player strings
   through a minimal `t!`-style lookup backed by a static `en` table. This
   establishes the §3.14.4 boundary (typed keys, `en` fallback, missing-key
@@ -451,9 +484,12 @@ spine.
   (`north/east/south/west/up/down` + aliases), `say`, `who`, `quit`,
   `get`/`drop`, `inventory`. `say`/`emote` honor the 4 KiB content cap and
   control-char/ANSI stripping (§3.6.4) and render through palette roles
-  (§3.20.4).
-  - *Spec:* §2.7, §3.6.3–3.6.4, §3.20.4. *Verify:* per-command behavior
-    tests; content-cap rejection test.
+  (§3.20.4) by building role-styled spans (`Span::role`, M1-13a) at the
+  emission site. **Player-input markup escaping (§3.20.7)** lands here: raw
+  ANSI is stripped and color *markup* in player text is escaped (rendered
+  literally) by default, so players cannot inject styling into others' output.
+  - *Spec:* §2.7, §3.6.3–3.6.4, §3.20.4, §3.20.7. *Verify:* per-command behavior
+    tests; content-cap rejection test; player-markup-escaped test.
 
 ### Accounts and sessions (`mud-core` domain + `mud-db` storage + FSM)
 
@@ -581,6 +617,9 @@ Depends on M1 core (§7.5.2). Epics → PRs:
   new version while the old drains; atomic per-file reload; failed load keeps
   the previous version live; epoch-versioned userdata handles raise typed
   errors when stale (§2.4.3). **Hot-reload paths get tests** (§8 rule 9).
+  Includes **palette hot-reload** (§3.20.3.3): the M1-13a `palette.kdl` loader
+  joins the file watcher; a failed reload keeps the previous palette live and
+  emits a structured error.
 - **M2-I — `mud-i18n` (Fluent).** Replace the M1-14 static `en` table with
   `fluent-rs`; two-source tenant-overriding bundle discovery (§3.14.3.2);
   tenant-scoped loader; hot-reloadable bundles; locale resolution per session
@@ -826,8 +865,10 @@ forgotten:
 - **i18n** (§3.14): the seam ships in M1 (M1-14), Fluent backing in M2
   (M2-I), LLM-locale awareness in M6 (M6-E). Every new engine-emitted player
   string goes through `t!`, never string concatenation (§3.14.4.1).
-- **Color/styled output** (§3.20): minimal in M1 (M1-13), tiers + webclient
-  spans in M3/M4, per-account prefs + colorblind palette by M7/M8.
+- **Color/styled output** (§3.20): styled-text model + palette + builder markup
+  + ANSI renderer in M1 (M1-13); palette hot-reload in M2 (M2-H); xterm256/
+  truecolor tiers, TTYPE detection + webclient spans in M3/M4; per-account prefs
+  + colorblind palette by M7/M8.
 - **Testing harness** (`mud-test`, §3.10): the in-memory `mud test` harness
   is built out as content features arrive (commands → M2, NPCs → M5, LLM
   replay → M6) and is the home for all content-feature tests (§8 rule 8).

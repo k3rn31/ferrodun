@@ -51,6 +51,7 @@ nav:
       - World files: building/world-files.md
       - Rooms: building/rooms.md
       - Regions: building/regions.md
+      - Color & styling: building/styling.md
 
 plugins:
   - search
