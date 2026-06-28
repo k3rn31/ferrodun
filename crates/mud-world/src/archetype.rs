@@ -24,3 +24,32 @@ impl PlayerArchetype {
         self.start_room
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use super::*;
+
+    fn place_id(value: u64) -> PlaceId {
+        PlaceId::new(NonZeroU64::new(value).expect("non-zero test id"))
+    }
+
+    #[test]
+    fn start_room_returns_the_room_it_was_built_with() {
+        let archetype = PlayerArchetype::new(place_id(42));
+        assert_eq!(archetype.start_room(), place_id(42));
+    }
+
+    #[test]
+    fn archetypes_with_the_same_start_room_are_equal() {
+        assert_eq!(
+            PlayerArchetype::new(place_id(1)),
+            PlayerArchetype::new(place_id(1))
+        );
+        assert_ne!(
+            PlayerArchetype::new(place_id(1)),
+            PlayerArchetype::new(place_id(2))
+        );
+    }
+}

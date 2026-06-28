@@ -224,6 +224,20 @@ fn an_unknown_room_child_is_an_error() {
 }
 
 #[test]
+fn a_malformed_start_room_slug_is_an_invalid_slug() {
+    let error = load(&[
+        ("config.toml", "start_room = \"Bad Slug\""),
+        ("welcome.kdl", "banner \"hi\""),
+        ("world/a.kdl", "room \"a\" { description \"x\" }"),
+    ])
+    .expect_err("a malformed start_room slug must fail");
+    assert!(
+        matches!(error, WorldError::InvalidSlug { ref value, .. } if value == "Bad Slug"),
+        "a malformed start_room is an invalid slug, not an unknown room, got {error:?}"
+    );
+}
+
+#[test]
 fn an_unknown_start_room_is_an_error() {
     let error = load(&[
         ("config.toml", "start_room = \"missing\""),
