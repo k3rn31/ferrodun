@@ -1,0 +1,13 @@
+[package]
+name = "mud-i18n"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tracing = "0.1.44"
+
+[dev-dependencies]
+tracing-test = "0.2.6"
+
+[lints]
+workspace = true

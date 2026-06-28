@@ -858,3 +858,34 @@ truth when this log drifts.
   --all-targets` clean; `cargo fmt --check` clean; `uv run mkdocs build --strict` clean.
 - **Next:** unchanged — M1-14 engine-string lookup seam; deferred OutputText→StyledText
   IPC swap + renderer wiring at M1-21/22; player-input markup escaping (§3.20.7) at M1-17.
+
+## 2026-06-28 — M1-14: engine-string lookup seam (`mud-i18n`)
+
+- **Spec:** §3.14.4 (boundary only) — typed `t!(locale, key, args…)` lookup;
+  `en`→literal-key fallback with a structured `tracing` warning (§3.14.4.3, §8
+  rule 5); keys/locale parsed into typed domain values (§3.14.4.4). No fragment
+  concatenation (§3.14.4.1).
+- **Done:** New `mud-i18n` crate (depends only on `tracing`; dev-dep
+  `tracing-test`; no `mud-core` dep — `Locale`/`MessageKey` are self-contained).
+  `Locale` + `MessageKey` newtypes over `Cow<'static, str>` mirroring `mud-core`
+  `RoleName`; `Locale::EN` is the reference locale (newtype not enum so adding a
+  locale stays pure data, §3.14.2.2). `Catalog` (`Locale→key→template`) with an
+  **empty** `builtin()` `en` table via `OnceLock` (no engine strings exist yet —
+  YAGNI) and an injectable test/explicit constructor. `translate(&Catalog,
+  &Locale, &MessageKey, &[(&str,&str)]) -> String` does the §3.14.4.3 fallback
+  chain + `tracing::warn!` on miss + minimal Fluent-style `{ $name }`/`{$name}`
+  interpolation (stand-in for M2 Fluent placeables). `t!` macro (`#[macro_export]`)
+  is sugar over `builtin()`, parsing literals into typed values and threading
+  `Display`-rendered named args. **No production call sites** — first ones land
+  with the command pipeline (M1-16/17).
+- **Verify:** `cargo test -p mud-i18n` 15 green (hit / `en`-fallback /
+  literal-fallback / `#[traced_test]` missing-key warning / interpolation incl.
+  unprovided+extra args / macro literal-fallback + args); `cargo test --workspace`
+  281 green; `cargo clippy --workspace --all-targets` clean; `cargo fmt --check`
+  clean; `uv run mkdocs build --strict` clean (no docs change — no observable
+  surface until M2-I). No `unwrap`/`expect`/`panic` outside tests.
+- **Next:** M2-I swaps `Catalog` internals for Fluent (bundles, hot-reload,
+  per-tenant overrides, locale resolution) — call sites unchanged. **Known gap:**
+  the missing-key warning omits the `tenant` field (§3.14.4.3) because no tenant
+  context reaches the seam in M1; add it at M2-I when the resolver becomes
+  tenant-scoped (§3.14.3.3). Wire `t!` into built-in commands at M1-16/17.

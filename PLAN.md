@@ -470,7 +470,7 @@ spine.
 
 - **M1-15 — `mud-cmd` CmdSet + parser.** CmdSet model; trie parser with
   prefix matching, aliases, switches (§2.7 step 5); merge semantics
-  Union/Replace/Remove with the fixed precedence order (§2.7 step 4).
+  Union/Replace/Remove with the fixed precedence order (§2.7 step 4). Commands must be translatable, default is `en` as usual.
   - *Spec:* §2.7 steps 4–5. *Verify:* merge precedence + prefix-match tests.
   - *Out of scope:* full object disambiguation prompt/ordinals (add when
     multiple matching items exist — minimal `name`/single-match for M1).
