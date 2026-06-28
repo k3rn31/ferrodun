@@ -443,6 +443,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#regions-regionkdl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Regions (region.kdl)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#welcome-banner-welcomekdl" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -546,6 +557,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#regions-regionkdl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Regions (region.kdl)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#welcome-banner-welcomekdl" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -597,7 +619,8 @@ plain text — <a href="https://kdl.dev">KDL</a> for structure and a small TOML 
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  world/           # rooms, scanned recursively
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    town.kdl
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    keep/
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>      cellar.kdl
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>      region.kdl   # declares the region the keep&#39;s rooms belong to
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>      cellar.kdl
 </code></pre></div>
 <h2 id="tenant-configuration-configtoml">Tenant configuration (<code>config.toml</code>)<a class="headerlink" href="#tenant-configuration-configtoml" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">start_room</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;town_square&quot;</span><span class="w">  </span><span class="c1"># required: the slug of the room new players start in</span>
@@ -663,21 +686,53 @@ freely without affecting saved locations.</p>
 <p class="admonition-title">Pick a naming convention early</p>
 <p>Slugs share one flat namespace across your whole game, so a consistent
 pattern keeps them unique and easy to scan once you have hundreds of rooms.
-A common choice is <strong><code>&lt;zone&gt;_&lt;room&gt;</code></strong> — prefix every slug with its zone:</p>
+A common choice is <strong><code>&lt;region&gt;_&lt;room&gt;</code></strong> — prefix every slug with its region:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>room &quot;harbor_docks&quot;     { description &quot;...&quot; }
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>room &quot;harbor_warehouse&quot; { description &quot;...&quot; }
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>room &quot;keep_gate&quot;        { description &quot;...&quot; }
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>room &quot;keep_cellar&quot;      { description &quot;...&quot; }
 </code></pre></div>
-<p>This groups a zone's rooms together alphabetically, makes exits read clearly
+<p>This groups a region's rooms together alphabetically, makes exits read clearly
 (<code>exit "north" "keep_gate"</code>), and lets you mirror the pattern in your folder
 layout (<code>world/harbor/</code>, <code>world/keep/</code>). Pick whatever scheme suits you, then
 apply it everywhere.</p>
 </div>
+<h2 id="regions-regionkdl">Regions (<code>region.kdl</code>)<a class="headerlink" href="#regions-regionkdl" title="Permanent link">&para;</a></h2>
+<p>A <strong>region</strong> is a named group of places — a town, a keep, a stretch of
+wilderness. Every room belongs to exactly one region. You declare a region by
+dropping a <code>region.kdl</code> file at the root of a folder: every room anywhere under
+that folder then belongs to it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>// world/keep/region.kdl
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>region &quot;old_keep&quot; {
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    name &quot;The Old Keep&quot;   // optional display name
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>}
+</code></pre></div>
+<p>With this file in place, <code>world/keep/cellar.kdl</code> — and any other room under
+<code>world/keep/</code> — belongs to the <code>old_keep</code> region. Rooms that sit under no
+<code>region.kdl</code> (like <code>world/town.kdl</code> above) belong to an implicit <strong>default</strong>
+region, so you only author regions where you want them.</p>
+<p>A few rules keep regions predictable:</p>
+<ul>
+<li><strong>The slug is the identity, not the folder name.</strong> A region is named by the
+  slug inside its <code>region.kdl</code> (<code>old_keep</code>), never by the folder it lives in. You
+  can rename or move the folder freely without changing the region.</li>
+<li><strong>One region per folder subtree.</strong> All the rooms under a region's folder share
+  that region. Regions cannot nest: putting a <code>region.kdl</code> inside another
+  region's folder is rejected.</li>
+<li><strong>Slugs are unique.</strong> Two regions cannot share a slug, and <code>default</code> is
+  reserved for the implicit region.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Who may edit a region</p>
+<p>Ferrodun does not manage builder permissions itself. Because each region is a
+self-contained folder, "who may edit this region" is simply a question of who
+can write to that directory — handle it with your filesystem or version
+control (for example, a <code>CODEOWNERS</code> entry per region folder).</p>
+</div>
 <h2 id="welcome-banner-welcomekdl">Welcome banner (<code>welcome.kdl</code>)<a class="headerlink" href="#welcome-banner-welcomekdl" title="Permanent link">&para;</a></h2>
 <p>The banner is shown to a connection before login. It is a single KDL node with one
 string:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>banner &quot;Welcome to Ferrodun.\nType `register` or `login`; `help` for commands.&quot;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>banner &quot;Welcome to Ferrodun.\nType `register` or `login`; `help` for commands.&quot;
 </code></pre></div>
 <h2 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h2>
 <p>Loading is strict: a malformed KDL file, a duplicate slug, an exit to an unknown
@@ -685,6 +740,9 @@ room, an unknown direction, an invalid slug, a room without a description, an
 unrecognized node or field (such as a misspelled <code>descriptipn</code>), a <code>banner</code> path
 that points outside the tenant folder, or a <code>start_room</code> that names no room all
 stop the load with a clear, specific error naming the offending file or field.</p>
+<p>The same applies to regions: a duplicate region slug, a region authored as the
+reserved <code>default</code> slug, a nested <code>region.kdl</code>, or a manifest that does not
+declare exactly one region each stop the load with a specific error.</p>
 
 
 
