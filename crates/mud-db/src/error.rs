@@ -37,6 +37,18 @@ pub enum DbError {
     #[error("internal map inconsistency: a live entity has no persisted key")]
     EntityNotMapped,
 
+    /// Boot load found a `location` row whose persisted slug names no room in the
+    /// loaded world — the room was removed since the location was written. Content
+    /// drift, surfaced rather than panicked on so a stale reference fails loudly.
+    #[error("location references unknown room slug: {0}")]
+    UnknownPlaceKey(String),
+
+    /// A `MoveTo` targeted a `PlaceId` absent from the world's place map. Every
+    /// in-memory handle that reaches persistence came from a loaded room, so this
+    /// is an internal invariant violation surfaced rather than panicked on.
+    #[error("internal map inconsistency: a place handle has no durable slug")]
+    PlaceNotMapped,
+
     /// Boot load found a `location`/`inventory` row referencing an `EntityKey`
     /// with no matching entity. Foreign keys make this unreachable in a
     /// consistent database, so it signals corruption; surfaced rather than

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT entity_key AS \"entity_key!\", place_id AS \"place_id!\" FROM location",
+  "query": "SELECT entity_key AS \"entity_key!\", place_key AS \"place_key!\" FROM location",
   "describe": {
     "columns": [
       {
@@ -15,13 +15,13 @@
         }
       },
       {
-        "name": "place_id!",
+        "name": "place_key!",
         "ordinal": 1,
-        "type_info": "Integer",
+        "type_info": "Text",
         "origin": {
           "Table": {
             "table": "location",
-            "name": "place_id"
+            "name": "place_key"
           }
         }
       }
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "a5c98cfc3ac961b7261fbf156163f8d9a43dc7d54594a3904167931e3a5d76b7"
+  "hash": "ba84bc5d660021a7fff2a31d4e8ec68de263badce42a494a3244a93a1306dce0"
 }

@@ -14,7 +14,9 @@ pub use locks::{
     AccessType, Lock, LockArg, LockContext, LockFn, ParseError, ParsedLock, ResolveError,
     ResolvedExpr, SyntaxExpr, parse, resolve,
 };
-pub use place::{Description, Direction, Place, PlaceId, RegionId, RoomData};
+pub use place::{
+    Description, Direction, Place, PlaceId, PlaceKey, PlaceKeyError, RegionId, RoomData, Title,
+};
 pub use scheduler::{
     Effect, MutationCommand, Precondition, Scheduler, TICK_HZ, TICK_PERIOD, TickEvent,
 };

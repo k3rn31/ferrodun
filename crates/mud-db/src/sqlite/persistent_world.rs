@@ -56,14 +56,13 @@
 use std::collections::HashMap;
 
 use mud_core::{
-    Effect, EntityId, EntityKey, MutationCommand, PlaceId, TenantTag, TickEvent, World,
+    Effect, EntityId, EntityKey, MutationCommand, PlaceId, PlaceKey, TenantTag, TickEvent, World,
 };
 
 use crate::error::DbError;
 use crate::sqlite::TenantDb;
-use crate::sqlite::keys::{
-    entity_key_from_db, entity_key_to_db, place_id_from_db, place_id_to_db, resolve_loaded,
-};
+use crate::sqlite::keys::{entity_key_from_db, entity_key_to_db, resolve_loaded};
+use crate::sqlite::place_map::PlaceMap;
 
 /// A tenant's in-memory world backed by write-through persistence.
 ///
@@ -79,6 +78,9 @@ pub struct PersistentWorld {
     // Keyed by the full `EntityId`: a stale handle to a reused slot carries an
     // older generation and so misses, never resolving to the new occupant.
     by_id: HashMap<EntityId, EntityKey>,
+    // Translates a location's durable slug to/from the ephemeral `PlaceId` the
+    // in-memory `World` uses, supplied by the world loader at construction.
+    places: PlaceMap,
 }
 
 impl PersistentWorld {
@@ -88,13 +90,17 @@ impl PersistentWorld {
     /// and replays the location and inventory tables so a clean restart restores
     /// where every entity is and what every container holds.
     ///
+    /// `places` translates a persisted location slug to the ephemeral `PlaceId`
+    /// the in-memory world uses; it is built by the world loader.
+    ///
     /// # Errors
     ///
     /// Returns [`DbError`] on a query failure, an out-of-range persisted id, a
     /// dangling reference (a `location`/`inventory` row pointing at an absent
-    /// entity — foreign keys make this unreachable in a consistent file), or
-    /// arena exhaustion while minting handles.
-    pub async fn load(db: TenantDb, tenant: TenantTag) -> Result<Self, DbError> {
+    /// entity — foreign keys make this unreachable in a consistent file), a
+    /// persisted location slug that names no loaded room
+    /// ([`DbError::UnknownPlaceKey`]), or arena exhaustion while minting handles.
+    pub async fn load(db: TenantDb, tenant: TenantTag, places: PlaceMap) -> Result<Self, DbError> {
         let mut world = World::new(tenant);
         let mut by_key = HashMap::new();
         let mut by_id = HashMap::new();
@@ -116,13 +122,13 @@ impl PersistentWorld {
         }
 
         let locations = sqlx::query!(
-            r#"SELECT entity_key AS "entity_key!", place_id AS "place_id!" FROM location"#
+            r#"SELECT entity_key AS "entity_key!", place_key AS "place_key!" FROM location"#
         )
         .fetch_all(db.pool())
         .await?;
         for row in locations {
             let id = resolve_loaded(&by_key, row.entity_key)?;
-            let place = place_id_from_db(row.place_id)?;
+            let place = place_id_for_slug(&places, &row.place_key)?;
             world
                 .move_to(id, place)
                 .map_err(|_| DbError::DanglingReference(row.entity_key))?;
@@ -146,6 +152,7 @@ impl PersistentWorld {
             world,
             by_key,
             by_id,
+            places,
         })
     }
 
@@ -248,19 +255,25 @@ impl PersistentWorld {
         }
     }
 
-    /// Persists a move already applied in memory: upsert the entity's location.
+    /// Persists a move already applied in memory: upsert the entity's location,
+    /// storing the destination's durable slug (not its ephemeral `PlaceId`).
     async fn persist_move(
         &mut self,
         entity: EntityId,
         place: PlaceId,
     ) -> Result<Option<TickEvent>, DbError> {
         let entity_key = entity_key_to_db(self.key_of(entity)?)?;
-        let place_id = place_id_to_db(place)?;
+        let place_key = self
+            .places
+            .key_of(place)
+            .ok_or(DbError::PlaceNotMapped)?
+            .as_str()
+            .to_owned();
         sqlx::query!(
-            "INSERT INTO location (entity_key, place_id) VALUES (?, ?) \
-             ON CONFLICT(entity_key) DO UPDATE SET place_id = excluded.place_id",
+            "INSERT INTO location (entity_key, place_key) VALUES (?, ?) \
+             ON CONFLICT(entity_key) DO UPDATE SET place_key = excluded.place_key",
             entity_key,
-            place_id
+            place_key
         )
         .execute(self.db.pool())
         .await?;
@@ -330,6 +343,16 @@ impl PersistentWorld {
     }
 }
 
+/// Resolves a persisted location slug to the ephemeral `PlaceId` of a loaded
+/// room. A malformed or unknown slug names no room — content drift — and surfaces
+/// as [`DbError::UnknownPlaceKey`] rather than a panic.
+fn place_id_for_slug(places: &PlaceMap, slug: &str) -> Result<PlaceId, DbError> {
+    PlaceKey::parse(slug)
+        .ok()
+        .and_then(|key| places.id_of(&key))
+        .ok_or_else(|| DbError::UnknownPlaceKey(slug.to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,7 +378,7 @@ mod tests {
             .await
             .expect("insert a corrupt entity row");
 
-        let error = PersistentWorld::load(db, tenant())
+        let error = PersistentWorld::load(db, tenant(), PlaceMap::default())
             .await
             .err()
             .expect("a corrupt key must fail the boot load");

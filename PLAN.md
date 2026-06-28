@@ -348,12 +348,24 @@ spine.
 ### World loading (`mud-world`) and config
 
 - **M1-12 — `mud-world` KDL room loader + tenant config.** `mud-world`
-  crate; parse hand-authored rooms (id, description, named exits) from KDL;
-  load tenant `config.toml` via `figment`; load the welcome banner (§3.19.1).
-  Minimal archetype handling: a built-in `player` puppet shape (full KDL
-  archetype + `extends` + hooks land in M2).
-  - *Spec:* §2.3.5 (minimal), §4.1, §3.19.1. *Verify:* loads the M1 fixture
-    world; malformed KDL yields a structured load error.
+  crate; parse hand-authored rooms from KDL; load the tenant `config.toml` via
+  `figment`; load the welcome banner (§3.19.1). Minimal archetype handling: a
+  built-in `player` puppet shape (full KDL archetype + `extends` + hooks land in
+  M2).
+  - *Spec:* §2.2.6, §2.3.5 (minimal), §2.5.1.5, §4.1, §3.19.1. *Verify:* loads
+    the M1 fixture world; malformed KDL yields a structured load error.
+  - **As built.** Parser: the **`kdl` crate** (added to the §6 tech-stack table;
+    SPEC §6 locked no KDL crate). Rooms are keyed by a **durable slug**
+    (`PlaceKey`, §2.2.6) — builders author no numeric ids; `PlaceId` became the
+    *ephemeral* in-process handle, mirroring `EntityKey`/`EntityId`. This rippled
+    into `mud-core` (new `PlaceKey`, optional room `title`) and `mud-db` (the
+    `location` table now stores `place_key TEXT`; `PersistentWorld` translates via
+    an injected `PlaceMap`; §2.5.1.5). One folder per tenant (SPEC §5):
+    `config.toml` carries only content fields (`start_room`, optional `banner`);
+    `world/` is scanned recursively for `*.kdl`. `mud-world` builds no `World` and
+    holds no `world_id`/`tenant_tag` (runtime/handshake concerns, M1-22).
+    `figment` layers TOML + `FERRODUN_`-prefixed env. **`clap` flag overrides
+    moved to M1-22** (where the `mudd` binary/CLI lives).
 
 ### Styled output and engine strings (minimal seams)
 
@@ -444,6 +456,24 @@ spine.
   M1-06 ships only the logical `tick()` and the cadence constants.
   - *Spec:* §2.1.3.3, §5.2. *Verify:* `cargo run -p mudd` serves a telnet
     login locally.
+  - **CLI (moved here from M1-12):** `mudd` parses arguments with **`clap`**;
+    flags MUST override the `figment`-loaded tenant config (layer a clap-derived
+    provider on top of TOML + env). At minimum a `--tenant-dir` flag selects which
+    tenant folder to boot.
+  - **Deferred identity decisions (resolve here):**
+    - **`world_id`** — must be stable across restarts (the resume handshake
+      §2.1.3.2 re-presents it). Decide its source: recommended is generate-once-
+      and-persist in the tenant DB, or derive deterministically from tenant
+      identity — not a hand-authored magic number.
+    - **`tenant_tag`** — the 12-bit isolation handle (§2.3.1.1) the `World` is
+      constructed with. Read it from `config.toml` (`0` for the single M1 tenant)
+      or assign at load; it needs no cross-restart stability.
+    - **Tenant selection / server config** — M1 boots a single tenant dir; a
+      server-wide config (tenant registry, public listener, routing) is a later
+      multi-tenant milestone.
+    - Wiring `mud-world`'s `LoadedWorld` into boot: open the DB (M1-08), build a
+      `PlaceMap` from `LoadedWorld::rooms().place_keys()`, and `PersistentWorld::
+      load(db, tenant, place_map)` (§2.5.1.5).
   - **Open design decision (resolve in this PR):** how the `mud-core`
     `Scheduler` (ordering/serialization) and the `mud-db` `PersistentWorld`
     (durability) compose into a **single** write path. Today they are two apply

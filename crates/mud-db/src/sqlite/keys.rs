@@ -1,11 +1,13 @@
 //! Boundary conversions between the database's `i64` columns and the typed
-//! domain ids (`EntityKey`, `PlaceId`). Parsing happens once, here, at the
-//! persistence edge; inner code works in typed ids and never re-validates.
+//! domain ids (`EntityKey`). Parsing happens once, here, at the persistence edge;
+//! inner code works in typed ids and never re-validates. (A location's place is
+//! persisted as its durable [`PlaceKey`](mud_core::PlaceKey) slug, a `TEXT`
+//! column translated via [`PlaceMap`](super::PlaceMap), not through this module.)
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 
-use mud_core::{EntityId, EntityKey, PlaceId};
+use mud_core::{EntityId, EntityKey};
 
 use crate::error::DbError;
 
@@ -27,19 +29,9 @@ pub(super) fn entity_key_from_db(value: i64) -> Result<EntityKey, DbError> {
     nonzero_from_db(value).map(EntityKey::new)
 }
 
-/// Parses a database `i64` into a [`PlaceId`], rejecting non-positive values.
-pub(super) fn place_id_from_db(value: i64) -> Result<PlaceId, DbError> {
-    nonzero_from_db(value).map(PlaceId::new)
-}
-
 /// Narrows an [`EntityKey`] to the `i64` its column stores.
 pub(super) fn entity_key_to_db(key: EntityKey) -> Result<i64, DbError> {
     nonzero_to_db(key.get())
-}
-
-/// Narrows a [`PlaceId`] to the `i64` its column stores.
-pub(super) fn place_id_to_db(place: PlaceId) -> Result<i64, DbError> {
-    nonzero_to_db(place.get())
 }
 
 /// `i64` → `NonZeroU64`, rejecting negative or zero values (defensive: keys are
