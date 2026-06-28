@@ -23,6 +23,7 @@ use kdl::{KdlDocument, KdlNode, KdlValue};
 use mud_core::{Description, Direction, Place, PlaceId, PlaceKey, RegionId, RoomData, Title};
 
 use crate::error::WorldError;
+use crate::regions::{REGION_MANIFEST, RegionBinder, Regions};
 
 /// The registry of rooms loaded from a tenant's world files.
 ///
@@ -77,33 +78,39 @@ impl Rooms {
 struct RawRoom {
     slug: PlaceKey,
     id: PlaceId,
+    region: RegionId,
     title: Option<Title>,
     description: Description,
     exits: Vec<(Direction, String)>,
 }
 
-/// The region every M1 room belongs to; per-region structure arrives later.
-fn default_region() -> RegionId {
-    RegionId::new(NonZeroU64::MIN)
-}
-
-/// Loads every `room` from the KDL files under `world_dir`.
+/// Loads every `room` from the KDL files under `world_dir`, binding each to its
+/// region, and the [`Regions`] declared by the `region.kdl` manifests.
 ///
 /// # Errors
 ///
 /// Returns [`WorldError`] if a file cannot be read or parsed, a slug is invalid
-/// or duplicated, an exit names an unknown direction or target room, or a room
-/// omits its description.
-pub fn load_rooms(world_dir: &Path) -> Result<Rooms, WorldError> {
+/// or duplicated, an exit names an unknown direction or target room, a room omits
+/// its description, or a region manifest is malformed (§2.2.7).
+pub fn load_rooms(world_dir: &Path) -> Result<(Rooms, Regions), WorldError> {
     let mut files = Vec::new();
     collect_kdl_files(world_dir, &mut files)?;
+
+    // A `region.kdl` is a region manifest (§2.2.7.3), never a room file; the rest
+    // are scanned for rooms.
+    let (manifest_files, room_files): (Vec<PathBuf>, Vec<PathBuf>) = files
+        .into_iter()
+        .partition(|path| path.file_name().and_then(OsStr::to_str) == Some(REGION_MANIFEST));
+    let binder = RegionBinder::load(&manifest_files, world_dir)?;
 
     let mut raw_rooms = Vec::new();
     let mut slug_to_id = HashMap::new();
     let mut id_to_slug = HashMap::new();
     let mut next_id = NonZeroU64::MIN;
 
-    for path in &files {
+    for path in &room_files {
+        // Every room in a file shares the region of the file's enclosing folder.
+        let region = binder.region_for(path.parent().unwrap_or(world_dir));
         let text = fs::read_to_string(path)?;
         let document = KdlDocument::parse(&text).map_err(|source| WorldError::Kdl {
             path: path.clone(),
@@ -120,7 +127,7 @@ pub fn load_rooms(world_dir: &Path) -> Result<Rooms, WorldError> {
                     node: node.name().value().to_owned(),
                 });
             }
-            let room = parse_room(node, PlaceId::new(next_id))?;
+            let room = parse_room(node, PlaceId::new(next_id), region)?;
             if slug_to_id.contains_key(&room.slug) {
                 return Err(WorldError::DuplicateSlug {
                     slug: room.slug.to_string(),
@@ -134,15 +141,19 @@ pub fn load_rooms(world_dir: &Path) -> Result<Rooms, WorldError> {
     }
 
     let by_id = resolve_rooms(raw_rooms, &slug_to_id)?;
-    Ok(Rooms {
-        by_id,
-        slug_to_id,
-        id_to_slug,
-    })
+    Ok((
+        Rooms {
+            by_id,
+            slug_to_id,
+            id_to_slug,
+        },
+        binder.into_regions(),
+    ))
 }
 
-/// Parses one `room` node into a [`RawRoom`], assigning it `id`.
-fn parse_room(node: &KdlNode, id: PlaceId) -> Result<RawRoom, WorldError> {
+/// Parses one `room` node into a [`RawRoom`], assigning it `id` and binding it to
+/// `region`.
+fn parse_room(node: &KdlNode, id: PlaceId, region: RegionId) -> Result<RawRoom, WorldError> {
     let slug_text = arg(node, 0).ok_or(WorldError::MissingField {
         node: "room".to_owned(),
         field: "slug",
@@ -182,6 +193,7 @@ fn parse_room(node: &KdlNode, id: PlaceId) -> Result<RawRoom, WorldError> {
     Ok(RawRoom {
         slug,
         id,
+        region,
         title,
         description,
         exits,
@@ -210,7 +222,7 @@ fn resolve_rooms(
 ) -> Result<HashMap<PlaceId, Place>, WorldError> {
     let mut by_id = HashMap::new();
     for raw in raw_rooms {
-        let mut data = RoomData::new(raw.id, default_region(), raw.description);
+        let mut data = RoomData::new(raw.id, raw.region, raw.description);
         if let Some(title) = raw.title {
             data = data.with_title(title);
         }
@@ -245,7 +257,7 @@ fn resolve_exit_target(
 }
 
 /// The first positional string argument of `node` at `index`, if present.
-fn arg(node: &KdlNode, index: usize) -> Option<&str> {
+pub(crate) fn arg(node: &KdlNode, index: usize) -> Option<&str> {
     node.get(index).and_then(KdlValue::as_string)
 }
 
@@ -310,7 +322,7 @@ mod tests {
     use super::*;
 
     /// Writes `(relative_path, contents)` files into a fresh world directory and
-    /// loads the rooms from it.
+    /// loads the rooms from it, dropping the region registry these tests ignore.
     fn load(files: &[(&str, &str)]) -> Result<Rooms, WorldError> {
         let dir = TempDir::new().expect("temp dir");
         for (relative, contents) in files {
@@ -320,7 +332,7 @@ mod tests {
             }
             fs::write(&path, contents).expect("write room file");
         }
-        load_rooms(dir.path())
+        load_rooms(dir.path()).map(|(rooms, _regions)| rooms)
     }
 
     fn slug(value: &str) -> PlaceKey {

@@ -2,8 +2,8 @@
 //!
 //! A place has two identities with distinct lifetimes, mirroring entities
 //! (§2.3.1.4). [`PlaceId`] is the ephemeral in-process handle defined here;
-//! [`PlaceKey`](super::key::PlaceKey) is the durable authored slug. [`RegionId`]
-//! names the region a place belongs to.
+//! [`PlaceKey`](super::key::PlaceKey) is the durable authored slug. The region a
+//! place belongs to is named by [`RegionId`](crate::RegionId), in its own module.
 
 use std::num::NonZeroU64;
 
@@ -35,23 +35,6 @@ impl PlaceId {
     }
 }
 
-/// The identifier of the region a [`Place`](super::Place) belongs to (§2.2.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[must_use]
-pub struct RegionId(NonZeroU64);
-
-impl RegionId {
-    /// Wraps a region identifier value.
-    pub const fn new(value: NonZeroU64) -> Self {
-        Self(value)
-    }
-
-    /// Returns the underlying identifier value.
-    pub const fn get(self) -> NonZeroU64 {
-        self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,9 +47,8 @@ mod tests {
     }
 
     #[test]
-    fn ids_round_trip_through_new_and_get() {
+    fn place_id_round_trips_through_new_and_get() {
         let value = NonZeroU64::new(7).expect("non-zero literal");
         assert_eq!(PlaceId::new(value).get(), value);
-        assert_eq!(RegionId::new(value).get(), value);
     }
 }

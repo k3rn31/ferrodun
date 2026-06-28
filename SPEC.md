@@ -335,7 +335,8 @@ engine and binds the spatial subsystem.
 
 2.2.2 A `Place` MUST expose, at minimum:
 - A stable identifier.
-- The region (or region-equivalent) it belongs to.
+- The `Region` it belongs to. Every `Place` MUST belong to exactly one
+  `Region` (§2.2.7); there is no region-less Place.
 - Its current occupants (an iterator over entities present).
 - A viewer-conditional description (the same place MAY look different
   to different observers, e.g. for invisibility, lighting, language).
@@ -385,6 +386,55 @@ trait PlaceView {
     fn visible_places(&self) -> impl Iterator<Item = PlaceId>;
 }
 ```
+
+#### 2.2.7 Regions
+
+A **Region** is the single grouping primitive that every `Place` belongs
+to. It is the engine's one notion of "area"; there is no separate "zone"
+concept. Rooms and tiles alike belong to a Region, and the spatial
+subsystem MUST NOT special-case the two.
+
+2.2.7.1 A Region MUST have two identities with distinct lifetimes,
+mirroring `Place` (§2.2.6) and entities (§2.3.1.4):
+- A **durable** `RegionKey` — the human-authored slug naming the Region.
+  It is the only Region reference that may be persisted or cross a
+  restart, and MUST be stable across the add/remove/rename authoring
+  lifecycle.
+- An **ephemeral** `RegionId` — the in-process handle used on hot paths,
+  minted when the world is loaded and valid only for that process
+  lifetime. `RegionId` values MUST NOT be persisted.
+
+2.2.7.2 A Region is the authoritative scope for area-level concerns. The
+engine MUST allow a Region to carry, with each attribute realized by the
+milestone that first consumes it:
+- **Display and navigation** — a display name (surfaced on entry and
+  exported to mapping clients, e.g. GMCP `Room.Area`), and an optional
+  recommended level.
+- **Policy** — PvP policy (safe by default, §3.12.6) and LLM token-budget
+  scope (§3.1.8.1). These are *per-Region* scopes.
+- **Ambient and spawn** — region scripts (weather, events), ambient
+  cues (music, lighting), and spawn/reset tables.
+
+A Region MAY carry none of these (a bare grouping with identity and a
+name is valid). A **wilderness** Region additionally owns a tile grid
+(§3.2.2.1); the tile grid is a property a Region MAY have, not the
+definition of a Region.
+
+2.2.7.3 **Authoring.** A Region MUST be declared by a manifest at the
+root of a world folder (a `region.kdl` file). Every `Place` authored
+anywhere under that folder subtree belongs to that Region. Region
+membership is therefore *folder-confined* but MUST NOT be derived from
+the folder's **name**: identity is the manifest's `RegionKey` slug, so
+renaming or moving the folder MUST NOT change the Region's identity. A
+`Place` authored under no manifest belongs to an implicit per-tenant
+default Region. In 1.0, Regions MUST be flat: a manifest nested under
+another Region's folder MUST be rejected at load.
+
+2.2.7.4 **Builder permissions are out of scope for the engine.** Who may
+edit which Region's files is delegated to the filesystem and version
+control (a Region maps cleanly to one directory subtree, hence one
+ownership unit). The engine MUST NOT implement per-Region authoring
+permissions.
 
 ### 2.3 Entity / Component / Archetype model
 
@@ -1251,7 +1301,7 @@ delegated to script-only enforcement.
 
 3.1.8.1 The engine MUST enforce token budgets at the following scopes:
 - Per NPC.
-- Per zone.
+- Per region (§2.2.7).
 - Per tenant.
 - Per server.
 
@@ -1323,13 +1373,18 @@ vehicle, not as a z-coordinate. The maximum region extent MUST be
 `±2^31 - 1` per axis; procedural regions (§3.2.3.3) MAY use the
 full range, hand-authored regions SHOULD stay well inside it.
 
-3.2.2.1 A **Region** is a 2D (optionally 3D z-layer) tile grid with:
+3.2.2.1 A **wilderness Region** is a Region (§2.2.7) that additionally
+owns a 2D (optionally 3D z-layer) tile grid with:
 - A **terrain layer** — forest / road / water / mountain / etc.
   encoded as bytes.
 - A **features overlay** — cities, dungeons, landmarks; transitions
   to Rooms.
 - An **encounters layer** — spawn tables per terrain.
 - **Region scripts** — region-level events (weather, ambushes).
+
+The tile grid is a property a Region MAY have, not the definition of a
+Region (§2.2.7.2): a Region of rooms carries identity, name, and policy
+without a grid.
 
 #### 3.2.3 Authoring
 
@@ -1679,9 +1734,9 @@ same scalars used by the LLM memory layer (§3.1.3 #5) and MUST also
 be readable by locks and behavior trees. Factions MUST be modeled as
 tag sets with relationship matrices, authored in KDL.
 
-3.12.6 **PvP.** PvP MUST be opt-in per zone via a `PvpPolicy` tag on
-the `Place`. The combat system MUST consult this tag before resolving
-player-vs-player damage. **Safe zones MUST be the default.**
+3.12.6 **PvP.** PvP MUST be opt-in per region (§2.2.7) via a `PvpPolicy`
+tag. The combat system MUST consult this tag before resolving
+player-vs-player damage. **Safe regions MUST be the default.**
 
 3.12.7 **Crafting.** Crafting MUST NOT be a core subsystem. It MUST
 be supported through prototypes plus scripted recipes. A reference
@@ -1889,9 +1944,9 @@ in-world; commands queued for it MUST be dropped. The default
 linkdead timeout MUST be **5 minutes**, configurable per tenant.
 
 3.15.2.2 During linkdead the puppet MUST remain a valid target for
-combat, scripts, and other players' actions. PvP zones (§3.12.6)
+combat, scripts, and other players' actions. PvP regions (§3.12.6)
 MUST treat a linkdead puppet identically to a connected one — the
-spec MUST NOT introduce a safe-by-linkdead loophole. Safe zones
+spec MUST NOT introduce a safe-by-linkdead loophole. Safe regions
 (the default) protect linkdead puppets exactly as they protect
 connected ones.
 

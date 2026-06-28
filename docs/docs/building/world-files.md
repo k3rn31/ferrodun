@@ -11,6 +11,7 @@ my-game/
   world/           # rooms, scanned recursively
     town.kdl
     keep/
+      region.kdl   # declares the region the keep's rooms belong to
       cellar.kdl
 ```
 
@@ -67,7 +68,7 @@ freely without affecting saved locations.
 
     Slugs share one flat namespace across your whole game, so a consistent
     pattern keeps them unique and easy to scan once you have hundreds of rooms.
-    A common choice is **`<zone>_<room>`** — prefix every slug with its zone:
+    A common choice is **`<region>_<room>`** — prefix every slug with its region:
 
     ```kdl
     room "harbor_docks"     { description "..." }
@@ -76,10 +77,47 @@ freely without affecting saved locations.
     room "keep_cellar"      { description "..." }
     ```
 
-    This groups a zone's rooms together alphabetically, makes exits read clearly
+    This groups a region's rooms together alphabetically, makes exits read clearly
     (`exit "north" "keep_gate"`), and lets you mirror the pattern in your folder
     layout (`world/harbor/`, `world/keep/`). Pick whatever scheme suits you, then
     apply it everywhere.
+
+## Regions (`region.kdl`)
+
+A **region** is a named group of places — a town, a keep, a stretch of
+wilderness. Every room belongs to exactly one region. You declare a region by
+dropping a `region.kdl` file at the root of a folder: every room anywhere under
+that folder then belongs to it.
+
+```kdl
+// world/keep/region.kdl
+region "old_keep" {
+    name "The Old Keep"   // optional display name
+}
+```
+
+With this file in place, `world/keep/cellar.kdl` — and any other room under
+`world/keep/` — belongs to the `old_keep` region. Rooms that sit under no
+`region.kdl` (like `world/town.kdl` above) belong to an implicit **default**
+region, so you only author regions where you want them.
+
+A few rules keep regions predictable:
+
+- **The slug is the identity, not the folder name.** A region is named by the
+  slug inside its `region.kdl` (`old_keep`), never by the folder it lives in. You
+  can rename or move the folder freely without changing the region.
+- **One region per folder subtree.** All the rooms under a region's folder share
+  that region. Regions cannot nest: putting a `region.kdl` inside another
+  region's folder is rejected.
+- **Slugs are unique.** Two regions cannot share a slug, and `default` is
+  reserved for the implicit region.
+
+!!! note "Who may edit a region"
+
+    Ferrodun does not manage builder permissions itself. Because each region is a
+    self-contained folder, "who may edit this region" is simply a question of who
+    can write to that directory — handle it with your filesystem or version
+    control (for example, a `CODEOWNERS` entry per region folder).
 
 ## Welcome banner (`welcome.kdl`)
 
@@ -97,3 +135,7 @@ room, an unknown direction, an invalid slug, a room without a description, an
 unrecognized node or field (such as a misspelled `descriptipn`), a `banner` path
 that points outside the tenant folder, or a `start_room` that names no room all
 stop the load with a clear, specific error naming the offending file or field.
+
+The same applies to regions: a duplicate region slug, a region authored as the
+reserved `default` slug, a nested `region.kdl`, or a manifest that does not
+declare exactly one region each stop the load with a specific error.

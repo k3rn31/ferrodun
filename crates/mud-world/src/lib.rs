@@ -16,11 +16,13 @@ mod archetype;
 mod banner;
 mod config;
 mod error;
+mod regions;
 mod rooms;
 
 pub use archetype::PlayerArchetype;
 pub use config::TenantConfig;
 pub use error::WorldError;
+pub use regions::{RegionName, Regions};
 pub use rooms::Rooms;
 
 use mud_core::PlaceKey;
@@ -30,6 +32,7 @@ use mud_core::PlaceKey;
 #[must_use]
 pub struct LoadedWorld {
     rooms: Rooms,
+    regions: Regions,
     banner: String,
     player: PlayerArchetype,
 }
@@ -38,6 +41,11 @@ impl LoadedWorld {
     /// The loaded room registry.
     pub fn rooms(&self) -> &Rooms {
         &self.rooms
+    }
+
+    /// The loaded region registry (§2.2.7).
+    pub fn regions(&self) -> &Regions {
+        &self.regions
     }
 
     /// The pre-login welcome banner text (§3.19.1).
@@ -63,7 +71,7 @@ impl LoadedWorld {
 /// Returns [`WorldError`] if a world file or the banner cannot be read or parsed,
 /// if a room is malformed, or if `start_room` names no loaded room.
 pub fn load_world(config: &TenantConfig) -> Result<LoadedWorld, WorldError> {
-    let rooms = rooms::load_rooms(&config.world_dir())?;
+    let (rooms, regions) = rooms::load_rooms(&config.world_dir())?;
     let banner = banner::load_banner(&config.banner_path())?;
 
     let start_slug =
@@ -79,6 +87,7 @@ pub fn load_world(config: &TenantConfig) -> Result<LoadedWorld, WorldError> {
 
     Ok(LoadedWorld {
         rooms,
+        regions,
         banner,
         player: PlayerArchetype::new(start_room),
     })

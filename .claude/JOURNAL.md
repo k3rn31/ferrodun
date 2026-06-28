@@ -713,3 +713,45 @@ truth when this log drifts.
   -p mud-world --all-targets` clean. No `unwrap`/`panic` outside tests; `expect` only in
   test helpers under the existing `allow-expect-in-tests`.
 - **Next:** unchanged — M1-13 (styled text + ANSI renderer).
+
+## 2026-06-28 — Region spec gap + M1-12a `RegionKey`
+
+- **Spec:** §2.2.2, §2.2.7 (new), §3.2.2.1, §3.1.8.1, §3.12.6 — closed the gap where
+  `Place::region()` was mandated on every place but "Region" was only ever defined as a
+  wilderness tile grid, and "zone" floated as a separate policy scope.
+- **Done:** SPEC — promoted **Region** to the single grouping primitive every place
+  belongs to: new §2.2.7 (durable `RegionKey` + ephemeral `RegionId`; folder-manifest
+  authoring, folder-confined but **not** folder-named; flat in 1.0; builder permissions
+  declared out of engine scope; roles = display/policy/ambient). §3.2.2.1 reframed as the
+  *wilderness extension* (tile grid is a property a region MAY have). **"zone" fully
+  retired** → "region" everywhere (token budgets §3.1.8.1, PvP §3.12.6, linkdead prose);
+  only "Time-zone" (the clock) remains. PLAN — added M1-12a/M1-12b, broadened M4-B to the
+  tile-grid extension. CODE (M1-12a) — added `RegionKey` (+`RegionKeyError`) newtype, and
+  on review **moved both region identities into a new `mud-core::region` module** (a region
+  is not a place, so it no longer lives under `place`); extracted the shared slug validator
+  to `mud-core::slug`. Crate-root re-exports (`mud_core::RegionId`/`RegionKey`) unchanged.
+- **Verify:** `cargo test -p mud-core` green (101); workspace `clippy`/`fmt` clean;
+  `grep -i zone SPEC.md` shows only the intentional "no separate zone" sentence + "Time-zone".
+- **Next:** M1-12b (below).
+
+## 2026-06-28 — M1-12b region manifest loader + room binding
+
+- **Spec:** §2.2.7, §4.1 — author regions from `region.kdl`, bind every room to one.
+- **Done:** New `mud-world::regions` module: parses `region.kdl` manifests during the
+  existing recursive `world/` scan, builds a `RegionKey`↔`RegionId` registry (`Regions`,
+  exposed on `LoadedWorld::regions()`), and binds each room to the deepest enclosing
+  manifest folder via a `RegionBinder`, falling back to an implicit per-tenant **default**
+  region (reserved slug `default`). Removed the M1-12 placeholder `default_region()`;
+  `RoomData` now receives a real `RegionId`. Optional `name` child → `RegionName` (mud-world
+  newtype). New `WorldError` variants: `InvalidRegionSlug`, `DuplicateRegionSlug`,
+  `ReservedRegionSlug`, `NestedRegion`, `InvalidRegionManifest`. Fixture gains
+  `world/keep/region.kdl` (`old_keep`); `rooms::arg` made `pub(crate)` and reused. **No
+  `mud-db` change** — a region is re-derived authored content, an entity's location stays a
+  `PlaceKey`. Docs: extended `building/world-files.md` with a Regions section (manifest,
+  folder-confinement, slug stability, VCS-delegated permissions) and retired "zone" there.
+- **Verify:** `cargo test -p mud-world` green (29 unit + 18 integration incl. binding +
+  duplicate/reserved/nested/malformed-manifest/unknown-child error paths); workspace
+  `clippy`/`fmt` clean; `uv run mkdocs build --strict` clean. No `unwrap`/`expect`/`panic`
+  outside tests (the impossible default-slug parse is `?`-propagated with an `INVARIANT`).
+- **Next:** M1-13 — styled text + ANSI renderer. Region *behaviours* (PvP, token budget,
+  ambient/spawn, tile grid) attach at their milestones (M4-B/M5-F/M6-C).

@@ -8,8 +8,8 @@
 //! [`Room`](Place::Room); a `PlaceView` trait would have a single implementor and
 //! buy nothing, so the surface stays inherent until a second variant earns it.
 
-use super::id::{PlaceId, RegionId};
-use crate::{EntityId, LocationOf};
+use super::id::PlaceId;
+use crate::{EntityId, LocationOf, RegionId};
 
 /// A direction an exit can lead in (§2.2.2).
 ///

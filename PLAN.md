@@ -367,6 +367,31 @@ spine.
     `figment` layers TOML + `FERRODUN_`-prefixed env. **`clap` flag overrides
     moved to M1-22** (where the `mudd` binary/CLI lives).
 
+- **M1-12a — `RegionKey` (durable region identity).** The durable authored
+  slug naming a `Region` (§2.2.7.1), mirroring `PlaceKey`: a non-empty
+  `[a-z0-9_-]` slug whose only constructor is a fallible `parse`. A newtype
+  distinct from the ephemeral `RegionId` (§2.2.7.1) so the two cannot be
+  confused at compile time (§1.7). `RoomData` already carries a `RegionId`;
+  this PR adds only the durable key type that M1-12b authors against.
+  - *Spec:* §2.2.6–2.2.7. *Verify:* slug validation (empty / bad char), `parse`↔
+    `Display` round-trip; `RegionKey` and `RegionId` are distinct types.
+- **M1-12b — Region manifest loader + room binding.** Parse `region.kdl`
+  manifests (§2.2.7.3) during the existing recursive `world/` scan; build a
+  `RegionKey`↔`RegionId` registry; bind each room to the Region whose manifest
+  folder is its nearest ancestor (folder-confined, **not** folder-named), or to
+  an implicit per-tenant default Region when no manifest governs it. Replaces
+  the M1-12 placeholder `default_region()`. Region *behaviours* (name rendering,
+  PvP, token budget, ambient/spawn) are deferred to their milestones; M1 binds
+  identity only (an optional authored display name is parsed and exposed).
+  - *Spec:* §2.2.7, §4.1. *Verify:* a room under a `region.kdl` binds to that
+    Region's `RegionId`; a room under no manifest binds to the default; a
+    duplicate / reserved / nested region slug and an unknown manifest node each
+    yield a structured `WorldError`; no room is left on a magic default.
+  - *Out of scope:* nested sub-regions (rejected in 1.0, §2.2.7.3); region
+    policy/ambient/spawn/tile-grid (their milestones); persistence — a Region is
+    re-derived authored content, an entity's stored location stays a `PlaceKey`,
+    so **no `mud-db` change**.
+
 ### Styled output and engine strings (minimal seams)
 
 - **M1-13 — Styled text + ANSI renderer (minimal).** Transport-neutral
@@ -613,10 +638,15 @@ Epics:
   order-preservation a `Vec` gives display against `HashSet` set semantics —
   and drop `visible_places_yields_the_authored_set`'s exact-ordering assertion
   if visibility becomes unordered.
-- **M4-B — Regions.** `mud-world` region loader: terrain layer (ASCII *or*
-  PNG palette), features overlay, encounters layer, region scripts
-  (§3.2.2–3.2.3). Procedural regions (`(x,y)->tile`, lazy + cached) and the
-  sparse `tile_overlay` table (§3.2.3.3–3.2.3.4).
+- **M4-B — Wilderness regions.** The **tile-grid extension** of the Region
+  primitive already defined in M1-12a/b (§2.2.7): a Region gains an optional
+  terrain layer (ASCII *or* PNG palette), features overlay, encounters layer,
+  and region scripts (§3.2.2–3.2.3). Procedural regions (`(x,y)->tile`, lazy +
+  cached) and the sparse `tile_overlay` table (§3.2.3.3–3.2.3.4). Region
+  *behaviours* not specific to tiles attach as their milestones arrive: PvP
+  policy → M5-F (§3.12.6); LLM token budget → M6-C (§3.1.8); ambient/spawn →
+  M4/M5. The `RegionKey`/`RegionId` split and folder-manifest authoring are
+  reused as-is from M1, not reintroduced.
 - **M4-C — Viewport, FOV, fog-of-war.** NAWS-sized viewport centered on the
   player; terrain+entity glyphs with ANSI/truecolor; engine-side FOV reused
   for NPC perception (§3.2.4).

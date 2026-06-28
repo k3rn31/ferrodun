@@ -3,8 +3,10 @@
 mod entity;
 mod locks;
 mod place;
+mod region;
 mod scheduler;
 mod side_tables;
+mod slug;
 mod world;
 
 pub use entity::{
@@ -14,9 +16,8 @@ pub use locks::{
     AccessType, Lock, LockArg, LockContext, LockFn, ParseError, ParsedLock, ResolveError,
     ResolvedExpr, SyntaxExpr, parse, resolve,
 };
-pub use place::{
-    Description, Direction, Place, PlaceId, PlaceKey, PlaceKeyError, RegionId, RoomData, Title,
-};
+pub use place::{Description, Direction, Place, PlaceId, PlaceKey, PlaceKeyError, RoomData, Title};
+pub use region::{RegionId, RegionKey, RegionKeyError};
 pub use scheduler::{
     Effect, MutationCommand, Precondition, Scheduler, TICK_HZ, TICK_PERIOD, TickEvent,
 };
