@@ -880,6 +880,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mud-engine"
+version = "0.1.0"
+dependencies = [
+ "mud-cmd",
+ "mud-core",
+ "mud-i18n",
+ "mud-schema",
+ "thiserror",
+ "tracing",
+ "tracing-test",
+]
+
+[[package]]
 name = "mud-i18n"
 version = "0.1.0"
 dependencies = [

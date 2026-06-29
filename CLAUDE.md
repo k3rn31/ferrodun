@@ -68,8 +68,9 @@ These are hard constraints, not preferences (cf. SPEC §1.7):
 - **Newtype pattern is mandatory.** Distinct domain concepts get distinct types (`EntityId`, `PlaceId`, `TenantTag`, …). Raw primitives MUST NOT cross public APIs where a domain meaning exists. Parse inputs into typed domain values at boundaries; inner code MUST NOT re-validate.
 - **`unwrap()` is strictly forbidden.** No exceptions.
 - **`expect()` is allowed only in tests**, never in production code, and must carry a descriptive message.
-- **Errors are always handled.** Libraries define error types with `thiserror`; applications use `anyhow`. `panic!`/`todo!`/`unreachable!` are forbidden in production unless guarded by a documented `// INVARIANT:` comment.
+- **Errors are always handled.** Libraries define error types with `thiserror`; applications use `anyhow`. `panic!`/`todo!`/`unreachable!` are forbidden in production unless guarded by a documented `// INVARIANT:` comment. Never leak third-party errors through public API.
 - **Database schemas are normalized to 3NF.** Design relational schemas to Third Normal Form: atomic columns, every non-key attribute fully dependent on the key, no transitive dependencies. Denormalize only for a measured reason, and document it in the migration with a `-- DENORMALIZED:` comment explaining the tradeoff.
+- **Never suppress lints.** Lints are there for a reason. If in very rare cases a lint is truly inappropriate, suppression must be in the smallest scope possible, with a `// LINT:` comment explaining why it is safe to ignore. Don't be lazy!
 
 ## Conventions
 

@@ -1,0 +1,18 @@
+[package]
+name = "mud-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mud-cmd = { version = "0.1.0", path = "../mud-cmd" }
+mud-core = { version = "0.1.0", path = "../mud-core" }
+mud-i18n = { version = "0.1.0", path = "../mud-i18n" }
+mud-schema = { version = "0.1.0", path = "../mud-schema" }
+thiserror = "2.0.18"
+tracing = "0.1.44"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tracing-test = "0.2.6"
