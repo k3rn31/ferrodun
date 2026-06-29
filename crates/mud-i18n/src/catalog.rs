@@ -83,4 +83,40 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn insert_overwrites_an_existing_entry() {
+        let mut catalog = Catalog::new();
+        catalog.insert(Locale::EN, MessageKey::from_static("greeting"), "Hello");
+        catalog.insert(Locale::EN, MessageKey::from_static("greeting"), "Hi");
+
+        // The contract is "replacing any prior entry": the second template wins.
+        assert_eq!(
+            catalog.lookup(&Locale::EN, &MessageKey::from_static("greeting")),
+            Some("Hi")
+        );
+    }
+
+    #[test]
+    fn lookup_is_isolated_across_locales() {
+        let fr = Locale::from_static("fr");
+        let mut catalog = Catalog::new();
+        catalog.insert(Locale::EN, MessageKey::from_static("hello"), "Hello");
+        catalog.insert(fr.clone(), MessageKey::from_static("hello"), "Bonjour");
+        catalog.insert(fr.clone(), MessageKey::from_static("bye"), "Au revoir");
+
+        assert_eq!(
+            catalog.lookup(&Locale::EN, &MessageKey::from_static("hello")),
+            Some("Hello")
+        );
+        assert_eq!(
+            catalog.lookup(&fr, &MessageKey::from_static("hello")),
+            Some("Bonjour")
+        );
+        // A key present only in fr does not leak into en.
+        assert_eq!(
+            catalog.lookup(&Locale::EN, &MessageKey::from_static("bye")),
+            None
+        );
+    }
 }

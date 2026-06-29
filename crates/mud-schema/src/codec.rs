@@ -46,3 +46,57 @@ pub fn encode<T: Serialize>(frame: &T) -> Result<Vec<u8>, SchemaError> {
 pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, SchemaError> {
     postcard::from_bytes(bytes).map_err(SchemaError::from_postcard)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU64;
+
+    use super::*;
+    use crate::frame::{GatewayFrame, SessionConnect, WorldFrame};
+    use crate::session::SessionId;
+
+    fn session(value: u64) -> SessionId {
+        SessionId::new(NonZeroU64::new(value).expect("test session id must be non-zero"))
+    }
+
+    #[test]
+    fn decode_rejects_garbage_bytes() {
+        let result = decode::<GatewayFrame>(&[0xFF, 0xFE, 0xFD]);
+        assert!(matches!(result, Err(SchemaError::Postcard(_))));
+    }
+
+    #[test]
+    fn decode_rejects_a_truncated_frame() {
+        let frame = GatewayFrame::Input(crate::frame::SessionInput {
+            session_id: session(2),
+            line: crate::frame::InputLine::new("look"),
+        });
+        let bytes = encode(&frame).expect("encode");
+
+        // Drop the payload's trailing bytes: the length prefix now over-promises.
+        let truncated = bytes
+            .get(..bytes.len() - 2)
+            .expect("encoded input frame is longer than two bytes");
+        assert!(matches!(
+            decode::<GatewayFrame>(truncated),
+            Err(SchemaError::Postcard(_))
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_a_frame_of_the_wrong_direction() {
+        // A GatewayFrame must not decode as a WorldFrame. Their variant index
+        // spaces differ, so the directional split is enforced at the wire too.
+        let frame = GatewayFrame::Connect(SessionConnect {
+            session_id: session(1),
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert!(decode::<WorldFrame>(&bytes).is_err());
+    }
+
+    #[test]
+    fn schema_error_display_names_the_codec() {
+        let err = decode::<GatewayFrame>(&[0xFF, 0xFE, 0xFD]).expect_err("garbage must not decode");
+        assert!(err.to_string().contains("postcard"));
+    }
+}

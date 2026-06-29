@@ -175,4 +175,39 @@ mod tests {
             "Hi { $who }"
         );
     }
+
+    #[test]
+    fn interpolates_multiple_distinct_args() {
+        let catalog = catalog_with(Locale::EN, "greet", "{ $a } and { $b }");
+
+        assert_eq!(
+            translate(
+                &catalog,
+                &Locale::EN,
+                &MessageKey::from_static("greet"),
+                &[("a", "x"), ("b", "y")]
+            ),
+            "x and y"
+        );
+    }
+
+    #[test]
+    fn sequential_fold_re_scans_substituted_arg_values() {
+        // Pins the throwaway interpolator's documented caveat (see `interpolate`'s
+        // NOTE): substituting `who` leaves a literal `{ $name }`, which the later
+        // `name` arg then expands to "Alice". Fluent (M2-I) resolves placeables
+        // from the template alone and will NOT re-scan; this test is the canary
+        // that must change when that contract lands.
+        let catalog = catalog_with(Locale::EN, "greet", "{ $who }");
+
+        assert_eq!(
+            translate(
+                &catalog,
+                &Locale::EN,
+                &MessageKey::from_static("greet"),
+                &[("who", "{ $name }"), ("name", "Alice")]
+            ),
+            "Alice"
+        );
+    }
 }

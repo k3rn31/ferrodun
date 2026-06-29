@@ -265,4 +265,48 @@ mod tests {
         let bytes = encode(&frame).expect("encode");
         assert_eq!(bytes, vec![0x01, 0x02, 0x02, 0x68, 0x69]);
     }
+
+    #[test]
+    fn resume_handshake_round_trips_with_no_live_sessions() {
+        let frame = GatewayFrame::Resume(ResumeHandshake {
+            world_id: world(7),
+            schema_version: crate::SCHEMA_VERSION,
+            live_sessions: vec![],
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<GatewayFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn resume_handshake_round_trips_with_many_live_sessions() {
+        let frame = GatewayFrame::Resume(ResumeHandshake {
+            world_id: world(7),
+            schema_version: crate::SCHEMA_VERSION,
+            live_sessions: (1..=1000).map(session).collect(),
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<GatewayFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn input_line_round_trips_telnet_iac_and_ansi_bytes_verbatim() {
+        // The IPC boundary carries the line verbatim (M1-17 strips downstream), so
+        // an IAC byte (0xFF) and an ANSI escape must survive encode/decode intact.
+        let frame = GatewayFrame::Input(SessionInput {
+            session_id: session(1),
+            line: InputLine::new("hi\u{ff}\u{1b}[31m"),
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<GatewayFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn output_text_round_trips_multibyte_unicode() {
+        let frame = WorldFrame::Output(SessionOutput {
+            session_id: session(1),
+            text: OutputText::new("こんにちは 👋"),
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
+    }
 }
