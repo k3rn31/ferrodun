@@ -14,14 +14,22 @@
 //! [`SessionResolver`] seam without reshaping the pipeline; built-in command
 //! bodies (M1-17) plug in as [`CommandHandler`]s.
 
+mod builtins;
 mod caller;
 mod command_id;
 mod dispatch;
 mod layers;
+mod objects;
 mod pipeline;
+mod places;
+mod text;
 
+pub use builtins::register;
 pub use caller::{CallerContext, ResolvedSession, SessionResolver};
 pub use command_id::CommandId;
 pub use dispatch::{CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher};
 pub use layers::LayerCommands;
+pub use objects::{Resolution, resolve_among};
 pub use pipeline::{Pipeline, PipelineError};
+pub use places::Places;
+pub use text::{ContentTooLong, MAX_CONTENT_BYTES, sanitize};

@@ -9,7 +9,7 @@
 //! correlation id (§2.7.1).
 
 use mud_cmd::ParseOutcome;
-use mud_core::World;
+use mud_core::{TickEvent, World};
 use mud_i18n::t;
 use mud_schema::{OutputText, SessionInput, SessionOutput};
 
@@ -17,6 +17,7 @@ use crate::CommandId;
 use crate::caller::{CallerContext, SessionResolver};
 use crate::command_id::CommandIdGen;
 use crate::dispatch::{CommandContext, Dispatcher};
+use crate::places::Places;
 
 /// Runs player input through §2.7's command pipeline.
 ///
@@ -52,6 +53,7 @@ impl Pipeline {
     pub fn dispatch(
         &mut self,
         world: &mut World,
+        places: &dyn Places,
         resolver: &impl SessionResolver,
         input: &SessionInput,
     ) -> Result<Vec<SessionOutput>, PipelineError> {
@@ -100,22 +102,37 @@ impl Pipeline {
                 command,
                 switches,
                 args,
-            } => self.run_matched(world, command_id, &caller, command, &switches, args),
+            } => self.run_matched(
+                world,
+                places,
+                command_id,
+                &caller,
+                Parsed {
+                    command,
+                    switches: &switches,
+                    args,
+                },
+            ),
         };
 
         Ok(outputs)
     }
 
-    /// Steps 6–8 for a parsed command: lock-check, dispatch, render.
+    /// Steps 6–8 for a parsed command: lock-check, dispatch, apply effects,
+    /// render.
     fn run_matched(
         &self,
-        world: &World,
+        world: &mut World,
+        places: &dyn Places,
         command_id: CommandId,
         caller: &CallerContext,
-        command: &mud_cmd::Command,
-        switches: &[mud_cmd::Switch],
-        args: &str,
+        parsed: Parsed<'_>,
     ) -> Vec<SessionOutput> {
+        let Parsed {
+            command,
+            switches,
+            args,
+        } = parsed;
         let session_id = caller.session_id();
         let locale = caller.locale();
 
@@ -135,14 +152,37 @@ impl Pipeline {
             return message(session_id, t!(locale.clone(), "command.denied"));
         }
 
-        // Step 7: dispatch the handler.
-        let ctx = CommandContext::new(command_id, caller, switches, args, world);
-        let reply = binding.handler().run(&ctx);
+        // Step 7: dispatch the handler over a read-only world, then apply the
+        // effects it returned against the &mut World held here. The immutable
+        // borrow in `ctx` ends before the mutation, so a handler cannot both read
+        // and write the world in one run — mutation is data it requests.
+        let reply = {
+            let ctx = CommandContext::new(command_id, caller, switches, args, &*world, places);
+            binding.handler().run(&ctx)
+        };
+        for &effect in reply.effects() {
+            if let Some(TickEvent::Rejected { effect, error }) = world.apply_effect(effect) {
+                tracing::warn!(
+                    command = %command.name().as_str(),
+                    ?effect,
+                    ?error,
+                    "command effect rejected",
+                );
+            }
+        }
 
         // Step 8: render per session. The styled-text-over-IPC swap and ANSI
         // rendering land in M1-21/22; for now flatten to plain text.
         message(session_id, reply.output().to_plain_string())
     }
+}
+
+/// The §2.7-step-5 parse output for a matched command, grouped so the
+/// lock-check/dispatch step takes one argument rather than three.
+struct Parsed<'a> {
+    command: &'a mud_cmd::Command,
+    switches: &'a [mud_cmd::Switch],
+    args: &'a str,
 }
 
 /// Wraps one engine message as a single-element output for `session_id`.
@@ -215,6 +255,16 @@ mod tests {
         }
     }
 
+    /// A places registry with no rooms: these traced-dispatch tests parse to
+    /// `NotFound`, so no handler reads a `Place`.
+    struct NoPlaces;
+
+    impl Places for NoPlaces {
+        fn get(&self, _id: PlaceId) -> Option<&mud_core::Place> {
+            None
+        }
+    }
+
     #[tracing_test::traced_test]
     #[test]
     fn each_run_is_traced_with_a_distinct_command_id() {
@@ -224,10 +274,10 @@ mod tests {
         let mut pipeline = Pipeline::new(Dispatcher::new());
 
         pipeline
-            .dispatch(&mut world, &resolver, &input(1, "look"))
+            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("first dispatch");
         pipeline
-            .dispatch(&mut world, &resolver, &input(1, "look"))
+            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("second dispatch");
 
         // Each run logs under its own command span; the ids increase per run.

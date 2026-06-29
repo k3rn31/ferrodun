@@ -2,9 +2,10 @@
 //!
 //! Hot components are touched every tick / combat round, so §2.3.2.2 keeps them
 //! in dense, slot-indexed arrays rather than the dynamic component bag. This
-//! module holds the two such tables in use: [`LocationOf`] (which [`Place`] each
-//! entity occupies, plus a reverse occupant index) and [`Inventory`] (which
-//! entities a container holds). The other hot components §2.3.2.2 lists —
+//! module holds the tables in use: [`LocationOf`] (which [`Place`] each
+//! entity occupies, plus a reverse occupant index), [`Inventory`] (which
+//! entities a container holds), and [`Naming`] (the keywords each entity answers
+//! to, for command-argument matching). The other hot components §2.3.2.2 lists —
 //! `Position`, `Health`, `Initiative` — are not represented here.
 //!
 //! These tables are **pure storage keyed by [`SlotIndex`]** (the slot half of an
@@ -20,6 +21,8 @@
 
 mod inventory;
 mod location;
+mod naming;
 
 pub use inventory::Inventory;
 pub use location::LocationOf;
+pub use naming::{Keyword, Naming};

@@ -65,6 +65,12 @@ pub enum Effect {
         /// The destination Place.
         place: PlaceId,
     },
+    /// Clear an entity's location, so it is located nowhere (e.g. an item lifted
+    /// off the ground into an inventory).
+    ClearLocation {
+        /// The entity whose location is cleared.
+        entity: EntityId,
+    },
     /// Add an item to a container's inventory.
     InventoryAdd {
         /// The container receiving the item.

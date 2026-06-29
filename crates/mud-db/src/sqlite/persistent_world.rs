@@ -198,6 +198,7 @@ impl PersistentWorld {
 
         match effect {
             Effect::MoveTo { entity, place } => self.persist_move(entity, place).await,
+            Effect::ClearLocation { entity } => self.persist_clear_location(entity).await,
             Effect::InventoryAdd { container, item } => {
                 self.persist_inventory_add(container, item).await
             }
@@ -277,6 +278,20 @@ impl PersistentWorld {
         )
         .execute(self.db.pool())
         .await?;
+        Ok(None)
+    }
+
+    /// Persists a location-clear already applied in memory: delete the entity's
+    /// `location` row, so a grounded item lifted into an inventory does not
+    /// revert to grounded on restart. A no-op if the entity had no row.
+    async fn persist_clear_location(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<Option<TickEvent>, DbError> {
+        let entity_key = entity_key_to_db(self.key_of(entity)?)?;
+        sqlx::query!("DELETE FROM location WHERE entity_key = ?", entity_key)
+            .execute(self.db.pool())
+            .await?;
         Ok(None)
     }
 

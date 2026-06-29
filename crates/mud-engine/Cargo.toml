@@ -10,6 +10,7 @@ mud-i18n = { version = "0.1.0", path = "../mud-i18n" }
 mud-schema = { version = "0.1.0", path = "../mud-schema" }
 thiserror = "2.0.18"
 tracing = "0.1.44"
+unicode-normalization = "0.1.25"
 
 [lints]
 workspace = true

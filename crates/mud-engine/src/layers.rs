@@ -28,6 +28,10 @@ const PUPPET: i32 = 40;
 const CONTAINER: i32 = 30;
 const LOCATION: i32 = 20;
 const CHANNEL: i32 = 10;
+// Engine built-ins (M1-17) sit below every other source so any account, puppet,
+// container, location, or channel command of the same name shadows them — the
+// player's world always beats the default binding (§2.7 step-4 intent).
+const BUILTIN: i32 = 0;
 
 /// The command sources for one resolved caller, one `Vec` per §2.7 step-4 layer.
 ///
@@ -47,6 +51,9 @@ pub struct LayerCommands {
     pub location: Vec<Command>,
     /// Bindings contributed by subscribed channels (empty in M1; §3.6.1).
     pub channels: Vec<Command>,
+    /// Engine built-in commands (M1-17), at the lowest precedence so any other
+    /// source shadows a same-named built-in.
+    pub builtins: Vec<Command>,
 }
 
 impl LayerCommands {
@@ -72,6 +79,7 @@ impl LayerCommands {
         }
         push_layer(&mut sets, "location", LOCATION, &self.location);
         push_layer(&mut sets, "channels", CHANNEL, &self.channels);
+        push_layer(&mut sets, "builtins", BUILTIN, &self.builtins);
 
         CmdSet::merge(&sets)
     }
@@ -198,5 +206,30 @@ mod tests {
     fn an_empty_layer_set_merges_to_an_empty_table() {
         let table = LayerCommands::default().merge();
         assert_eq!(table.parse("look"), ParseOutcome::NotFound);
+    }
+
+    #[test]
+    fn a_location_command_shadows_a_same_named_builtin() {
+        let layers = LayerCommands {
+            location: vec![marked("look", "from-location")],
+            builtins: vec![marked("look", "from-builtin")],
+            ..LayerCommands::default()
+        };
+
+        let table = layers.merge();
+        let look = table.get(&name("look")).expect("look survives the merge");
+        assert!(look.aliases().contains(&name("from-location")));
+        assert!(!look.aliases().contains(&name("from-builtin")));
+    }
+
+    #[test]
+    fn an_uncontested_builtin_is_present() {
+        let layers = LayerCommands {
+            builtins: vec![Command::new(name("inventory"))],
+            ..LayerCommands::default()
+        };
+
+        let table = layers.merge();
+        assert!(table.get(&name("inventory")).is_some());
     }
 }

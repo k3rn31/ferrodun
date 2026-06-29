@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM location WHERE entity_key = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "fc8c10aee75596e564939f71e20e9181aad4802d6c9e7220aa35a0d89cb1a5e2"
+}

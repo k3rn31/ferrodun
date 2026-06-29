@@ -22,7 +22,7 @@ pub use region::{RegionId, RegionKey, RegionKeyError};
 pub use scheduler::{
     Effect, MutationCommand, Precondition, Scheduler, TICK_HZ, TICK_PERIOD, TickEvent,
 };
-pub use side_tables::{Inventory, LocationOf};
+pub use side_tables::{Inventory, Keyword, LocationOf, Naming};
 pub use text::{
     Attributes, Color, ColorParseError, CompiledMarkup, FieldStyle, MarkupDiagnostic, Palette,
     RoleName, Span, SpanStyle, Style, StyledText, compile_markup,

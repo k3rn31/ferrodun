@@ -481,15 +481,27 @@ spine.
   - *Spec:* §2.7. *Verify:* end-to-end command dispatch unit/integration
     test with a fake session.
 - **M1-17 — Built-in commands (M1 set).** Rust-native: `look`, movement
-  (`north/east/south/west/up/down` + aliases), `say`, `who`, `quit`,
-  `get`/`drop`, `inventory`. `say`/`emote` honor the 4 KiB content cap and
-  control-char/ANSI stripping (§3.6.4) and render through palette roles
-  (§3.20.4) by building role-styled spans (`Span::role`, M1-13a) at the
-  emission site. **Player-input markup escaping (§3.20.7)** lands here: raw
-  ANSI is stripped and color *markup* in player text is escaped (rendered
-  literally) by default, so players cannot inject styling into others' output.
+  (`north/east/south/west/up/down` + aliases), `say`, `get`/`drop`,
+  `inventory`. `say` honors the 4 KiB content cap and control-char/ANSI
+  stripping (§3.6.4) and renders through palette roles (§3.20.4) by building
+  role-styled spans (`Span::role`, M1-13a) at the emission site.
+  **Player-input markup escaping (§3.20.7)** lands here: raw ANSI is stripped
+  and color *markup* in player text is escaped (rendered literally) by default
+  — sanitized player text is emitted as plain spans, never compiled through
+  the markup path, so players cannot inject styling into others' output. Full
+  §2.7-step-5 object disambiguation (`name.N` / `all` / one-shot numbered
+  prompt) lands here. Built in two PRs: a substrate PR (`mud-core` entity
+  keywords + `World` read surface + `Effect::ClearLocation`; `mud-engine`
+  `CommandReply` world-effects, `Places` seam, `builtins` command layer,
+  object resolver, input-safety helper; `mud-i18n` `en` builtin catalog) and
+  the command-handler PR.
+  - **Deferred to M1-19a** (depend on the session→entity map that M1-18/19
+    own): `who` (connected-player index), `quit` (session close via the FSM +
+    gateway), and cross-player broadcast for `say` and movement
+    arrival/departure. `say` is caller-echo-only until then.
   - *Spec:* §2.7, §3.6.3–3.6.4, §3.20.4, §3.20.7. *Verify:* per-command behavior
-    tests; content-cap rejection test; player-markup-escaped test.
+    tests; content-cap rejection test; player-markup-escaped test;
+    disambiguation tests.
 
 ### Accounts and sessions (`mud-core` domain + `mud-db` storage + FSM)
 
@@ -506,6 +518,15 @@ spine.
   small command set (§3.19.1, §3.19.3). Linkdead/idle handling minimal
   (full linkdead reattach is M7-grade; M1 just needs clean connect/quit).
   - *Spec:* §3.19.1, §3.19.3, §2.7 step 1. *Verify:* FSM transition tests.
+- **M1-19a — Session-dependent built-in commands.** The slice of M1-17
+  deferred until the session→entity map exists: `who` (list connected players),
+  `quit` (clean session close through the FSM + gateway), and cross-player
+  **broadcast** — `say` reaching co-located players and movement emitting
+  arrival/departure to the rooms left and entered. Adds the broadcast slot to
+  `CommandReply` and the entity→session fan-out in `Pipeline` (the seam left
+  open in M1-17). Present NPCs hearing `say`/`emote` (§3.6.3) is wired here too.
+  - *Spec:* §2.7 step 8, §3.6.3. *Verify:* two-session broadcast test;
+    `who` lists connected sessions; `quit` closes the session.
 
 ### Networking and integration (`mud-net`, `mud-gateway`, `mudd`)
 

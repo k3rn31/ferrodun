@@ -989,3 +989,96 @@ truth when this log drifts.
   `quit`, `get`/`drop`, `inventory`) as `CommandHandler`s; content-cap +
   player-markup escaping; role-styled spans at emission. Object disambiguation
   (`name.N`/`all`/prompt) and populating the `en` catalog remain deferred.
+
+## 2026-06-29 — M1-17 PR-A: built-in command substrate
+
+- **Spec:** §2.7 (steps 5, 7), §3.6.4, §3.20.7 — the domain + engine seams the
+  M1 built-ins need before any command body exists.
+- **Done:** Split M1-17 into a substrate PR + a handler PR (see `PLAN.md`). This
+  PR adds, with **no player-visible command yet**:
+  - `mud-core`: a `Naming` side-table (`Keyword` newtype, lowercased on
+    construction; slot-indexed `Vec<Vec<Keyword>>` mirroring `Inventory`) with
+    `World::name_entity`/`keywords_of` and teardown clear; a read surface on
+    `World` — `location_of`, `occupants_of`, `inventory_of`, `keywords_of` (thin
+    liveness-checked delegations); `Effect::ClearLocation { entity }` +
+    `World::clear_location` + `apply_effect` arm (lets `get` lift a grounded
+    item before `InventoryAdd`).
+  - `mud-engine`: `CommandReply` grew a `Vec<Effect>` (`with_effect`); the
+    `Pipeline` applies them against its `&mut World` after the handler's
+    read-only borrow ends, logging `TickEvent::Rejected` under the command span
+    — this proves the "unproven until M1-17" contract in `dispatch.rs`. A
+    `Places` trait seam (`PlaceId -> Option<&Place>`) threaded through
+    `Pipeline::dispatch` into `CommandContext::places()` (so `mud-engine` needs
+    no `mud-world` dep; `Rooms` implements it at M1-22). A lowest-precedence
+    `builtins` layer in `LayerCommands` (priority 0, below `channels`). A
+    stateless object resolver (`objects::resolve`/`resolve_among` → `Resolution`
+    One/All/Ambiguous/NoMatch) doing §2.7-step-5 prefix match + `name.N` +
+    `all`. An input-safety helper (`text::sanitize`): NFC, 4 KiB cap (reject not
+    truncate → `ContentTooLong`), strip control chars except `\n`, strip ANSI
+    CSI.
+  - `mud-i18n`: populated `Catalog::builtin()` with the M1-17 `en` keys
+    (`look.*`, `move.no-exit`, `say.*`, `inventory.*`, `get.taken`,
+    `drop.dropped`, `object.*`, `content.too-long`). M1-16 `command.*` outcomes
+    stay literal-key for now.
+- **Verify:** `cargo test --workspace` green; `cargo clippy --workspace
+  --all-targets` and `cargo fmt --check` clean. New unit tests: naming table,
+  `World` reads, `ClearLocation` apply; `CommandReply` effect application
+  (integration), `builtins`-layer shadowing, object resolver (all arms +
+  scoped `resolve_among`), sanitizer (cap/ANSI/control).
+- **Next:** PR-B — the handler bodies.
+
+## 2026-06-29 — M1-17 PR-B: built-in command handlers
+
+- **Spec:** §2.7 step 7, §3.2, §3.6.3–3.6.4, §3.20.4, §3.20.7, §3.14.5.1.
+- **Done:** `mud-engine::builtins` with `register(&mut Dispatcher) -> Vec<Command>`
+  (one table binds handlers and yields the matching command metadata, so a
+  command can't appear on one side only). Handlers: `look` (title + description
+  + N/E/S/W/U/D exits + "also here" occupants, role-styled); six movement
+  commands (`Move(Direction)` → `MoveTo` effect + a look at the destination;
+  no exit → `move.no-exit`); `say` (sanitize → cap/empty checks → caller echo
+  in a `say`-role span; **caller-only**, room broadcast deferred to M1-19a);
+  `inventory`; `get`/`drop` with full §2.7-step-5 disambiguation (`get` scoped
+  to floor items via `resolve_among(occupants)`, `drop` to carried via
+  `resolve_among(inventory)`; `name.N`/`all`/numbered prompt). Canonical
+  English command names (§3.14.5.1). Player markup renders literally because
+  sanitized text is emitted as plain spans, never through the markup compiler
+  (§3.20.7).
+- **Verify:** `cargo test -p mud-engine --test builtins` 15 green (look render +
+  occupants; move applies/refuses; say echo/empty/ANSI-stripped+markup-literal/
+  over-cap reject; inventory empty→listed; get↔drop round-trip; not-here/
+  not-carried; ambiguous numbered prompt; ordinal; `all`). `cargo test
+  --workspace`, `clippy --workspace --all-targets`, `fmt --check` clean.
+  Docs: added `docs/docs/playing/commands.md` (+ nav `Playing` section);
+  `uv run mkdocs build --strict` clean.
+- **Next:** M1-18 (accounts) / M1-19 (session FSM); then **M1-19a** —
+  `who`/`quit`/cross-player broadcast on the session→entity map.
+
+## 2026-06-29 — M1-17 review fixes (/code-review high)
+
+- **Spec:** §2.5.3 (effect persistence), §3.6.4/§3.20.7 (input safety).
+- **Done:** Acted on a multi-angle review of the M1-17 diff.
+  - **mud-db (the substantive one):** `Effect::ClearLocation` had no persistence
+    path — `PersistentWorld::apply` applied it in memory then hit
+    `_ => UnsupportedEffect`, so once the persistent path is wired (M1-22) a
+    `get` would clear the location in memory but error on write-through and
+    leave a stale `location` row (item reverts to grounded on restart). Added
+    `persist_clear_location` (DELETE the entity's `location` row) + the match
+    arm; regenerated the sqlx offline cache; added
+    `clear_location_persists_across_restart` to `tests/restart.rs`.
+  - **mud-engine text.rs:** hardened `sanitize`'s ANSI strip — a malformed CSI
+    no longer swallows a following `\n` (and the char after it), and OSC
+    sequences (`ESC ] … BEL/ST`) are now consumed whole instead of leaking
+    their payload as visible text. Added two tests.
+  - **Cleanup:** removed the dead `objects::resolve`/`gather` public API (YAGNI —
+    no wide-scope command exists; `get`/`drop` use `resolve_among` with scoped
+    candidates); collapsed `take`/`put_down` into the one-element case of
+    `take_all`/`drop_all`; fixed a stale "catalog is empty" test comment.
+- **Verify:** `cargo test --workspace` green; `clippy --workspace --all-targets`
+  and `fmt --check` clean; `mud-db` builds offline against the regenerated cache.
+- **Known limitations (deliberately not fixed — need substrate beyond M1-17):**
+  entities have no item/actor distinction, so `get <actor>` could pocket a
+  named NPC and `look` lists items under "also here" — latent in M1 (only items
+  carry keywords today); display names are the lowercased match keyword (no
+  separate display field); a command reply is rendered before its effects apply
+  (effects can't reject on the M1 happy path). Tracked for when actor/item
+  typing and broadcast (M1-19a) land.
