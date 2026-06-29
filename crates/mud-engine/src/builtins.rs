@@ -102,12 +102,23 @@ impl CommandHandler for Move {
         let Some(to) = destination else {
             return CommandReply::to_caller(system(t!(locale, "move.no-exit")));
         };
+        // An exit wired to a place the registry can't resolve is no passage:
+        // refuse rather than strand the caller in a place that can't be
+        // rendered (and from which no exit resolves either). A wired exit to a
+        // missing place is a world-data fault, not player error, so log it for
+        // operators while the caller sees the ordinary "no way" refusal.
+        let Some(place) = ctx.places().get(to) else {
+            tracing::warn!(
+                from = ?ctx.location(),
+                to = ?to,
+                direction = ?self.0,
+                "exit wired to a place absent from the registry; refusing the move",
+            );
+            return CommandReply::to_caller(system(t!(locale, "move.no-exit")));
+        };
         // Show the destination room as the caller arrives; the MoveTo effect is
         // applied by the pipeline after this handler returns.
-        let arrival = match ctx.places().get(to) {
-            Some(place) => render_room(place, ctx.world(), ctx.caller(), &locale),
-            None => system(t!(locale, "look.void")),
-        };
+        let arrival = render_room(place, ctx.world(), ctx.caller(), &locale);
         CommandReply::to_caller(arrival).with_effect(Effect::MoveTo {
             entity: ctx.caller(),
             place: to,

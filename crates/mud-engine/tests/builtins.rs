@@ -21,6 +21,8 @@ use mud_schema::{InputLine, SessionId, SessionInput, SessionOutput};
 const HALL: u64 = 10;
 const STUDY: u64 = 11;
 const REGION: u64 = 1;
+/// A place id wired as an exit target but never registered — a dangling exit.
+const DANGLING: u64 = 999;
 
 fn place(value: u64) -> PlaceId {
     PlaceId::new(NonZeroU64::new(value).expect("place id non-zero"))
@@ -59,6 +61,23 @@ impl MapPlaces {
         let mut rooms = HashMap::new();
         rooms.insert(place(HALL), hall);
         rooms.insert(place(STUDY), study);
+        Self { rooms }
+    }
+
+    /// A hall whose `up` exit is wired to a place that is **not** registered
+    /// here — modelling stale/partial world data (a dangling exit).
+    fn hall_with_dangling_exit() -> Self {
+        let hall = Place::Room(
+            RoomData::new(
+                place(HALL),
+                region(),
+                Description::new("A long stone hall."),
+            )
+            .with_title(Title::new("The Great Hall"))
+            .with_exit(Direction::Up, place(DANGLING)),
+        );
+        let mut rooms = HashMap::new();
+        rooms.insert(place(HALL), hall);
         Self { rooms }
     }
 }
@@ -110,6 +129,12 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        Self::with_places(MapPlaces::two_rooms())
+    }
+
+    /// Builds the harness over an explicit places registry, so a test can wire
+    /// a map with, say, an exit to an unregistered place.
+    fn with_places(places: MapPlaces) -> Self {
         let mut world = World::new(TenantTag::new(1).expect("tenant in range"));
         let caller = world.create().expect("create caller");
         world.move_to(caller, place(HALL)).expect("place caller");
@@ -118,7 +143,7 @@ impl Harness {
         let builtins = mud_engine::register(&mut dispatcher);
         Self {
             world,
-            places: MapPlaces::two_rooms(),
+            places,
             resolver: FakeResolver { caller, builtins },
             pipeline: Pipeline::new(dispatcher),
             caller,
@@ -207,6 +232,20 @@ fn moving_through_an_unwired_exit_is_refused() {
     assert!(
         h.world.is_located_in(h.caller, place(HALL)),
         "a refused move leaves the caller in place"
+    );
+}
+
+#[test]
+fn moving_through_an_exit_to_a_missing_place_is_refused() {
+    // The hall's `up` exit points at a place absent from the registry (stale
+    // world data). The move must be refused outright rather than stranding the
+    // caller in a place the engine can't render.
+    let mut h = Harness::with_places(MapPlaces::hall_with_dangling_exit());
+
+    assert_eq!(h.line("up"), "You can't go that way.");
+    assert!(
+        h.world.is_located_in(h.caller, place(HALL)),
+        "an exit to a missing place leaves the caller in place"
     );
 }
 

@@ -480,6 +480,12 @@ spine.
   run carries a `command_id` for trace correlation (§2.7.1).
   - *Spec:* §2.7. *Verify:* end-to-end command dispatch unit/integration
     test with a fake session.
+  - **Reply/effect ordering (CONTRACT, see `dispatch.rs`):** a handler returns
+    a read-only `CommandReply`; the pipeline renders it, then applies its
+    `Effect`s against `&mut World`. So an effect cannot reject and rewrite the
+    reply (fine while no M1 command fails on the happy path — see the M1-17
+    limitation). When that changes, reshape `CommandReply` rather than hand
+    handlers `&mut World`.
 - **M1-17 — Built-in commands (M1 set).** Rust-native: `look`, movement
   (`north/east/south/west/up/down` + aliases), `say`, `get`/`drop`,
   `inventory`. `say` honors the 4 KiB content cap and control-char/ANSI
@@ -499,6 +505,31 @@ spine.
     own): `who` (connected-player index), `quit` (session close via the FSM +
     gateway), and cross-player broadcast for `say` and movement
     arrival/departure. `say` is caller-echo-only until then.
+  - **Known limitations carried out of M1-17 (deferred refinements).** These
+    are acceptable in M1 (only items carry keywords today, and no command can
+    reject on the happy path) but are tracked at the milestone that resolves
+    each:
+    - **No item/actor distinction.** Object resolution scopes by location only,
+      so `get <actor>` could pocket a co-located actor and `look` lists every
+      occupant under "also here". Gating resolution by entity kind lands when
+      archetypes exist (**M2-F**, §2.3.5: "item"/"actor" are archetypes), and is
+      fully exercised once NPCs do (**M5**).
+    - **Display name = first match keyword.** Entities have no authored display
+      name distinct from their match keywords, so `look`/`inventory`/`get`
+      render the lowercased first keyword. The same gap means an entity with no
+      keyword is silently skipped from those listings. An authored display-name
+      component/archetype default lands with **M2-D**/**M2-F**.
+    - **Reply renders before effects apply.** A handler's `CommandReply` is
+      rendered before the pipeline applies its `Effect`s, so an effect cannot
+      reject and rewrite the reply. Harmless while no M1 command can fail on the
+      happy path; the escape hatch (reshaping `CommandReply`, not handing
+      handlers `&mut World`) is the documented `dispatch.rs` CONTRACT — see the
+      M1-16 note. Revisit when a happy-path command can reject (e.g. container
+      capacity).
+    - **Content cap is measured after normalization, before stripping** — this
+      is **correct**: §3.6.4 caps "4 KiB of UTF-8 after normalization"; control/
+      ANSI stripping is a separate "before delivery" step. Recorded here so the
+      ordering is not re-flagged.
   - *Spec:* §2.7, §3.6.3–3.6.4, §3.20.4, §3.20.7. *Verify:* per-command behavior
     tests; content-cap rejection test; player-markup-escaped test;
     disambiguation tests.
@@ -624,14 +655,20 @@ Depends on M1 core (§7.5.2). Epics → PRs:
 - **M2-D — Script-defined components.** Tagged-blob bag representation with
   schema + version (§2.3.2.1, §2.3.3.2); one lookup API across Rust- and
   script-defined components; **schemas immutable across hot-reload**, schema
-  changes routed to content migration (§2.4.3.4).
+  changes routed to content migration (§2.4.3.4). Home for an **authored
+  display-name** distinct from match keywords (resolves the M1-17 "display name
+  = first keyword" limitation, including the silent skip of keyword-less
+  entities in listings).
 - **M2-E — Script-defined commands and hooks.** Lua `run` functions in the
   pipeline (§2.7 step 7); hook tables keyed by archetype with **static
   surface checking** of hook signatures, lock functions, component accesses,
   and engine-API calls at load time (§2.3.6, §2.4.4).
 - **M2-F — Full archetype loader.** KDL archetype declaration with component
   defaults, hook table, and single-inheritance `extends` (§2.3.5); hook
-  resolution statically validated at world load (§2.3.6.2).
+  resolution statically validated at world load (§2.3.6.2). Introduces the
+  item/actor archetype distinction that lets object resolution gate by entity
+  kind (resolves the M1-17 "no item/actor distinction" limitation: `get`
+  targets items, `look` separates actors from items).
 - **M2-G — Prototypes.** Prototype scripts that return a table; `spawn(...)`
   as a core engine call (§3.7).
 - **M2-H — Hot-reload (drain-before-swap).** File watcher; new calls hit the

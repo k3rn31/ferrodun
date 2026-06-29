@@ -1082,3 +1082,29 @@ truth when this log drifts.
   separate display field); a command reply is rendered before its effects apply
   (effects can't reject on the M1 happy path). Tracked for when actor/item
   typing and broadcast (M1-19a) land.
+
+## 2026-06-29 — M1-17 review follow-up: movement-to-nowhere + roadmap tracking
+
+- **Spec:** §2.7/§3.2.2 (movement), §3.6.4 (content-cap ordering clarified).
+- **Done:** Acted on a `/review` of PR #28.
+  - **mud-engine builtins (the fix):** `Move::run` resolved the destination
+    `Place` *before* committing the move. An exit wired to a `PlaceId` absent
+    from the `Places` registry (stale/partial world data) previously rendered
+    `look.void` yet still emitted `Effect::MoveTo`, stranding the player in an
+    unrenderable, exit-less place (soft-lock). Now such a move is refused with
+    the ordinary `move.no-exit` message and **no** effect, plus a
+    `tracing::warn!` (from/to/direction) so operators can find the broken exit.
+  - **Tests:** refactored the `builtins.rs` `Harness` to take an explicit
+    `MapPlaces` (`with_places`); added a `hall_with_dangling_exit` fixture and
+    `moving_through_an_exit_to_a_missing_place_is_refused` (caller stays put).
+  - **PLAN.md tracking:** added a "Known limitations carried out of M1-17"
+    block under M1-17 and cross-refs at M1-16 (reply/effect-ordering CONTRACT),
+    M2-D (authored display-name), and M2-F (item/actor archetype distinction),
+    so each sharp edge has a home at the milestone that resolves it. Recorded
+    that the sanitizer's cap-before-strip order is **correct** per §3.6.4 ("4
+    KiB after normalization") so it is not re-flagged.
+- **Verify:** `cargo test -p mud-engine --test builtins` 16 green;
+  `cargo test --workspace` green; `clippy --workspace --all-targets` and
+  `fmt --check` clean.
+- **Next:** unchanged — M1-18/19; the deferred refinements now tracked at
+  M1-16/M2-D/M2-F/M5.
