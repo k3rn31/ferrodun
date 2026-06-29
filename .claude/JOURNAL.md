@@ -953,3 +953,39 @@ truth when this log drifts.
   empty-token); `cargo test --workspace` 327 green; `cargo clippy
   --workspace --all-targets` and `cargo fmt --check` clean.
 - **Next:** unchanged — M1-16 (see prior entry).
+
+## 2026-06-29 — M1-16 command pipeline in World (new `mud-engine` crate)
+
+- **Spec:** §2.7 (steps 3–8), §2.7.1 — resolve session→caller+layers, merge
+  CmdSets by fixed precedence, parse, lock-check, dispatch a Rust-native `run`,
+  render per session; every run carries a `command_id` for trace correlation.
+- **Done:** New application-tier crate `crates/mud-engine` (deps: `mud-core`,
+  `mud-cmd`, `mud-schema`, `mud-i18n`, `tracing`, `thiserror`; dev `tracing-test`).
+  `mud-cmd` stays a pure leaf — the `run` handle did **not** go on `Command`
+  (would break its `Clone`/`Eq` derives and the merge/parser value-equality
+  tests); behavior lives in a `Dispatcher` keyed by canonical `CommandName`.
+  Modules: `command_id` (`CommandId(NonZeroU64)` + monotonic `CommandIdGen`,
+  exhaustion → error not wrap); `caller` (`CallerContext`, `ResolvedSession`,
+  and the `SessionResolver` step-3 seam that M1-18/19 will implement — faked in
+  tests now); `layers` (`LayerCommands` with the §2.7-step-4 precedence
+  account 50 > puppet 40 > container 30 > location 20 > channel 10 mapped onto
+  `Priority`, reusing `CmdSet::merge`; account/container/channel layers empty for
+  M1); `dispatch` (`CommandHandler` trait, `CommandContext`, `CommandReply`
+  returning `StyledText`, `CommandBinding{lock,handler}`, `Dispatcher`);
+  `pipeline` (`Pipeline::dispatch` → `Result<Vec<SessionOutput>, PipelineError>`,
+  wrapping each run in a `command` tracing span carrying `command_id`). Lock check
+  reuses `mud_core::Lock::evaluate` + `LockContext`; engine messages route through
+  the `mud-i18n` `t!` seam (literal-key fallback in M1). Output flattens
+  `StyledText` to plain `OutputText` — the styled-text-over-IPC + `mud-net` ANSI
+  swap stays deferred to M1-21/22, so no `mud-net` dep. Player-visible outcomes
+  (not-found/ambiguous/bad-switch/denied/unbound) are `Ok` messages; only
+  unknown-session / id-exhaustion are `Err`.
+- **Verify:** `cargo test -p mud-engine` 24 green (13 unit + 11 integration,
+  incl. the §2.7 fake-session end-to-end test: precedence, every `ParseOutcome`
+  arm, lock grant/deny, unknown-session error, distinct `command_id`s);
+  `cargo test --workspace` all green; `cargo clippy --workspace --all-targets`
+  and `cargo fmt --check` clean.
+- **Next:** M1-17 — built-in command bodies (`look`, movement, `say`, `who`,
+  `quit`, `get`/`drop`, `inventory`) as `CommandHandler`s; content-cap +
+  player-markup escaping; role-styled spans at emission. Object disambiguation
+  (`name.N`/`all`/prompt) and populating the `en` catalog remain deferred.
