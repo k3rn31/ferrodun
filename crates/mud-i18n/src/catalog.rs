@@ -41,14 +41,51 @@ impl Catalog {
 
     /// The process-wide built-in `en` catalog (§3.14.2.1).
     ///
-    /// Empty for M1: there are no engine-emitted strings yet, so every lookup
-    /// falls through to the literal key (§3.14.4.3). M2-I populates this from
-    /// Fluent bundles. The first real entries arrive with their call sites in
-    /// the command pipeline (M1-16/17).
+    /// Holds the engine-emitted `en` strings for the M1-17 built-in commands
+    /// (§3.14.6.2 requires every `t!`-referenced `en` key to exist). Keys not
+    /// listed here still fall through to the literal key (§3.14.4.3) — the
+    /// M1-16 pipeline `command.*` outcomes remain literal for now. M2-I replaces
+    /// this hand-built table with Fluent bundles without changing the contract.
     pub fn builtin() -> &'static Self {
         static BUILTIN: OnceLock<Catalog> = OnceLock::new();
-        BUILTIN.get_or_init(Catalog::new)
+        BUILTIN.get_or_init(builtin_en)
     }
+}
+
+/// Builds the `en` catalog for the M1-17 built-in commands.
+///
+/// Templates use the `{ $name }` placeholder form (see
+/// [`translate`](crate::translate)). One source of truth: the built-in command
+/// handlers in `mud-engine` reference exactly these keys.
+fn builtin_en() -> Catalog {
+    const ENTRIES: &[(&str, &str)] = &[
+        // look (§3.2)
+        ("look.exits", "Exits: { $exits }"),
+        ("look.also-here", "Also here: { $names }"),
+        ("look.void", "You are nowhere in particular."),
+        // movement (§3.2.2)
+        ("move.no-exit", "You can't go that way."),
+        // say (§3.6.3)
+        ("say.speech", "You say, \"{ $message }\""),
+        ("say.nothing", "Say what?"),
+        // inventory
+        ("inventory.header", "You are carrying:"),
+        ("inventory.empty", "You are carrying nothing."),
+        // get / drop and shared object-resolution outcomes (§2.7 step 5)
+        ("get.taken", "You take { $item }."),
+        ("drop.dropped", "You drop { $item }."),
+        ("object.not-here", "You don't see that here."),
+        ("object.not-carried", "You aren't carrying that."),
+        ("object.ambiguous", "Which do you mean? { $options }"),
+        // content cap (§3.6.4)
+        ("content.too-long", "Your message is too long."),
+    ];
+
+    let mut catalog = Catalog::new();
+    for (key, template) in ENTRIES {
+        catalog.insert(Locale::EN, MessageKey::from_static(key), *template);
+    }
+    catalog
 }
 
 #[cfg(test)]
@@ -77,9 +114,16 @@ mod tests {
     }
 
     #[test]
-    fn the_builtin_catalog_is_empty_for_m1() {
+    fn the_builtin_catalog_holds_the_m1_17_keys() {
+        // A populated key resolves to its en template...
         assert_eq!(
-            Catalog::builtin().lookup(&Locale::EN, &MessageKey::from_static("anything")),
+            Catalog::builtin().lookup(&Locale::EN, &MessageKey::from_static("move.no-exit")),
+            Some("You can't go that way.")
+        );
+        // ...while an unlisted key still misses, falling through to the literal
+        // key at the translate boundary (§3.14.4.3).
+        assert_eq!(
+            Catalog::builtin().lookup(&Locale::EN, &MessageKey::from_static("command.not-found")),
             None
         );
     }

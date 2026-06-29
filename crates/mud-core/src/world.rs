@@ -20,8 +20,8 @@
 //! where the two are joined.
 
 use crate::{
-    ArenaError, Effect, EntityArena, EntityId, Inventory, LocationOf, PlaceId, Precondition,
-    TenantTag, TickEvent,
+    ArenaError, Effect, EntityArena, EntityId, Inventory, Keyword, LocationOf, Naming, PlaceId,
+    Precondition, TenantTag, TickEvent,
 };
 
 /// The mutable world for one tenant: liveness arena plus the hot side-tables.
@@ -33,6 +33,7 @@ pub struct World {
     arena: EntityArena,
     locations: LocationOf,
     inventory: Inventory,
+    naming: Naming,
 }
 
 impl World {
@@ -42,6 +43,7 @@ impl World {
             arena: EntityArena::new(tenant),
             locations: LocationOf::new(),
             inventory: Inventory::new(),
+            naming: Naming::new(),
         }
     }
 
@@ -58,7 +60,7 @@ impl World {
     }
 
     /// Tears an entity down: frees its handle and releases its hot-component
-    /// slots (location and inventory contents).
+    /// slots (location, inventory contents, and keywords).
     ///
     /// Freeing validates tenant ownership and liveness, so a stale or foreign
     /// handle is rejected before any table is touched (§2.3.7.3). Returns the
@@ -72,6 +74,7 @@ impl World {
         self.arena.free(entity)?;
         self.locations.remove(entity);
         self.inventory.clear(entity);
+        self.naming.clear(entity);
         Ok(())
     }
 
@@ -84,6 +87,31 @@ impl World {
         // itself, so the resolved index is not needed.
         let _ = self.arena.resolve(entity)?;
         self.locations.place(entity, place);
+        Ok(())
+    }
+
+    /// Clears `entity`'s location, so it is located nowhere (e.g. an item lifted
+    /// off the ground into an inventory). A no-op if it had no location.
+    ///
+    /// Resolves the handle for liveness first; returns the arena error for a
+    /// stale or foreign handle.
+    pub fn clear_location(&mut self, entity: EntityId) -> Result<(), ArenaError> {
+        let _ = self.arena.resolve(entity)?;
+        self.locations.remove(entity);
+        Ok(())
+    }
+
+    /// Sets `entity`'s lookup keywords (§2.7 step 5), replacing any prior list.
+    ///
+    /// Resolves the handle for liveness first; returns the arena error for a
+    /// stale or foreign handle.
+    pub fn name_entity(
+        &mut self,
+        entity: EntityId,
+        keywords: Vec<Keyword>,
+    ) -> Result<(), ArenaError> {
+        let _ = self.arena.resolve(entity)?;
+        self.naming.set(entity, keywords);
         Ok(())
     }
 
@@ -130,6 +158,7 @@ impl World {
             }
             Effect::Teardown { entity } => self.teardown(entity),
             Effect::MoveTo { entity, place } => self.move_to(entity, place),
+            Effect::ClearLocation { entity } => self.clear_location(entity),
             Effect::InventoryAdd { container, item } => self.inventory_add(container, item),
             Effect::InventoryRemove { container, item } => self.inventory_remove(container, item),
         };
@@ -169,6 +198,44 @@ impl World {
     pub fn contains(&self, container: EntityId, item: EntityId) -> bool {
         self.arena.resolve(container).is_ok()
             && self.inventory.contents(container).any(|held| held == item)
+    }
+
+    /// The place `entity` currently occupies, or `None` if it is located nowhere
+    /// or its handle is stale or foreign.
+    #[must_use]
+    pub fn location_of(&self, entity: EntityId) -> Option<PlaceId> {
+        if self.arena.resolve(entity).is_err() {
+            return None;
+        }
+        self.locations.location(entity)
+    }
+
+    /// The live entities currently in `place`, in occupancy order.
+    ///
+    /// Occupants are recorded only via [`move_to`](World::move_to), which
+    /// validates liveness, so the reverse index holds live handles by
+    /// construction.
+    pub fn occupants_of(&self, place: PlaceId) -> impl Iterator<Item = EntityId> + '_ {
+        self.locations.occupants(place)
+    }
+
+    /// The items `container` holds, in insertion order. Empty for a stale,
+    /// foreign, or empty container.
+    pub fn inventory_of(&self, container: EntityId) -> impl Iterator<Item = EntityId> + '_ {
+        self.arena
+            .resolve(container)
+            .ok()
+            .into_iter()
+            .flat_map(move |_| self.inventory.contents(container))
+    }
+
+    /// The lookup keywords `entity` answers to (§2.7 step 5). Empty for a stale,
+    /// foreign, or unnamed entity.
+    pub fn keywords_of(&self, entity: EntityId) -> &[Keyword] {
+        if self.arena.resolve(entity).is_err() {
+            return &[];
+        }
+        self.naming.keywords(entity)
     }
 }
 
@@ -382,5 +449,97 @@ mod tests {
             container: chest,
             item: coin,
         }));
+    }
+
+    #[test]
+    fn location_of_reports_the_current_place_and_none_when_unlocated() {
+        let mut world = World::new(tenant(1));
+        let entity = world.create().expect("create must succeed");
+
+        assert_eq!(world.location_of(entity), None);
+        world
+            .move_to(entity, place(HALL))
+            .expect("move must succeed");
+        assert_eq!(world.location_of(entity), Some(place(HALL)));
+    }
+
+    #[test]
+    fn occupants_of_lists_entities_placed_there() {
+        let mut world = World::new(tenant(1));
+        let alice = world.create().expect("create alice");
+        let bob = world.create().expect("create bob");
+        world.move_to(alice, place(HALL)).expect("place alice");
+        world.move_to(bob, place(HALL)).expect("place bob");
+
+        let occupants: Vec<EntityId> = world.occupants_of(place(HALL)).collect();
+
+        assert!(occupants.contains(&alice));
+        assert!(occupants.contains(&bob));
+        assert_eq!(world.occupants_of(place(STUDY)).count(), 0);
+    }
+
+    #[test]
+    fn inventory_of_lists_held_items_and_is_empty_for_a_stale_handle() {
+        let mut world = World::new(tenant(1));
+        let chest = world.create().expect("create chest");
+        let sword = world.create().expect("create sword");
+        world.inventory_add(chest, sword).expect("add must succeed");
+
+        assert_eq!(world.inventory_of(chest).collect::<Vec<_>>(), vec![sword]);
+
+        world.teardown(chest).expect("teardown must succeed");
+        assert_eq!(world.inventory_of(chest).count(), 0);
+    }
+
+    #[test]
+    fn name_entity_then_keywords_of_round_trips() {
+        let mut world = World::new(tenant(1));
+        let sword = world.create().expect("create sword");
+
+        world
+            .name_entity(sword, vec![Keyword::new("sword"), Keyword::new("Rusty")])
+            .expect("naming a live entity must succeed");
+
+        assert_eq!(
+            world.keywords_of(sword),
+            &[Keyword::new("sword"), Keyword::new("rusty")]
+        );
+    }
+
+    #[test]
+    fn keywords_of_is_empty_after_teardown() {
+        let mut world = World::new(tenant(1));
+        let sword = world.create().expect("create sword");
+        world
+            .name_entity(sword, vec![Keyword::new("sword")])
+            .expect("naming must succeed");
+
+        world.teardown(sword).expect("teardown must succeed");
+
+        assert!(world.keywords_of(sword).is_empty());
+    }
+
+    #[test]
+    fn clear_location_leaves_the_entity_located_nowhere() {
+        let mut world = World::new(tenant(1));
+        let sword = world.create().expect("create sword");
+        world.move_to(sword, place(HALL)).expect("place sword");
+
+        world.clear_location(sword).expect("clear must succeed");
+
+        assert_eq!(world.location_of(sword), None);
+        assert_eq!(world.occupants_of(place(HALL)).count(), 0);
+    }
+
+    #[test]
+    fn apply_effect_clear_location_unlocates_the_entity() {
+        let mut world = World::new(tenant(1));
+        let sword = world.create().expect("create sword");
+        world.move_to(sword, place(HALL)).expect("place sword");
+
+        let event = world.apply_effect(Effect::ClearLocation { entity: sword });
+
+        assert!(event.is_none());
+        assert!(!world.is_located_in(sword, place(HALL)));
     }
 }

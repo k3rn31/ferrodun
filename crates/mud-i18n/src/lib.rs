@@ -53,8 +53,9 @@ mod tests {
     use crate::Locale;
 
     #[test]
-    fn macro_falls_back_to_the_literal_against_the_empty_builtin() {
-        // The builtin catalog is empty in M1, so the key renders literally.
+    fn macro_falls_back_to_the_literal_for_an_unlisted_key() {
+        // `engine.boot` is not in the builtin catalog, so it renders literally
+        // (§3.14.4.3).
         assert_eq!(t!(Locale::EN, "engine.boot"), "engine.boot");
     }
 

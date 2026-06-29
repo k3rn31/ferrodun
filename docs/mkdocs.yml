@@ -47,6 +47,8 @@ extra:
 
 nav:
   - Home: index.md
+  - Playing:
+      - Commands: playing/commands.md
   - Building:
       - World files: building/world-files.md
       - Rooms: building/rooms.md

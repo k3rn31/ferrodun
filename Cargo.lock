@@ -890,6 +890,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-test",
+ "unicode-normalization",
 ]
 
 [[package]]

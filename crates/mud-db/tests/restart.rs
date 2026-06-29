@@ -340,6 +340,43 @@ async fn re_move_persists_only_the_last_destination() {
     assert!(!world.world().is_located_in(entity, place(HALL)));
 }
 
+// `ClearLocation` is durable: an entity whose location is cleared before the
+// restart (e.g. an item picked up off the floor) must not be relocated to its
+// old place on reload. Without a persistence path for the effect, the in-memory
+// clear would not reach the `location` table and the item would revert to
+// grounded.
+#[tokio::test]
+async fn clear_location_persists_across_restart() {
+    let dir = TempDir::new().expect("temp dir");
+
+    let entity_key = {
+        let mut world = open_world(&dir).await;
+        let entity = create_entity(&mut world).await;
+        world
+            .apply(MutationCommand::new(Effect::MoveTo {
+                entity,
+                place: place(HALL),
+            }))
+            .await
+            .expect("move applies");
+        world
+            .apply(MutationCommand::new(Effect::ClearLocation { entity }))
+            .await
+            .expect("clear-location applies");
+
+        // No longer located anywhere in memory before the drop.
+        assert!(!world.world().is_located_in(entity, place(HALL)));
+        world.entity_key(entity).expect("entity has a key")
+    };
+
+    let world = open_world(&dir).await;
+    let entity = world.entity_id(entity_key).expect("entity key resolves");
+    assert!(
+        !world.world().is_located_in(entity, place(HALL)),
+        "a cleared location must not revert to grounded on reload"
+    );
+}
+
 // Tearing down an item that sits inside a container must remove the containment
 // row too (via `ON DELETE CASCADE`). If it lingered, boot load would resolve a
 // containment row pointing at a destroyed key and fail — so a clean reload is

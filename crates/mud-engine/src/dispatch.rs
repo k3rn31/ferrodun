@@ -12,12 +12,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use mud_cmd::{CommandName, Switch};
-use mud_core::{EntityId, Lock, PlaceId, StyledText, World};
+use mud_core::{Effect, EntityId, Lock, PlaceId, StyledText, World};
 use mud_i18n::Locale;
 use mud_schema::SessionId;
 
 use crate::CommandId;
 use crate::caller::CallerContext;
+use crate::places::Places;
 
 /// Everything a command handler may read about one run (§2.7 step 7).
 ///
@@ -32,6 +33,7 @@ pub struct CommandContext<'a> {
     switches: &'a [Switch],
     args: &'a str,
     world: &'a World,
+    places: &'a dyn Places,
 }
 
 impl<'a> CommandContext<'a> {
@@ -46,6 +48,7 @@ impl<'a> CommandContext<'a> {
         switches: &'a [Switch],
         args: &'a str,
         world: &'a World,
+        places: &'a dyn Places,
     ) -> Self {
         Self {
             command_id,
@@ -53,6 +56,7 @@ impl<'a> CommandContext<'a> {
             switches,
             args,
             world,
+            places,
         }
     }
 
@@ -95,38 +99,59 @@ impl<'a> CommandContext<'a> {
     pub fn world(&self) -> &World {
         self.world
     }
+
+    /// The tenant's places, for resolving the caller's location and exits
+    /// (§2.2). A handler that mutates the world returns the change as an
+    /// [`Effect`] on its [`CommandReply`] rather than reaching through here.
+    pub fn places(&self) -> &dyn Places {
+        self.places
+    }
 }
 
-/// What a command run produces (§2.7 step 8).
+/// What a command run produces (§2.7 step 7–8).
 ///
-/// M1 carries only the styled reply to the caller. The type is a struct, not a
-/// bare [`StyledText`], because it is the chosen seam for everything a command
-/// affects beyond the caller. Handlers are intentionally pure over a read-only
-/// [`World`]: a command that mutates the world (movement, `get`/`drop`) or
-/// addresses other sessions (`say`, arrival/departure) does **not** get `&mut
-/// World`; it returns the change as data here, and the [`Pipeline`](crate::Pipeline)
-/// applies it against the `&mut World` it holds and fans out the extra outputs.
+/// Carries the styled reply to the caller plus any world [`Effect`]s the command
+/// wants applied. Handlers are intentionally pure over a read-only [`World`]: a
+/// command that mutates the world (movement, `get`/`drop`) does **not** get `&mut
+/// World`; it returns the change as effects here, and the
+/// [`Pipeline`](crate::Pipeline) applies them against the `&mut World` it holds
+/// (§2.7 step 7). Effects apply in order, after the handler returns.
 ///
-/// CONTRACT (unproven until M1-17): this keeps [`CommandHandler`] stable as those
-/// commands land — *if* world effects and broadcast targets express cleanly as
-/// return data. If they do not, reshaping `CommandReply` (not the handler taking
-/// `&mut World`) is the intended escape hatch. The `&mut World` on
-/// [`Pipeline::dispatch`](crate::Pipeline::dispatch) is the application point for
-/// these effects; it is held now, ahead of the first effect, on purpose.
+/// Broadcasting a styled message to *other* co-located sessions (`say`,
+/// arrival/departure) is the next slot on this type, but is deferred until the
+/// session FSM (M1-19) supplies the entity→session map needed to turn a
+/// `PlaceId` audience into `SessionOutput`s; adding the field before anything can
+/// deliver it would be dead weight.
 #[must_use]
 pub struct CommandReply {
     output: StyledText,
+    effects: Vec<Effect>,
 }
 
 impl CommandReply {
-    /// A reply that sends `output` to the caller.
+    /// A reply that sends `output` to the caller and applies no world effects.
     pub fn to_caller(output: StyledText) -> Self {
-        Self { output }
+        Self {
+            output,
+            effects: Vec::new(),
+        }
+    }
+
+    /// Adds `effect` to the world mutations the pipeline applies after the
+    /// handler returns (§2.7 step 7). Effects apply in the order added.
+    pub fn with_effect(mut self, effect: Effect) -> Self {
+        self.effects.push(effect);
+        self
     }
 
     /// The styled text to present to the caller.
     pub fn output(&self) -> &StyledText {
         &self.output
+    }
+
+    /// The world effects to apply for this run, in application order.
+    pub(crate) fn effects(&self) -> &[Effect] {
+        &self.effects
     }
 }
 
