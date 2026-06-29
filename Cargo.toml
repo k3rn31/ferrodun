@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/mud-core", "crates/mud-db", "crates/mud-i18n", "crates/mud-ipc", "crates/mud-net", "crates/mud-schema", "crates/mud-world", "crates/mudd"]
+members = ["crates/mud-cmd","crates/mud-core", "crates/mud-db", "crates/mud-i18n", "crates/mud-ipc", "crates/mud-net", "crates/mud-schema", "crates/mud-world", "crates/mudd"]
 
 [workspace.package]
 version = "0.1.0"

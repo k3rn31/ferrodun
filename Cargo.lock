@@ -854,6 +854,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mud-cmd"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "mud-core"
 version = "0.1.0"
 dependencies = [
