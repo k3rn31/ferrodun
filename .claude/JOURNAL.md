@@ -889,3 +889,67 @@ truth when this log drifts.
   the missing-key warning omits the `tenant` field (§3.14.4.3) because no tenant
   context reaches the seam in M1; add it at M2-I when the resolver becomes
   tenant-scoped (§3.14.3.3). Wire `t!` into built-in commands at M1-16/17.
+
+## 2026-06-29 — M1-15: `mud-cmd` CmdSet + parser
+
+- **Spec:** §2.7 steps 4–5 — CmdSet merge (Union/Replace/Remove) and the
+  trie-backed parse (prefix match, aliases, switches). §3.14.5.1 (canonical
+  locale-invariant names) honored; localized aliases (§3.14.5.2) are a seam
+  only (no non-`en` data until M2).
+- **Done:** New `mud-cmd` crate (dep: `thiserror` only — no `mud-core`/`mud-i18n`;
+  the line grammar is a trivial split, not a combinator grammar, so no
+  `chumsky`). Newtypes `CommandName`/`Switch`/`CmdSetKey` over the lowercase
+  token alphabet `[a-z0-9_-]` (parse-on-construction, `thiserror` errors);
+  lowercase-only keeps matching case-insensitive and forbids whitespace/`/` for
+  free. `Command` is **pure metadata** (name + aliases + switches; no `run` —
+  dispatch is M1-16). `CmdSet { key, priority, mergetype, commands }` with
+  `Priority(i32)` (higher wins) and `MergeType {Union,Replace,Remove}`.
+  `CmdSet::merge` resolves collisions **per canonical name**, order-independent
+  (§2.7 step 4 reading: Replace/Remove resolve a collision without precedence):
+  Remove deletes outright → else Replace wins → else highest-`Priority` Union,
+  ties to input order. The named source layers (account→…→channels) are **not**
+  modeled here — M1-16 maps them onto priorities. `merge` yields a
+  `CommandTable` (resolved commands + a hand-rolled char `PrefixTrie`);
+  `CommandTable::parse` returns `ParseOutcome {Empty,NotFound,Ambiguous,
+  BadSwitch,Matched{command,switches,args}}`. Exact name/alias beats a longer
+  command it prefixes; ambiguous prefix lists candidates; args remainder
+  returned verbatim (object disambiguation `name.N`/`all`/prompt deferred to
+  M1-16).
+- **Verify:** `cargo test -p mud-cmd` 37 green — 31 unit (token validation,
+  merge precedence incl. account-beats-location + Replace/Remove overrides, trie
+  exact/prefix/ambiguous, switches, case-insensitivity, verbatim args) + 6
+  integration (`tests/command_pipeline.rs`, mirroring `mud-core`'s
+  `locks_pipeline.rs`: a layered §2.7 stack merged + parsed through the public
+  surface end-to-end); `cargo test --workspace` all green (324); `cargo clippy
+  --workspace
+  --all-targets` clean; `cargo fmt --check` clean. No `unwrap`/`expect`/`panic`
+  outside tests (tests assert on whole `ParseOutcome` values — `panic!` is
+  denied and not allow-listed for tests, unlike `expect`). No docs change — no
+  player/builder-observable surface until commands are dispatchable (M1-17),
+  matching the M1-14 precedent.
+- **Next:** M1-16 — command pipeline in World: resolve
+  `session→account→puppet→location stack`, build `CmdSet`s per source layer
+  (mapping the §2.7-step-4 order onto `Priority`), merge, lock-check, dispatch
+  with a `command_id` (§2.7.1). Add the `run`/dispatch handle to `Command` then.
+  Object disambiguation and `t!` wiring also land downstream (M1-16/17).
+
+## 2026-06-29 — M1-15 review fixes: alias ownership + empty-token parse
+
+- **Spec:** §2.7 step 4 — aliases participate in the merge at their source's
+  precedence; §2.7 step 5 — parse.
+- **Done:** Three review fixes to the M1-15 PR. (1) **Alias collisions** across
+  distinct surviving commands were silently last-writer-wins in the trie; now
+  resolved deterministically when the table is built: `resolve_name` returns
+  `(Priority, &Command)` and `CommandTable::from_resolved` settles per-token
+  ownership before inserting into the trie by `(Priority, is_canonical,
+  Reverse(index))` — higher priority wins; at equal precedence a canonical name
+  beats another command's alias; remaining ties go to the earlier command in
+  canonical-name order. The trie is now a pure map that never sees a colliding
+  key (its insert doc corrected accordingly). (2) An empty command token (a
+  leading `/`, e.g. `/quiet`) now returns `NotFound` instead of matching via the
+  "empty prefix matches everything" path. (3) Corrected the `merge` doc: order
+  matters only for equal-priority Union ties.
+- **Verify:** `cargo test -p mud-cmd` 40 green (+3: two alias-ownership, one
+  empty-token); `cargo test --workspace` 327 green; `cargo clippy
+  --workspace --all-targets` and `cargo fmt --check` clean.
+- **Next:** unchanged — M1-16 (see prior entry).
