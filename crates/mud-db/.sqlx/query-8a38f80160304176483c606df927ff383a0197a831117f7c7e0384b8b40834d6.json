@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT entity_key AS \"entity_key!\", name FROM puppets\n               WHERE account_id = ? ORDER BY entity_key",
+  "describe": {
+    "columns": [
+      {
+        "name": "entity_key!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "puppets",
+            "name": "entity_key"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "puppets",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8a38f80160304176483c606df927ff383a0197a831117f7c7e0384b8b40834d6"
+}

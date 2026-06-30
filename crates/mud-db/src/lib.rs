@@ -10,4 +10,4 @@ mod error;
 mod sqlite;
 
 pub use error::DbError;
-pub use sqlite::{PersistentWorld, PlaceMap, TenantDb};
+pub use sqlite::{Accounts, PersistentWorld, PlaceMap, TenantDb};
