@@ -26,9 +26,17 @@ pub enum DbError {
     #[error("invalid persisted id: {0}")]
     InvalidId(i64),
 
+    /// A persisted text value failed domain validation on load — a manual edit,
+    /// corruption, or a row written by a newer schema (e.g. an unknown account
+    /// `state` token or a puppet name outside the allowed alphabet). Surfaced
+    /// rather than coerced, so a bad row fails loudly instead of silently.
+    #[error("corrupt persisted value: {0}")]
+    CorruptValue(String),
+
     /// An in-memory id exceeded the signed range its column stores, so it could
-    /// not be written back. Defensive: rowids never approach `i64::MAX`.
-    #[error("entity key out of range for storage: {0}")]
+    /// not be written back. Defensive: rowids never approach `i64::MAX`. Shared
+    /// by every typed id that narrows to an `i64` column (entity key, account id).
+    #[error("id out of range for storage: {0}")]
     KeyOutOfRange(u64),
 
     /// A live arena handle had no `EntityKey` in the in-process map. Every minted
@@ -74,6 +82,14 @@ pub enum DbError {
     /// variant surfaces here at runtime rather than as a compile error.
     #[error("unsupported effect variant")]
     UnsupportedEffect,
+
+    /// A blocking task offloaded with `spawn_blocking` (e.g. argon2 password
+    /// verification, kept off the async runtime) failed to complete — it
+    /// panicked or was cancelled. An internal fault, surfaced rather than
+    /// unwrapped. The `tokio` join error is boxed so it does not leak into the
+    /// public API.
+    #[error("background task failed: {0}")]
+    BlockingTask(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<sqlx::Error> for DbError {
@@ -85,5 +101,11 @@ impl From<sqlx::Error> for DbError {
 impl From<sqlx::migrate::MigrateError> for DbError {
     fn from(err: sqlx::migrate::MigrateError) -> Self {
         Self::Migrate(Box::new(err))
+    }
+}
+
+impl From<tokio::task::JoinError> for DbError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        Self::BlockingTask(Box::new(err))
     }
 }

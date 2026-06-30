@@ -1,5 +1,5 @@
 //! Boundary conversions between the database's `i64` columns and the typed
-//! domain ids (`EntityKey`). Parsing happens once, here, at the persistence edge;
+//! domain ids (`EntityKey`, `AccountId`). Parsing happens once, here, at the persistence edge;
 //! inner code works in typed ids and never re-validates. (A location's place is
 //! persisted as its durable [`PlaceKey`](mud_core::PlaceKey) slug, a `TEXT`
 //! column translated via [`PlaceMap`](super::PlaceMap), not through this module.)
@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 
+use mud_account::AccountId;
 use mud_core::{EntityId, EntityKey};
 
 use crate::error::DbError;
@@ -32,6 +33,17 @@ pub(super) fn entity_key_from_db(value: i64) -> Result<EntityKey, DbError> {
 /// Narrows an [`EntityKey`] to the `i64` its column stores.
 pub(super) fn entity_key_to_db(key: EntityKey) -> Result<i64, DbError> {
     nonzero_to_db(key.get())
+}
+
+/// Parses a database `accounts.id` into an [`AccountId`], rejecting non-positive
+/// values (defensive: ids are positive `AUTOINCREMENT` rowids).
+pub(super) fn account_id_from_db(value: i64) -> Result<AccountId, DbError> {
+    nonzero_from_db(value).map(AccountId::new)
+}
+
+/// Narrows an [`AccountId`] to the `i64` its column stores.
+pub(super) fn account_id_to_db(id: AccountId) -> Result<i64, DbError> {
+    nonzero_to_db(id.get())
 }
 
 /// `i64` → `NonZeroU64`, rejecting negative or zero values (defensive: keys are

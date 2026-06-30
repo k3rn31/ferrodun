@@ -5,10 +5,12 @@
 //! `TenantDb` is constructed against one directory and never sees another
 //! tenant's file, so cross-tenant queries are impossible by construction.
 
+mod accounts;
 mod keys;
 mod persistent_world;
 mod place_map;
 
+pub use accounts::Accounts;
 pub use persistent_world::PersistentWorld;
 pub use place_map::PlaceMap;
 

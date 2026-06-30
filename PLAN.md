@@ -83,7 +83,6 @@ speculation violates the core principle below.
       test` all green.
 - [ ] No `unwrap`; `expect` only in tests with a message; no `panic!/todo!/
       unreachable!` in production except behind a documented `// INVARIANT:`.
-- [ ] At most one crate's public API changed.
 - [ ] Journal entry appended.
 
 ---

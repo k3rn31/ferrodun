@@ -1,0 +1,13 @@
+[package]
+name = "mud-account"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+argon2 = "0.5.3"
+mud-core = { version = "0.1.0", path = "../mud-core" }
+rand_core = { version = "0.6", features = ["getrandom"] }
+thiserror = "2.0.18"
+
+[lints]
+workspace = true

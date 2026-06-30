@@ -1108,3 +1108,60 @@ truth when this log drifts.
   `fmt --check` clean.
 - **Next:** unchanged — M1-18/19; the deferred refinements now tracked at
   M1-16/M2-D/M2-F/M5.
+
+## 2026-06-29 — M1-18: accounts + login (new `mud-account` crate + `mud-db` repository)
+
+- **Spec:** §3.15.1 — tenant-scoped account domain; `argon2id` credential with
+  per-account salt; open-registration; explicit puppet-selection step; account
+  states with suspended/banned rejected at login (enforcement minimal).
+- **Done:** New domain crate `crates/mud-account` (deps `mud-core`, `argon2`,
+  `rand_core` w/ getrandom, `thiserror`; pure, no DB/async). Newtypes:
+  `AccountId(NonZeroU64)`; `Username`/`PuppetName` (shared validated alphabet
+  `[A-Za-z0-9_'-]`, 1–32 chars, parse-on-construction — rejects
+  whitespace/control/markup so a name can't smuggle styling, §3.20.7);
+  `AccountState {Active,Suspended,Banned,Deleted}` with `FromStr`/`Display` over
+  the `state` token and `login_rejection()` carrying the state→login policy
+  (Deleted ⇒ `UnknownUser`, non-leaky). `Credential` wraps the argon2id **PHC
+  string** (salt embedded ⇒ per-account salt for free); `hash`/`verify`/
+  `from_phc`/`as_phc`/`verify_phc`; `Debug` redacted; opaque `CredentialError`
+  (no argon2 leak). Domain outcomes `LoginError`/`RegisterError` and `Account`/
+  `Puppet` (puppet = durable `EntityKey` + name). Enums intentionally **not**
+  `#[non_exhaustive]` so `mud-db` can construct them and matches stay exhaustive.
+  `mud-db`: new `Accounts<'a>` repo (`crates/mud-db/src/sqlite/accounts.rs`) over
+  the **already-present** `accounts`/`puppets` tables (no migration change):
+  `register` (caller passes a pre-hashed `Credential`; UNIQUE→`UsernameTaken`),
+  `authenticate` (password verified **before** state, so suspended/banned is
+  revealed only to correct credentials), `create_puppet` (one tx:
+  entities+puppets+location rows, reusing the `apply_create` shape;
+  location-by-`PlaceKey` slug so no `PlaceMap` dep), `puppets_of`. Two failure
+  axes kept distinct via nested `Result<Result<_, domain>, DbError>`; added
+  `account_id_{from,to}_db` to `keys.rs` and `DbError::CorruptValue` for a
+  persisted token/name that fails domain validation on load.
+- **Verify:** `cargo test -p mud-account` 21 green (name validation, argon2id
+  hash/verify, salt-uniqueness, PHC round-trip, state policy); `cargo test
+  -p mud-db` green incl. integration `tests/accounts.rs` — the §M1-18 path
+  register→login→wrong-password→**restart**→login-again, plus unknown-user,
+  duplicate-username, and a puppet owned/listed/located across a restart (key
+  reloads into the world at its start room); in-module unit tests for
+  suspended/banned/corrupt-state. `cargo test --workspace` 445 green;
+  `clippy --workspace --all-targets`, `fmt --check` clean. Regenerated and
+  committed `crates/mud-db/.sqlx` (`cargo sqlx prepare`; +5 query files) so CI's
+  `SQLX_OFFLINE=true` build stays green. No docs change — no player-observable
+  surface until the M1-19 session FSM exposes register/login.
+- **Next:** M1-19 — session FSM (banner → register/login → puppet select →
+  in-world) wires these into the real `SessionResolver` (the `mud-engine` step-3
+  seam still faked in tests) and populates the session→account→puppet map.
+  **Known gaps:** no dummy-hash on `UnknownUser`, so a timing side-channel can
+  probe username existence (harden with the Gateway login rate-limit,
+  §3.15.1.2, M1-20 / M7); the `mud-engine` `layers.rs` "account layer populated
+  M1-18" note is now stale — accounts author no commands in M1, so the layer
+  stays empty (correct when M1-19 wires it).
+- **Review (/code-review high --fix):** offloaded argon2 verification to
+  `spawn_blocking` (added `DbError::BlockingTask` + `From<JoinError>`) so logins
+  no longer block the reactor — both KDF paths are now off the async runtime;
+  collapsed the dead inner `PasswordHash` newtype into `Credential(String)` and
+  dropped its unused (non-constant-time) `PartialEq`/`Eq`; `verify_phc` now
+  parses the PHC string once; documented usernames as case-sensitive; corrected
+  the `KeyOutOfRange`/`keys.rs`/name-const doc comments. Skipped (YAGNI / spec
+  defers): typed `create_puppet` account-existence error (FK can't fire in M1 —
+  no account deletion), the `UnknownUser` dummy-hash, and a name-newtype macro.

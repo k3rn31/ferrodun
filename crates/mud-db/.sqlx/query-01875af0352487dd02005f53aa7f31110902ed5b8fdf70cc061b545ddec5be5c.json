@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO puppets (entity_key, account_id, name) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "01875af0352487dd02005f53aa7f31110902ed5b8fdf70cc061b545ddec5be5c"
+}
