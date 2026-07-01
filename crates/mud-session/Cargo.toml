@@ -1,0 +1,15 @@
+[package]
+name = "mud-session"
+version = "0.1.0"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mud-account = { version = "0.1.0", path = "../mud-account" }
+mud-core = { version = "0.1.0", path = "../mud-core" }
+secrecy = "0.10.3"
+thiserror = "2.0.18"
+
+[dev-dependencies]
