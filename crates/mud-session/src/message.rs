@@ -31,4 +31,12 @@ pub enum SessionMessage {
     PuppetList(Vec<mud_account::PuppetName>),
     /// The account owns no puppets yet; prompt to create the first.
     NoPuppetsYet,
+    /// Prompt to re-enter the password during registration.
+    ConfirmPrompt,
+    /// The two registration passwords did not match.
+    PasswordMismatch,
+    /// The requested name is not a valid account/puppet name.
+    NameInvalid,
+    /// The requested username is already taken in this tenant.
+    UsernameTaken,
 }

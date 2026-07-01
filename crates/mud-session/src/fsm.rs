@@ -3,7 +3,7 @@
 use crate::effect::{Effect, EffectResult};
 use crate::message::SessionMessage;
 use mud_account::{Account, LoginError, Puppet, Username};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 
 /// The result of one FSM step: what to show, what I/O to perform, whether the
 /// session has left the login flow.
@@ -65,6 +65,10 @@ enum State {
     Anon,
     LoginPassword { username: Username },
     AwaitingAuth,
+    RegisterPassword { username: Username },
+    RegisterConfirm { username: Username, password: SecretString },
+    // Carries no data for the same reason as `AwaitingAuth`.
+    AwaitingRegister,
     // Fields carried across turns; read by `puppet_select_input` (Task 5). The
     // scoped allow is removed in Task 5 when the reads land.
     #[allow(dead_code)] // LINT: consumed by puppet selection added in Task 5 (M1-19)
@@ -95,6 +99,9 @@ impl SessionFsm {
             State::LoginPassword { .. } => self.capture_login_password(line),
             // Input arriving while an effect is in flight is dropped (M1 minimal).
             State::AwaitingAuth => Transition::messages(Vec::new()),
+            State::RegisterPassword { .. } => self.capture_register_password(line),
+            State::RegisterConfirm { .. } => self.confirm_register_password(line),
+            State::AwaitingRegister => Transition::messages(Vec::new()),
             State::PuppetSelect { .. } => self.puppet_select_input(line),
         }
     }
@@ -114,6 +121,13 @@ impl SessionFsm {
                 }
                 Err(_) => Transition::message(SessionMessage::UnknownCommand),
             },
+            "register" => match parse_name(rest) {
+                Ok(username) => {
+                    self.state = State::RegisterPassword { username };
+                    Transition::message(SessionMessage::PasswordPrompt)
+                }
+                Err(_) => Transition::message(SessionMessage::NameInvalid),
+            },
             _ => Transition::message(SessionMessage::UnknownCommand),
         }
     }
@@ -131,6 +145,39 @@ impl SessionFsm {
         Transition {
             messages: Vec::new(),
             effect: Some(Effect::Authenticate { username, password }),
+            terminal: None,
+        }
+    }
+
+    fn capture_register_password(&mut self, line: &str) -> Transition {
+        let State::RegisterPassword { username } =
+            std::mem::replace(&mut self.state, State::Anon)
+        else {
+            // INVARIANT: only reached from `on_input`'s RegisterPassword arm.
+            return Transition::messages(Vec::new());
+        };
+        self.state = State::RegisterConfirm {
+            username,
+            password: SecretString::from(line.to_owned()),
+        };
+        Transition::message(SessionMessage::ConfirmPrompt)
+    }
+
+    fn confirm_register_password(&mut self, line: &str) -> Transition {
+        let State::RegisterConfirm { username, password } =
+            std::mem::replace(&mut self.state, State::Anon)
+        else {
+            // INVARIANT: only reached from `on_input`'s RegisterConfirm arm.
+            return Transition::messages(Vec::new());
+        };
+        // Both secrets are attacker-supplied here, so a plain comparison is fine.
+        if password.expose_secret() != line {
+            return Transition::message(SessionMessage::PasswordMismatch);
+        }
+        self.state = State::AwaitingRegister;
+        Transition {
+            messages: Vec::new(),
+            effect: Some(Effect::Register { username, password }),
             terminal: None,
         }
     }
@@ -159,6 +206,15 @@ impl SessionFsm {
                 Transition::message(login_rejection_message(reason))
             }
             (State::AwaitingAuth, EffectResult::BackendError) => {
+                Transition::message(SessionMessage::ServerError)
+            }
+            (State::AwaitingRegister, EffectResult::Registered { account }) => {
+                self.enter_puppet_select(account, Vec::new())
+            }
+            (State::AwaitingRegister, EffectResult::RegisterRejected(_)) => {
+                Transition::message(SessionMessage::UsernameTaken)
+            }
+            (State::AwaitingRegister, EffectResult::BackendError) => {
                 Transition::message(SessionMessage::ServerError)
             }
             // No effect was outstanding for this state: ignore.
@@ -346,5 +402,60 @@ mod tests {
     fn blank_input_is_silently_ignored() {
         let mut fsm = SessionFsm::new();
         assert!(fsm.on_input("   ").messages.is_empty());
+    }
+
+    #[test]
+    fn register_confirms_the_password_then_emits_a_register_effect() {
+        let mut fsm = SessionFsm::new();
+        assert_eq!(fsm.on_input("register alice").messages, vec![SessionMessage::PasswordPrompt]);
+        assert_eq!(fsm.on_input("hunter2").messages, vec![SessionMessage::ConfirmPrompt]);
+        let t = fsm.on_input("hunter2");
+        match t.effect {
+            Some(Effect::Register { username, password }) => {
+                assert_eq!(username.as_str(), "alice");
+                assert_eq!(password.expose_secret(), "hunter2");
+            }
+            // INVARIANT: confirm_register_password always emits Register.
+            other => unreachable!("expected Register, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_mismatched_confirmation_reports_and_returns_to_anon() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("register alice");
+        let _ = fsm.on_input("hunter2");
+        let t = fsm.on_input("typo");
+        assert_eq!(t.messages, vec![SessionMessage::PasswordMismatch]);
+        assert!(t.effect.is_none());
+        assert_eq!(fsm.on_input("who").messages, vec![SessionMessage::WhoStub]);
+    }
+
+    #[test]
+    fn an_invalid_register_name_is_rejected_before_prompting() {
+        let mut fsm = SessionFsm::new();
+        let t = fsm.on_input("register bad name!");
+        assert_eq!(t.messages, vec![SessionMessage::NameInvalid]);
+    }
+
+    #[test]
+    fn successful_registration_enters_puppet_select_empty() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("register alice");
+        let _ = fsm.on_input("hunter2");
+        let _ = fsm.on_input("hunter2");
+        let t = fsm.on_effect(EffectResult::Registered { account: account() });
+        assert_eq!(t.messages, vec![SessionMessage::NoPuppetsYet]);
+    }
+
+    #[test]
+    fn a_taken_username_reports_and_returns_to_anon() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("register alice");
+        let _ = fsm.on_input("hunter2");
+        let _ = fsm.on_input("hunter2");
+        let t = fsm.on_effect(EffectResult::RegisterRejected(mud_account::RegisterError::UsernameTaken));
+        assert_eq!(t.messages, vec![SessionMessage::UsernameTaken]);
+        assert_eq!(fsm.on_input("who").messages, vec![SessionMessage::WhoStub]);
     }
 }
