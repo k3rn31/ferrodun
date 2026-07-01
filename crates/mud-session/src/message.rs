@@ -17,4 +17,18 @@ pub enum SessionMessage {
     UnknownCommand,
     /// A farewell shown before the session closes.
     Goodbye,
+    /// Prompt for a password on its own line (echo masking is M1-20).
+    PasswordPrompt,
+    /// A non-leaky login failure: wrong user *or* wrong password read alike.
+    LoginFailed,
+    /// The account is suspended (§3.15.1.5).
+    AccountSuspended,
+    /// The account is banned (§3.15.1.5).
+    AccountBanned,
+    /// A server-side fault; the player may retry.
+    ServerError,
+    /// The account's puppets, offered for selection.
+    PuppetList(Vec<mud_account::PuppetName>),
+    /// The account owns no puppets yet; prompt to create the first.
+    NoPuppetsYet,
 }
