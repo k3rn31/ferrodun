@@ -80,7 +80,9 @@ mod tests {
 
         let builtins = Vec::new();
         let resolver = svc.resolver(&builtins);
-        let resolved = resolver.resolve(sid(1), &world).expect("in-world session resolves");
+        let resolved = resolver
+            .resolve(sid(1), &world)
+            .expect("in-world session resolves");
         assert_eq!(resolved.caller.caller(), puppet);
         assert_eq!(resolved.caller.location(), place(10));
 

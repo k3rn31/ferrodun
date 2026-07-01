@@ -10,20 +10,35 @@ use secrecy::SecretString;
 #[derive(Debug)]
 pub enum Effect {
     /// Verify `username`/`password` against the account store.
-    Authenticate { username: Username, password: SecretString },
+    Authenticate {
+        username: Username,
+        password: SecretString,
+    },
     /// Create a new account with `username` and `password`.
-    Register { username: Username, password: SecretString },
+    Register {
+        username: Username,
+        password: SecretString,
+    },
     /// Create a new puppet named `name` for `account`.
-    CreatePuppet { account: AccountId, name: PuppetName },
+    CreatePuppet {
+        account: AccountId,
+        name: PuppetName,
+    },
     /// Bind the session to `puppet` (already resident in the world).
-    Enter { account: AccountId, puppet: EntityKey },
+    Enter {
+        account: AccountId,
+        puppet: EntityKey,
+    },
 }
 
 /// The outcome of an [`Effect`], fed back via `SessionFsm::on_effect`.
 #[derive(Debug)]
 pub enum EffectResult {
     /// Authentication succeeded; the account and its puppets (oldest first).
-    Authenticated { account: Account, puppets: Vec<Puppet> },
+    Authenticated {
+        account: Account,
+        puppets: Vec<Puppet>,
+    },
     /// Authentication was refused (non-leaky for unknown-user / bad-password).
     LoginRejected(LoginError),
     /// Registration succeeded; the freshly created account.

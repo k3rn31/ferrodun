@@ -22,7 +22,11 @@ pub struct Transition {
 
 impl Transition {
     fn messages(messages: Vec<SessionMessage>) -> Self {
-        Self { messages, effect: None, terminal: None }
+        Self {
+            messages,
+            effect: None,
+            terminal: None,
+        }
     }
 
     fn message(message: SessionMessage) -> Self {
@@ -30,7 +34,11 @@ impl Transition {
     }
 
     fn closing(message: SessionMessage) -> Self {
-        Self { messages: vec![message], effect: None, terminal: Some(Terminal::Closed) }
+        Self {
+            messages: vec![message],
+            effect: None,
+            terminal: Some(Terminal::Closed),
+        }
     }
 }
 
@@ -53,7 +61,10 @@ pub enum Terminal {
     Closed,
     /// The session is bound to a puppet and now in-world; the driver routes its
     /// input to the command pipeline.
-    Bound { account: AccountId, puppet: EntityKey },
+    Bound {
+        account: AccountId,
+        puppet: EntityKey,
+    },
 }
 
 /// A single session's login state machine.
@@ -66,15 +77,32 @@ pub struct SessionFsm {
 #[derive(Debug)]
 enum State {
     Anon,
-    LoginPassword { username: Username },
+    LoginPassword {
+        username: Username,
+    },
     AwaitingAuth,
-    RegisterPassword { username: Username },
-    RegisterConfirm { username: Username, password: SecretString },
+    RegisterPassword {
+        username: Username,
+    },
+    RegisterConfirm {
+        username: Username,
+        password: SecretString,
+    },
     // Carries no data for the same reason as `AwaitingAuth`.
     AwaitingRegister,
-    PuppetSelect { account: Account, puppets: Vec<Puppet> },
-    AwaitingCreate { account: Account, puppets: Vec<Puppet> },
-    AwaitingEnter { account: Account, puppets: Vec<Puppet>, chosen: EntityKey },
+    PuppetSelect {
+        account: Account,
+        puppets: Vec<Puppet>,
+    },
+    AwaitingCreate {
+        account: Account,
+        puppets: Vec<Puppet>,
+    },
+    AwaitingEnter {
+        account: Account,
+        puppets: Vec<Puppet>,
+        chosen: EntityKey,
+    },
 }
 
 impl Default for SessionFsm {
@@ -105,7 +133,9 @@ impl SessionFsm {
             State::RegisterConfirm { .. } => self.confirm_register_password(line),
             State::AwaitingRegister => Transition::messages(Vec::new()),
             State::PuppetSelect { .. } => self.puppet_select_input(line),
-            State::AwaitingCreate { .. } | State::AwaitingEnter { .. } => Transition::messages(Vec::new()),
+            State::AwaitingCreate { .. } | State::AwaitingEnter { .. } => {
+                Transition::messages(Vec::new())
+            }
         }
     }
 
@@ -137,8 +167,7 @@ impl SessionFsm {
 
     fn capture_login_password(&mut self, line: &str) -> Transition {
         // Take ownership of the username by swapping the state to the next one.
-        let State::LoginPassword { username } =
-            std::mem::replace(&mut self.state, State::Anon)
+        let State::LoginPassword { username } = std::mem::replace(&mut self.state, State::Anon)
         else {
             // INVARIANT: only reached from `on_input`'s LoginPassword arm.
             return Transition::messages(Vec::new());
@@ -153,8 +182,7 @@ impl SessionFsm {
     }
 
     fn capture_register_password(&mut self, line: &str) -> Transition {
-        let State::RegisterPassword { username } =
-            std::mem::replace(&mut self.state, State::Anon)
+        let State::RegisterPassword { username } = std::mem::replace(&mut self.state, State::Anon)
         else {
             // INVARIANT: only reached from `on_input`'s RegisterPassword arm.
             return Transition::messages(Vec::new());
@@ -235,7 +263,10 @@ impl SessionFsm {
                 self.state = State::AwaitingCreate { account, puppets };
                 Transition {
                     messages: Vec::new(),
-                    effect: Some(Effect::CreatePuppet { account: account_id, name }),
+                    effect: Some(Effect::CreatePuppet {
+                        account: account_id,
+                        name,
+                    }),
                     terminal: None,
                 }
             }
@@ -252,10 +283,17 @@ impl SessionFsm {
             return Transition::messages(Vec::new());
         };
         let account_id = account.id;
-        self.state = State::AwaitingEnter { account, puppets, chosen };
+        self.state = State::AwaitingEnter {
+            account,
+            puppets,
+            chosen,
+        };
         Transition {
             messages: Vec::new(),
-            effect: Some(Effect::Enter { account: account_id, puppet: chosen }),
+            effect: Some(Effect::Enter {
+                account: account_id,
+                puppet: chosen,
+            }),
             terminal: None,
         }
     }
@@ -288,19 +326,34 @@ impl SessionFsm {
                 puppets.push(created);
                 self.state = State::PuppetSelect { account, puppets };
                 let mut transition = self.enter(key);
-                transition.messages.insert(0, SessionMessage::PuppetCreated(name));
+                transition
+                    .messages
+                    .insert(0, SessionMessage::PuppetCreated(name));
                 transition
             }
             (State::AwaitingCreate { account, puppets }, EffectResult::BackendError) => {
                 self.state = State::PuppetSelect { account, puppets };
                 Transition::message(SessionMessage::ServerError)
             }
-            (State::AwaitingEnter { account, chosen, .. }, EffectResult::Entered) => Transition {
+            (
+                State::AwaitingEnter {
+                    account, chosen, ..
+                },
+                EffectResult::Entered,
+            ) => Transition {
                 messages: vec![SessionMessage::EnteredWorld],
                 effect: None,
-                terminal: Some(Terminal::Bound { account: account.id, puppet: chosen }),
+                terminal: Some(Terminal::Bound {
+                    account: account.id,
+                    puppet: chosen,
+                }),
             },
-            (State::AwaitingEnter { account, puppets, .. }, EffectResult::BackendError) => {
+            (
+                State::AwaitingEnter {
+                    account, puppets, ..
+                },
+                EffectResult::BackendError,
+            ) => {
                 self.state = State::PuppetSelect { account, puppets };
                 Transition::message(SessionMessage::ServerError)
             }
@@ -324,7 +377,9 @@ fn match_puppet<'a>(puppets: &'a [Puppet], arg: &str) -> Option<&'a Puppet> {
     if let Ok(ordinal) = arg.parse::<usize>() {
         return ordinal.checked_sub(1).and_then(|index| puppets.get(index));
     }
-    puppets.iter().find(|p| p.name.as_str().eq_ignore_ascii_case(arg))
+    puppets
+        .iter()
+        .find(|p| p.name.as_str().eq_ignore_ascii_case(arg))
 }
 
 /// Maps a [`LoginError`] to its player-facing message. `UnknownUser` and
@@ -365,7 +420,10 @@ mod tests {
     #[test]
     fn login_prompts_for_a_password_then_emits_an_authenticate_effect() {
         let mut fsm = SessionFsm::new();
-        assert_eq!(fsm.on_input("login alice").messages, vec![SessionMessage::PasswordPrompt]);
+        assert_eq!(
+            fsm.on_input("login alice").messages,
+            vec![SessionMessage::PasswordPrompt]
+        );
 
         let t = fsm.on_input("hunter2");
         assert!(t.messages.is_empty());
@@ -385,7 +443,10 @@ mod tests {
         let _ = fsm.on_input("login alice");
         let t = fsm.on_input("hunter2");
         let dumped = format!("{:?}", t.effect);
-        assert!(!dumped.contains("hunter2"), "password leaked in Debug: {dumped}");
+        assert!(
+            !dumped.contains("hunter2"),
+            "password leaked in Debug: {dumped}"
+        );
     }
 
     #[test]
@@ -411,7 +472,10 @@ mod tests {
         let mut fsm = SessionFsm::new();
         let _ = fsm.on_input("login alice");
         let _ = fsm.on_input("hunter2");
-        let t = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: Vec::new() });
+        let t = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: Vec::new(),
+        });
         assert_eq!(t.messages, vec![SessionMessage::NoPuppetsYet]);
     }
 
@@ -438,7 +502,11 @@ mod tests {
             let mut fsm = SessionFsm::new();
             let _ = fsm.on_input("login alice");
             let _ = fsm.on_input("pw");
-            assert_eq!(fsm.on_effect(EffectResult::LoginRejected(rejection)).messages, vec![expected]);
+            assert_eq!(
+                fsm.on_effect(EffectResult::LoginRejected(rejection))
+                    .messages,
+                vec![expected]
+            );
         }
     }
 
@@ -456,7 +524,10 @@ mod tests {
     fn on_connect_presents_banner_then_prompt() {
         let fsm = SessionFsm::new();
         let t = fsm.on_connect();
-        assert_eq!(t.messages, vec![SessionMessage::Banner, SessionMessage::Prompt]);
+        assert_eq!(
+            t.messages,
+            vec![SessionMessage::Banner, SessionMessage::Prompt]
+        );
         assert!(t.effect.is_none());
         assert!(t.terminal.is_none());
     }
@@ -466,7 +537,11 @@ mod tests {
         for line in ["help", "?", "  HELP  "] {
             let mut fsm = SessionFsm::new();
             let t = fsm.on_input(line);
-            assert_eq!(t.messages, vec![SessionMessage::PreLoginHelp], "line: {line:?}");
+            assert_eq!(
+                t.messages,
+                vec![SessionMessage::PreLoginHelp],
+                "line: {line:?}"
+            );
             assert!(t.terminal.is_none());
         }
     }
@@ -502,8 +577,14 @@ mod tests {
     #[test]
     fn register_confirms_the_password_then_emits_a_register_effect() {
         let mut fsm = SessionFsm::new();
-        assert_eq!(fsm.on_input("register alice").messages, vec![SessionMessage::PasswordPrompt]);
-        assert_eq!(fsm.on_input("hunter2").messages, vec![SessionMessage::ConfirmPrompt]);
+        assert_eq!(
+            fsm.on_input("register alice").messages,
+            vec![SessionMessage::PasswordPrompt]
+        );
+        assert_eq!(
+            fsm.on_input("hunter2").messages,
+            vec![SessionMessage::ConfirmPrompt]
+        );
         let t = fsm.on_input("hunter2");
         match t.effect {
             Some(Effect::Register { username, password }) => {
@@ -549,7 +630,9 @@ mod tests {
         let _ = fsm.on_input("register alice");
         let _ = fsm.on_input("hunter2");
         let _ = fsm.on_input("hunter2");
-        let t = fsm.on_effect(EffectResult::RegisterRejected(mud_account::RegisterError::UsernameTaken));
+        let t = fsm.on_effect(EffectResult::RegisterRejected(
+            mud_account::RegisterError::UsernameTaken,
+        ));
         assert_eq!(t.messages, vec![SessionMessage::UsernameTaken]);
         assert_eq!(fsm.on_input("who").messages, vec![SessionMessage::WhoStub]);
     }
@@ -565,7 +648,10 @@ mod tests {
         });
         let t = fsm.on_input("play 2");
         match t.effect {
-            Some(Effect::Enter { account: acct, puppet }) => {
+            Some(Effect::Enter {
+                account: acct,
+                puppet,
+            }) => {
                 assert_eq!(acct, account().id);
                 assert_eq!(puppet, key(11));
             }
@@ -579,7 +665,10 @@ mod tests {
         let mut fsm = SessionFsm::new();
         let _ = fsm.on_input("login alice");
         let _ = fsm.on_input("pw");
-        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: vec![puppet(10, "arden")],
+        });
         let t = fsm.on_input("play arden");
         assert!(matches!(t.effect, Some(Effect::Enter { .. })));
     }
@@ -589,13 +678,19 @@ mod tests {
         let mut fsm = SessionFsm::new();
         let _ = fsm.on_input("login alice");
         let _ = fsm.on_input("pw");
-        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: vec![puppet(10, "arden")],
+        });
         let _ = fsm.on_input("play arden");
         let t = fsm.on_effect(EffectResult::Entered);
         assert_eq!(t.messages, vec![SessionMessage::EnteredWorld]);
         assert_eq!(
             t.terminal,
-            Some(Terminal::Bound { account: account().id, puppet: key(10) })
+            Some(Terminal::Bound {
+                account: account().id,
+                puppet: key(10)
+            })
         );
     }
 
@@ -604,10 +699,16 @@ mod tests {
         let mut fsm = SessionFsm::new();
         let _ = fsm.on_input("login alice");
         let _ = fsm.on_input("pw");
-        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: Vec::new() });
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: Vec::new(),
+        });
         let t = fsm.on_input("new arden");
         match t.effect {
-            Some(Effect::CreatePuppet { account: acct, name }) => {
+            Some(Effect::CreatePuppet {
+                account: acct,
+                name,
+            }) => {
                 assert_eq!(acct, account().id);
                 assert_eq!(name.as_str(), "arden");
             }
@@ -616,7 +717,12 @@ mod tests {
         }
         // The created puppet is echoed and immediately entered.
         let t = fsm.on_effect(EffectResult::PuppetCreated(puppet(12, "arden")));
-        assert_eq!(t.messages, vec![SessionMessage::PuppetCreated(PuppetName::parse("arden").expect("name"))]);
+        assert_eq!(
+            t.messages,
+            vec![SessionMessage::PuppetCreated(
+                PuppetName::parse("arden").expect("name")
+            )]
+        );
         assert!(matches!(t.effect, Some(Effect::Enter { .. })));
     }
 
@@ -625,12 +731,18 @@ mod tests {
         let mut fsm = SessionFsm::new();
         let _ = fsm.on_input("login alice");
         let _ = fsm.on_input("pw");
-        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: vec![puppet(10, "arden")],
+        });
         let t = fsm.on_input("play ghost");
         assert_eq!(t.messages, vec![SessionMessage::UnknownCommand]);
         assert!(t.effect.is_none());
         // Still selectable.
-        assert!(matches!(fsm.on_input("play arden").effect, Some(Effect::Enter { .. })));
+        assert!(matches!(
+            fsm.on_input("play arden").effect,
+            Some(Effect::Enter { .. })
+        ));
     }
 
     #[test]
@@ -638,7 +750,10 @@ mod tests {
         let mut fsm = SessionFsm::new();
         let _ = fsm.on_input("login alice");
         let _ = fsm.on_input("pw");
-        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: vec![puppet(10, "arden")],
+        });
         assert_eq!(fsm.on_input("quit").terminal, Some(Terminal::Closed));
     }
 }

@@ -29,7 +29,11 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
         SessionMessage::EnteredWorld => t!(*locale, "session.entered"),
         SessionMessage::Goodbye => t!(*locale, "session.goodbye"),
         SessionMessage::PuppetList(names) => {
-            let list = names.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", ");
+            let list = names
+                .iter()
+                .map(|n| n.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("Your characters: {list}. Type 'play <name>' or 'new <name>'.")
         }
         SessionMessage::PuppetCreated(name) => format!("Created {name}.", name = name.as_str()),
@@ -43,7 +47,10 @@ mod tests {
 
     #[test]
     fn banner_message_renders_the_supplied_banner() {
-        assert_eq!(render(&SessionMessage::Banner, "WELCOME", &Locale::EN), "WELCOME");
+        assert_eq!(
+            render(&SessionMessage::Banner, "WELCOME", &Locale::EN),
+            "WELCOME"
+        );
     }
 
     #[test]
@@ -59,6 +66,9 @@ mod tests {
             PuppetName::parse("borel").expect("name"),
         ];
         let text = render(&SessionMessage::PuppetList(names), "", &Locale::EN);
-        assert!(text.contains("arden") && text.contains("borel"), "got: {text}");
+        assert!(
+            text.contains("arden") && text.contains("borel"),
+            "got: {text}"
+        );
     }
 }

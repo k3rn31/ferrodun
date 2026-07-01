@@ -21,14 +21,11 @@ use secrecy::SecretString;
 use render::render;
 pub use resolver::RegistryResolver;
 
-/// A server-side fault performing account I/O. Opaque: no backend error type
-/// (DB, task join) leaks across this boundary.
-///
-/// `#[non_exhaustive]` blocks the implicit unit-struct constructor for crates
-/// outside `mud-engine`; `Default` gives `LoginBackend` implementors (e.g. the
-/// M1-19 integration test, and `mudd` at M1-22) a way to produce one.
-#[derive(Debug, Default)]
-#[non_exhaustive]
+/// An opaque server-side fault performing account/world I/O on the FSM's behalf.
+/// Carries no detail — no DB or task-join error leaks across the port boundary;
+/// `LoginBackend` implementors return it to signal "the operation failed, the
+/// player may retry."
+#[derive(Debug)]
 pub struct BackendError;
 
 /// The account/world I/O the session driver performs on the FSM's behalf.
@@ -100,7 +97,10 @@ pub struct SessionService {
 #[must_use]
 pub enum Routing {
     /// Handled by the pre-login FSM; here is the output and whether to close.
-    Login { outputs: Vec<SessionOutput>, close: bool },
+    Login {
+        outputs: Vec<SessionOutput>,
+        close: bool,
+    },
     /// The session is in-world; the caller must run the command pipeline.
     InWorld,
     /// No such session.
@@ -110,7 +110,10 @@ pub enum Routing {
 impl SessionService {
     /// A service greeting new sessions with `banner`.
     pub fn new(banner: impl Into<String>) -> Self {
-        Self { sessions: HashMap::new(), banner: banner.into() }
+        Self {
+            sessions: HashMap::new(),
+            banner: banner.into(),
+        }
     }
 
     /// Registers a new session and returns its banner + prompt.
@@ -130,7 +133,8 @@ impl SessionService {
     /// the login FSM so resolver tests can seed state without a full login.
     #[cfg(test)]
     pub(crate) fn bind_for_test(&mut self, session: SessionId, binding: InWorldBinding) {
-        self.sessions.insert(session, SessionState::InWorld(binding));
+        self.sessions
+            .insert(session, SessionState::InWorld(binding));
     }
 
     /// Drops a session (M1 minimal: no linkdead grace; §3.15.2 is M7).
@@ -174,12 +178,18 @@ impl SessionService {
             }
 
             let Some(effect) = transition.effect.take() else {
-                return Routing::Login { outputs, close: false };
+                return Routing::Login {
+                    outputs,
+                    close: false,
+                };
             };
 
             let result = self.perform(effect, backend).await;
             let Some(SessionState::Login(fsm)) = self.sessions.get_mut(&session) else {
-                return Routing::Login { outputs, close: false };
+                return Routing::Login {
+                    outputs,
+                    close: false,
+                };
             };
             transition = fsm.on_effect(result);
         }
@@ -234,7 +244,10 @@ impl SessionService {
                     Some(entity) => {
                         self.sessions.insert(
                             session,
-                            SessionState::InWorld(InWorldBinding { account, puppet: entity }),
+                            SessionState::InWorld(InWorldBinding {
+                                account,
+                                puppet: entity,
+                            }),
                         );
                         false
                     }
@@ -335,7 +348,11 @@ mod tests {
     }
 
     fn text_of(outputs: &[mud_schema::SessionOutput]) -> String {
-        outputs.iter().map(|o| o.text.as_str()).collect::<Vec<_>>().join("\n")
+        outputs
+            .iter()
+            .map(|o| o.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[tokio::test]
@@ -343,7 +360,10 @@ mod tests {
         let mut svc = SessionService::new("WELCOME");
         let outputs = svc.connect(sid(1));
         let text = text_of(&outputs);
-        assert!(text.contains("WELCOME") && text.contains("login"), "got: {text}");
+        assert!(
+            text.contains("WELCOME") && text.contains("login"),
+            "got: {text}"
+        );
     }
 
     #[tokio::test]
@@ -358,7 +378,10 @@ mod tests {
             );
         }
         // Now in-world: further input routes to the pipeline.
-        assert!(matches!(svc.on_input(sid(1), "look", &FakeBackend).await, Routing::InWorld));
+        assert!(matches!(
+            svc.on_input(sid(1), "look", &FakeBackend).await,
+            Routing::InWorld
+        ));
     }
 
     #[tokio::test]
@@ -373,10 +396,19 @@ mod tests {
         );
         // INVARIANT: the assertion above already confirmed `routing` is an
         // open `Routing::Login`.
-        let Routing::Login { outputs, .. } = routing else { unreachable!() };
-        assert!(text_of(&outputs).contains("Login failed"), "got: {}", text_of(&outputs));
+        let Routing::Login { outputs, .. } = routing else {
+            unreachable!()
+        };
+        assert!(
+            text_of(&outputs).contains("Login failed"),
+            "got: {}",
+            text_of(&outputs)
+        );
         // Still pre-login: not routed to the pipeline.
-        assert!(matches!(svc.on_input(sid(1), "look", &FakeBackend).await, Routing::Login { .. }));
+        assert!(matches!(
+            svc.on_input(sid(1), "look", &FakeBackend).await,
+            Routing::Login { .. }
+        ));
     }
 
     #[tokio::test]
@@ -386,12 +418,18 @@ mod tests {
         let routing = svc.on_input(sid(1), "quit", &FakeBackend).await;
         assert!(matches!(routing, Routing::Login { close: true, .. }));
         // The session is gone; a later input is Unknown.
-        assert!(matches!(svc.on_input(sid(1), "hi", &FakeBackend).await, Routing::Unknown));
+        assert!(matches!(
+            svc.on_input(sid(1), "hi", &FakeBackend).await,
+            Routing::Unknown
+        ));
     }
 
     #[tokio::test]
     async fn input_for_an_unknown_session_is_unknown() {
         let mut svc = SessionService::new("W");
-        assert!(matches!(svc.on_input(sid(7), "hi", &FakeBackend).await, Routing::Unknown));
+        assert!(matches!(
+            svc.on_input(sid(7), "hi", &FakeBackend).await,
+            Routing::Unknown
+        ));
     }
 }

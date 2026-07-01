@@ -80,8 +80,14 @@ fn builtin_en() -> Catalog {
         // content cap (§3.6.4)
         ("content.too-long", "Your message is too long."),
         // session FSM (§3.19.1)
-        ("session.prompt", "Type 'login <name>' or 'register <name>'. 'help' lists commands."),
-        ("session.help", "Commands: login <name>, register <name>, who, help, quit."),
+        (
+            "session.prompt",
+            "Type 'login <name>' or 'register <name>'. 'help' lists commands.",
+        ),
+        (
+            "session.help",
+            "Commands: login <name>, register <name>, who, help, quit.",
+        ),
         ("session.who-stub", "Nobody is listed yet."),
         ("session.unknown", "Unrecognized command. Type 'help'."),
         ("session.password", "Password:"),
@@ -89,10 +95,19 @@ fn builtin_en() -> Catalog {
         ("session.login-failed", "Login failed."),
         ("session.suspended", "This account is suspended."),
         ("session.banned", "This account is banned."),
-        ("session.server-error", "Something went wrong. Please try again."),
-        ("session.no-puppets", "You have no characters yet. Type 'new <name>' to create one."),
+        (
+            "session.server-error",
+            "Something went wrong. Please try again.",
+        ),
+        (
+            "session.no-puppets",
+            "You have no characters yet. Type 'new <name>' to create one.",
+        ),
         ("session.mismatch", "The passwords did not match."),
-        ("session.name-invalid", "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars)."),
+        (
+            "session.name-invalid",
+            "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars).",
+        ),
         ("session.username-taken", "That username is already taken."),
         ("session.entered", "Welcome. You are now in the world."),
         ("session.goodbye", "Goodbye."),
@@ -167,7 +182,9 @@ mod tests {
             "session.goodbye",
         ] {
             assert!(
-                catalog.lookup(&Locale::EN, &MessageKey::from_static(key)).is_some(),
+                catalog
+                    .lookup(&Locale::EN, &MessageKey::from_static(key))
+                    .is_some(),
                 "missing session key: {key}"
             );
         }

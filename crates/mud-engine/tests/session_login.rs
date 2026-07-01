@@ -51,7 +51,7 @@ impl LoginBackend for DbBackend<'_> {
         self.accounts
             .authenticate(username, password.expose_secret())
             .await
-            .map_err(|_| BackendError::default())
+            .map_err(|_| BackendError)
     }
 
     async fn register(
@@ -62,19 +62,19 @@ impl LoginBackend for DbBackend<'_> {
         let exposed = password.expose_secret().to_owned();
         let credential = tokio::task::spawn_blocking(move || Credential::hash(&exposed))
             .await
-            .map_err(|_| BackendError::default())?
-            .map_err(|_| BackendError::default())?;
+            .map_err(|_| BackendError)?
+            .map_err(|_| BackendError)?;
         self.accounts
             .register(username.clone(), &credential)
             .await
-            .map_err(|_| BackendError::default())
+            .map_err(|_| BackendError)
     }
 
     async fn puppets_of(&self, account: AccountId) -> Result<Vec<Puppet>, BackendError> {
         self.accounts
             .puppets_of(account)
             .await
-            .map_err(|_| BackendError::default())
+            .map_err(|_| BackendError)
     }
 
     async fn create_puppet(
@@ -87,7 +87,7 @@ impl LoginBackend for DbBackend<'_> {
         self.accounts
             .create_puppet(account, name.clone(), &self.start)
             .await
-            .map_err(|_| BackendError::default())
+            .map_err(|_| BackendError)
     }
 
     fn resolve_puppet(&self, key: EntityKey) -> Option<EntityId> {
