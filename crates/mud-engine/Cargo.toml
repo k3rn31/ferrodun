@@ -19,5 +19,11 @@ unicode-normalization = "0.1.25"
 workspace = true
 
 [dev-dependencies]
+mud-account = { path = "../mud-account" }
+mud-core = { path = "../mud-core" }
+mud-db = { path = "../mud-db" }
+mud-schema = { path = "../mud-schema" }
+secrecy = "0.10.3"
+tempfile = "3.27.0"
 tokio = { version = "1.52.3", features = ["macros", "rt"] }
 tracing-test = "0.2.6"

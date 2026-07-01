@@ -23,7 +23,11 @@ pub use resolver::RegistryResolver;
 
 /// A server-side fault performing account I/O. Opaque: no backend error type
 /// (DB, task join) leaks across this boundary.
-#[derive(Debug)]
+///
+/// `#[non_exhaustive]` blocks the implicit unit-struct constructor for crates
+/// outside `mud-engine`; `Default` gives `LoginBackend` implementors (e.g. the
+/// M1-19 integration test, and `mudd` at M1-22) a way to produce one.
+#[derive(Debug, Default)]
 #[non_exhaustive]
 pub struct BackendError;
 
