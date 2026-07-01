@@ -933,11 +933,15 @@ dependencies = [
 name = "mud-engine"
 version = "0.1.0"
 dependencies = [
+ "mud-account",
  "mud-cmd",
  "mud-core",
  "mud-i18n",
  "mud-schema",
+ "mud-session",
+ "secrecy",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-test",
  "unicode-normalization",
