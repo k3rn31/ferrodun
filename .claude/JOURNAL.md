@@ -1196,3 +1196,42 @@ truth when this log drifts.
   `_ => ...` fallback arms added for the three `#[non_exhaustive]` enums are
   placeholders to replace with explicit handling if `mud-session` grows new
   variants that need real driver behavior.
+
+## 2026-07-01 — mud-engine: real SessionResolver over the session registry (M1-19)
+
+- **Spec:** §2.7 step 3 (session → account → puppet → location resolution),
+  §2.7 step 4 (CmdSet layer precedence — built-ins at lowest priority).
+- **Done:** added `crates/mud-engine/src/session/resolver.rs`:
+  `RegistryResolver<'a>` implements `SessionResolver` by looking a session up
+  in the registry, resolving only `SessionState::InWorld` bindings, reading the
+  puppet's location via `World::location_of` (`None` location means no
+  resolution — a caller with no place can't act), and building a
+  `CallerContext` (`Locale::EN`, empty `LockContext` — no account locale or
+  puppet perms exist in M1) plus a `LayerCommands` carrying only `builtins`
+  (account/puppet/container/location/channel layers stay empty in M1). Added
+  `SessionService::resolver<'a>(&'a self, builtins) -> RegistryResolver<'a>`
+  and a `#[cfg(test)] bind_for_test` seam. Removed both Task 7/8 temporary
+  dead-code suppressions in `session/mod.rs`: the scoped `#[allow(dead_code)]`
+  above `InWorldBinding` (its `puppet` field is now genuinely read by the
+  resolver; `account` is a `pub` field on a crate-root-exported type, so it was
+  never subject to the lint once re-exported) and the `_binding` placeholder in
+  `on_input`'s `InWorld` match arm, reverted to a bare `_`. Added the
+  crate-root re-exports deferred from Task 7/8:
+  `pub use session::{BackendError, InWorldBinding, LoginBackend,
+  RegistryResolver, Routing, SessionService};`. `FakeResolver` in
+  `pipeline.rs` tests is untouched.
+- **Verify:** TDD — `resolver.rs` written before `mod resolver;` was wired in,
+  confirming a RED state (0 tests found under `session::resolver`); after
+  wiring, `cargo test -p mud-engine` is 40 lib + 16 `builtins.rs` + 13
+  `command_pipeline.rs` green, including
+  `session::resolver::tests::an_in_world_session_resolves_to_its_puppet`
+  (seats the puppet with `world.move_to` and asserts `Some` — not the brief's
+  vaguer `if let Some(...)` hedge — plus an unknown-session `None` case). 0
+  `warning:` lines on a forced clean rebuild (`touch`ed the three changed
+  files, re-ran `cargo test -p mud-engine`); `cargo clippy -p mud-engine
+  --all-targets` and workspace-wide clippy clean; `cargo build --workspace`
+  clean. No `#[allow(...)]` added.
+- **Next:** M1-19's session FSM + resolver plumbing is now complete; the next
+  work is wiring `SessionService` + `RegistryResolver` + the command
+  `Pipeline` into the `mudd` binary's connection loop (M1-22) and supplying a
+  real `LoginBackend` backed by `mud-db` (already exists per M1-18).
