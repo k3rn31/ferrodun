@@ -64,7 +64,10 @@ pub struct SessionFsm {
 enum State {
     Anon,
     LoginPassword { username: Username },
-    AwaitingAuth { username: Username },
+    AwaitingAuth,
+    // Fields carried across turns; read by `puppet_select_input` (Task 5). The
+    // scoped allow is removed in Task 5 when the reads land.
+    #[allow(dead_code)] // LINT: consumed by puppet selection added in Task 5 (M1-19)
     PuppetSelect { account: Account, puppets: Vec<Puppet> },
 }
 
@@ -91,7 +94,7 @@ impl SessionFsm {
             State::Anon => self.anon_input(line),
             State::LoginPassword { .. } => self.capture_login_password(line),
             // Input arriving while an effect is in flight is dropped (M1 minimal).
-            State::AwaitingAuth { .. } => Transition::messages(Vec::new()),
+            State::AwaitingAuth => Transition::messages(Vec::new()),
             State::PuppetSelect { .. } => self.puppet_select_input(line),
         }
     }
@@ -124,7 +127,7 @@ impl SessionFsm {
             return Transition::messages(Vec::new());
         };
         let password = SecretString::from(line.to_owned());
-        self.state = State::AwaitingAuth { username: username.clone() };
+        self.state = State::AwaitingAuth;
         Transition {
             messages: Vec::new(),
             effect: Some(Effect::Authenticate { username, password }),
@@ -149,13 +152,13 @@ impl SessionFsm {
     /// Feeds an [`EffectResult`] back after the driver performed an [`Effect`].
     pub fn on_effect(&mut self, result: EffectResult) -> Transition {
         match (std::mem::replace(&mut self.state, State::Anon), result) {
-            (State::AwaitingAuth { .. }, EffectResult::Authenticated { account, puppets }) => {
+            (State::AwaitingAuth, EffectResult::Authenticated { account, puppets }) => {
                 self.enter_puppet_select(account, puppets)
             }
-            (State::AwaitingAuth { .. }, EffectResult::LoginRejected(reason)) => {
+            (State::AwaitingAuth, EffectResult::LoginRejected(reason)) => {
                 Transition::message(login_rejection_message(reason))
             }
-            (State::AwaitingAuth { .. }, EffectResult::BackendError) => {
+            (State::AwaitingAuth, EffectResult::BackendError) => {
                 Transition::message(SessionMessage::ServerError)
             }
             // No effect was outstanding for this state: ignore.
