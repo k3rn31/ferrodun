@@ -1165,3 +1165,34 @@ truth when this log drifts.
   the `KeyOutOfRange`/`keys.rs`/name-const doc comments. Skipped (YAGNI / spec
   defers): typed `create_puppet` account-existence error (FK can't fire in M1 —
   no account deletion), the `UnknownUser` dummy-hash, and a name-newtype macro.
+
+## 2026-07-01 — mud-engine session driver: port, registry, rendering, async loop (M1-19)
+
+- **Spec:** §3.19.1 (session pre-login FSM driver), §3.20.5 (message
+  rendering), §2.7 (dependency inversion — `mud-engine` reaches persistence
+  only through an injected port, never `mud-db` directly).
+- **Done:** finished a partial draft (uncompiled, uncommitted) of
+  `crates/mud-engine/src/session/{mod.rs,render.rs}`: wired `pub mod session;`
+  into `lib.rs`; fixed non-exhaustive-match compile errors against
+  `mud_session::{Effect,Terminal,SessionMessage}` (all `#[non_exhaustive]`)
+  by adding fallback arms mirroring `mud-db`'s existing
+  `UnsupportedEffect` precedent; desugared `LoginBackend`'s four methods from
+  `async fn` to return-position `impl Future<Output = _> + Send` (RPITIT) to
+  kill the `async_fn_in_trait` warning while keeping native async + static
+  dispatch (`&impl LoginBackend`, no `async-trait`, no `dyn`); added
+  `SessionService::binding(&self, SessionId) -> Option<InWorldBinding>` so the
+  `InWorld` state's stored data is actually read (was write-only, triggering
+  dead-code); rewrote two tests' `match ... => panic!()` arms as
+  `assert!(matches!(...))` (workspace denies `clippy::panic` with no test
+  exemption, and the codebase has zero prior `panic!()` usage).
+- **Verify:** `cargo test -p mud-engine` 68 green (39 lib incl. 5 driver +
+  3 render tests, 16 `builtins.rs`, 13 `command_pipeline.rs`); 0 `warning:`
+  lines on a forced clean rebuild; `cargo clippy -p mud-engine --all-targets`
+  clean, no `#[allow(...)]` added; `cargo build --workspace` clean; confirmed
+  `mud-db` absent from `mud-engine`'s deps and `tokio` is dev-only.
+- **Next:** Task 9 wires `SessionService`/`LoginBackend` into the real
+  `SessionResolver`/`CallerContext`/pipeline seam and adds the crate-root
+  `pub use session::{...}` re-exports (intentionally deferred here); the
+  `_ => ...` fallback arms added for the three `#[non_exhaustive]` enums are
+  placeholders to replace with explicit handling if `mud-session` grows new
+  variants that need real driver behavior.
