@@ -6,6 +6,7 @@
 //! pipeline's `Places` / `SessionResolver` seams.
 
 mod render;
+mod resolver;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -18,6 +19,7 @@ use mud_session::{Effect, EffectResult, SessionFsm, Terminal, Transition};
 use secrecy::SecretString;
 
 use render::render;
+pub use resolver::RegistryResolver;
 
 /// A server-side fault performing account I/O. Opaque: no backend error type
 /// (DB, task join) leaks across this boundary.
@@ -68,9 +70,6 @@ pub trait LoginBackend {
 }
 
 /// A session bound to a puppet and playing in-world.
-// Fields are written here and read by `RegistryResolver` (Task 9). The scoped
-// allow is removed in Task 9 when the reads land.
-#[allow(dead_code)] // LINT: read by RegistryResolver in Task 9 (M1-19)
 #[derive(Debug, Clone, Copy)]
 pub struct InWorldBinding {
     /// The owning account.
@@ -118,6 +117,18 @@ impl SessionService {
         self.render_outputs(session, transition.messages)
     }
 
+    /// A resolver over the current in-world bindings, contributing `builtins`.
+    pub fn resolver<'a>(&'a self, builtins: &'a [mud_cmd::Command]) -> RegistryResolver<'a> {
+        RegistryResolver::new(&self.sessions, builtins)
+    }
+
+    /// Test seam: binds `session` directly to an in-world `binding`, skipping
+    /// the login FSM so resolver tests can seed state without a full login.
+    #[cfg(test)]
+    pub(crate) fn bind_for_test(&mut self, session: SessionId, binding: InWorldBinding) {
+        self.sessions.insert(session, SessionState::InWorld(binding));
+    }
+
     /// Drops a session (M1 minimal: no linkdead grace; §3.15.2 is M7).
     pub fn disconnect(&mut self, session: SessionId) {
         self.sessions.remove(&session);
@@ -132,10 +143,7 @@ impl SessionService {
     ) -> Routing {
         match self.sessions.get_mut(&session) {
             None => Routing::Unknown,
-            // `_binding` (not `_`): the binding itself is what tells rustc the
-            // field is read; the value is unused here until `RegistryResolver`
-            // (Task 9) needs it to resolve the puppet's caller context.
-            Some(SessionState::InWorld(_binding)) => Routing::InWorld,
+            Some(SessionState::InWorld(_)) => Routing::InWorld,
             Some(SessionState::Login(fsm)) => {
                 let transition = fsm.on_input(line);
                 self.drive(session, transition, backend).await

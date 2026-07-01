@@ -33,4 +33,5 @@ pub use layers::LayerCommands;
 pub use objects::{Resolution, resolve_among};
 pub use pipeline::{Pipeline, PipelineError};
 pub use places::Places;
+pub use session::{BackendError, InWorldBinding, LoginBackend, RegistryResolver, Routing, SessionService};
 pub use text::{ContentTooLong, MAX_CONTENT_BYTES, sanitize};
