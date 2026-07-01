@@ -1166,119 +1166,36 @@ truth when this log drifts.
   defers): typed `create_puppet` account-existence error (FK can't fire in M1 —
   no account deletion), the `UnknownUser` dummy-hash, and a name-newtype macro.
 
-## 2026-07-01 — mud-engine session driver: port, registry, rendering, async loop (M1-19)
+## 2026-07-01 — M1-19: session FSM (login states)
 
-- **Spec:** §3.19.1 (session pre-login FSM driver), §3.20.5 (message
-  rendering), §2.7 (dependency inversion — `mud-engine` reaches persistence
-  only through an injected port, never `mud-db` directly).
-- **Done:** finished a partial draft (uncompiled, uncommitted) of
-  `crates/mud-engine/src/session/{mod.rs,render.rs}`: wired `pub mod session;`
-  into `lib.rs`; fixed non-exhaustive-match compile errors against
-  `mud_session::{Effect,Terminal,SessionMessage}` (all `#[non_exhaustive]`)
-  by adding fallback arms mirroring `mud-db`'s existing
-  `UnsupportedEffect` precedent; desugared `LoginBackend`'s four methods from
-  `async fn` to return-position `impl Future<Output = _> + Send` (RPITIT) to
-  kill the `async_fn_in_trait` warning while keeping native async + static
-  dispatch (`&impl LoginBackend`, no `async-trait`, no `dyn`); added
-  `SessionService::binding(&self, SessionId) -> Option<InWorldBinding>` so the
-  `InWorld` state's stored data is actually read (was write-only, triggering
-  dead-code); rewrote two tests' `match ... => panic!()` arms as
-  `assert!(matches!(...))` (workspace denies `clippy::panic` with no test
-  exemption, and the codebase has zero prior `panic!()` usage).
-- **Verify:** `cargo test -p mud-engine` 68 green (39 lib incl. 5 driver +
-  3 render tests, 16 `builtins.rs`, 13 `command_pipeline.rs`); 0 `warning:`
-  lines on a forced clean rebuild; `cargo clippy -p mud-engine --all-targets`
-  clean, no `#[allow(...)]` added; `cargo build --workspace` clean; confirmed
-  `mud-db` absent from `mud-engine`'s deps and `tokio` is dev-only.
-- **Next:** Task 9 wires `SessionService`/`LoginBackend` into the real
-  `SessionResolver`/`CallerContext`/pipeline seam and adds the crate-root
-  `pub use session::{...}` re-exports (intentionally deferred here); the
-  `_ => ...` fallback arms added for the three `#[non_exhaustive]` enums are
-  placeholders to replace with explicit handling if `mud-session` grows new
-  variants that need real driver behavior.
-
-## 2026-07-01 — mud-engine: real SessionResolver over the session registry (M1-19)
-
-- **Spec:** §2.7 step 3 (session → account → puppet → location resolution),
-  §2.7 step 4 (CmdSet layer precedence — built-ins at lowest priority).
-- **Done:** added `crates/mud-engine/src/session/resolver.rs`:
-  `RegistryResolver<'a>` implements `SessionResolver` by looking a session up
-  in the registry, resolving only `SessionState::InWorld` bindings, reading the
-  puppet's location via `World::location_of` (`None` location means no
-  resolution — a caller with no place can't act), and building a
-  `CallerContext` (`Locale::EN`, empty `LockContext` — no account locale or
-  puppet perms exist in M1) plus a `LayerCommands` carrying only `builtins`
-  (account/puppet/container/location/channel layers stay empty in M1). Added
-  `SessionService::resolver<'a>(&'a self, builtins) -> RegistryResolver<'a>`
-  and a `#[cfg(test)] bind_for_test` seam. Removed both Task 7/8 temporary
-  dead-code suppressions in `session/mod.rs`: the scoped `#[allow(dead_code)]`
-  above `InWorldBinding` (its `puppet` field is now genuinely read by the
-  resolver; `account` is a `pub` field on a crate-root-exported type, so it was
-  never subject to the lint once re-exported) and the `_binding` placeholder in
-  `on_input`'s `InWorld` match arm, reverted to a bare `_`. Added the
-  crate-root re-exports deferred from Task 7/8:
-  `pub use session::{BackendError, InWorldBinding, LoginBackend,
-  RegistryResolver, Routing, SessionService};`. `FakeResolver` in
-  `pipeline.rs` tests is untouched.
-- **Verify:** TDD — `resolver.rs` written before `mod resolver;` was wired in,
-  confirming a RED state (0 tests found under `session::resolver`); after
-  wiring, `cargo test -p mud-engine` is 40 lib + 16 `builtins.rs` + 13
-  `command_pipeline.rs` green, including
-  `session::resolver::tests::an_in_world_session_resolves_to_its_puppet`
-  (seats the puppet with `world.move_to` and asserts `Some` — not the brief's
-  vaguer `if let Some(...)` hedge — plus an unknown-session `None` case). 0
-  `warning:` lines on a forced clean rebuild (`touch`ed the three changed
-  files, re-ran `cargo test -p mud-engine`); `cargo clippy -p mud-engine
-  --all-targets` and workspace-wide clippy clean; `cargo build --workspace`
-  clean. No `#[allow(...)]` added.
-- **Next:** M1-19's session FSM + resolver plumbing is now complete; the next
-  work is wiring `SessionService` + `RegistryResolver` + the command
-  `Pipeline` into the `mudd` binary's connection loop (M1-22) and supplying a
-  real `LoginBackend` backed by `mud-db` (already exists per M1-18).
-
-## 2026-07-01 — mud-engine: end-to-end existing-puppet login integration (M1-19 Task 10)
-
-- **Spec:** §3.19.1 — login of an existing (boot-hydrated) puppet through a
-  real `mud-db`-backed `LoginBackend`, asserting the real `RegistryResolver`
-  resolves the in-world session to its persisted location. Deliberately does
-  **not** exercise `new <name>` (create-then-enter): a puppet created
-  mid-session is not hydrated into the running `World` until M1-22.
-- **Done:** added `crates/mud-engine/tests/session_login.rs` (dev-deps on
-  `mud-db`, `mud-account`, `mud-core`, `mud-schema`, `secrecy`, `tempfile`
-  added via `cargo add --dev`): a `DbBackend<'a>` wraps a real `Accounts<'a>` +
-  `&'a PersistentWorld` and implements `LoginBackend` with plain `async fn`
-  bodies. Two tests: (1) seed an account+puppet, commit, boot a
-  `PersistentWorld` (hydrates the puppet) with a separate `Accounts` handle
-  for login reads, drive `connect → login → password → play` through
-  `SessionService`, then resolve the in-world session via
-  `svc.resolver(&builtins).resolve(sid, world.world())` and assert
-  `resolved.caller.location() == hall()`; (2) wrong password then retry
-  reaches the world. Found and fixed a real API gap while wiring this up:
-  `BackendError` was `#[non_exhaustive]` with no public constructor, so no
-  crate outside `mud-engine` (this test, and `mudd` at M1-22) could produce
-  one to implement `LoginBackend` — added `Default` to its derive list
-  (`non_exhaustive` still blocks the bare unit-struct literal from outside the
-  crate, but a derived `Default::default()` is a normal associated function
-  and works). Replaced the brief's `panic!` arms with
-  `assert!(matches!(...))` / an `unreachable!()`-guarded `let else` (mirroring
-  `session/mod.rs`'s existing test style) since the workspace denies
-  `clippy::panic` even in tests.
-- **Verify:** RED first (missing dev-deps: `E0433` unresolved `mud_db`/etc.),
-  then a second RED (`E0423`: `BackendError`'s constructor is private —
-  the `non_exhaustive` gap above) before the `Default` fix; GREEN after:
-  `cargo test -p mud-engine --test session_login` 2 passed. Full gate:
-  `cargo test --workspace` 481 passed, 0 failed, 0 `warning:` lines;
-  `cargo clippy --workspace --all-targets` clean. `cargo fmt --check` is
-  **not** clean workspace-wide, but this predates this task: the installed
-  `rustfmt 1.9.0` reformats many pre-existing, untouched files (e.g.
-  `session/render.rs`, `session/resolver.rs`, `mud-session/src/fsm.rs`) that
-  were never touched by Tasks 7-10, indicating the checked-in formatting was
-  produced by an older rustfmt/style-edition. This new test file and the
-  `BackendError` derive edit were formatted with the installed `rustfmt` and
-  are individually fmt-clean.
-- **Next:** M1-19 is complete end-to-end for existing-puppet login. Open
-  items: (1) the pre-existing repo-wide `cargo fmt --check` drift (unrelated
-  to M1-19) should be investigated/reformatted in its own PR, ideally after
-  pinning a `rust-toolchain.toml` rustfmt version; (2) M1-22 still owns wiring
-  `SessionService`/`RegistryResolver`/`Pipeline` into the `mudd` binary and
-  live-hydrating a mid-session-created puppet into the running `World`.
+- **Spec:** §3.19.1, §3.19.3, §2.7 step 1/3, §3.15.1 — pre-login banner →
+  register/login → puppet select → in-world; wire accounts into the real
+  `SessionResolver`.
+- **Done:** New pure, sans-IO `mud-session` crate: a login state machine
+  (`SessionFsm`) mapping `(state, line)` → typed `SessionMessage`s + `Effect`s,
+  with `EffectResult` fed back; passwords held only in `secrecy::SecretString`
+  (zeroized/redacted, exposed only at the argon2 boundary). Flows: pre-login
+  `help`/`?`/`who`(stub)/`quit`, `login`/`register` (password + confirm,
+  non-leaky failure), puppet select (`play <name|N>`, `new <name>` →
+  create+enter). `mud-i18n`: `session.*` message templates. `mud-engine` gained
+  a `session` module: an injected async `LoginBackend` port (keeps `mud-db` out
+  of `mud-engine`), a `SessionService` driver + session registry, message
+  rendering via `t!`, and the real `RegistryResolver` (replaces the pipeline's
+  `FakeResolver` for in-world sessions; §2.7 step 3). Integration test drives
+  login of an existing puppet through a real `mud-db`-backed backend and asserts
+  the resolver resolves it at its persisted room.
+- **Decisions:** FSM vocabulary enums (`Effect`/`EffectResult`/`SessionMessage`/
+  `Terminal`) and `BackendError` are **not** `#[non_exhaustive]` — internal,
+  version-locked, matched exhaustively by the driver (a future variant should
+  fail compilation, not hit a `_` arm). A puppet created **mid-session** is not
+  hydrated into the running `World`, so create→enter fails against a real
+  backend; live hydration is **deferred to M1-22** (see PLAN §M1-22) and the
+  integration test is scoped to existing-puppet login. `PLAN.md` §M1-19 updated
+  (crate placement: `mud-session` + World-side driver, not `mud-net`).
+- **Verify:** `cargo test --workspace` green (mud-session transition tests incl.
+  password Debug-redaction; mud-engine driver/render/resolver + integration
+  `session_login.rs`); `clippy --workspace --all-targets`, `fmt --check` clean;
+  `mkdocs build --strict` clean. New player-facing onboarding docs page.
+- **Next:** M1-19a — real `who`, `say`/broadcast fan-out, clean `quit` through
+  the gateway. **Known gaps:** no linkdead/ping/idle (M7); no echo masking on
+  the password prompt (M1-20); create→enter live hydration (M1-22).

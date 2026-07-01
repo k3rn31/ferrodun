@@ -48,6 +48,7 @@ extra:
 nav:
   - Home: index.md
   - Playing:
+      - Getting started: playing/getting-started.md
       - Commands: playing/commands.md
   - Building:
       - World files: building/world-files.md

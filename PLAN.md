@@ -543,11 +543,17 @@ spine.
   - *Spec:* §3.15.1. *Verify:* register → login → wrong-password reject →
     restart → login-again tests. *Out of scope:* recovery flow, invite
     tokens, moderation states machinery (M7).
-- **M1-19 — Session FSM (login states).** In `mud-net`: pre-login banner →
-  register/login → puppet select → in-world. Pre-login `help` listing the
-  small command set (§3.19.1, §3.19.3). Linkdead/idle handling minimal
-  (full linkdead reattach is M7-grade; M1 just needs clean connect/quit).
-  - *Spec:* §3.19.1, §3.19.3, §2.7 step 1. *Verify:* FSM transition tests.
+- **M1-19 — Session FSM (login states).** A pure, sans-IO `mud-session` crate
+  (the login state machine) driven World-side by `mud-engine`: pre-login banner
+  → register/login → puppet select → in-world. Placed here, not in `mud-net`,
+  because accounts, the session→puppet map, and all input lines are World-side;
+  the driver reaches persistence through an injected `LoginBackend` port so
+  `mud-engine` stays free of `mud-db`. Pre-login `help` listing the small
+  command set (§3.19.1, §3.19.3). Linkdead/idle handling minimal (full linkdead
+  reattach is M7-grade; M1 just needs clean connect/quit). Entering a
+  **newly-created** puppet needs live-world hydration, deferred to M1-22.
+  - *Spec:* §3.19.1, §3.19.3, §2.7 step 1/3. *Verify:* FSM transition tests +
+    existing-puppet login integration test.
 - **M1-19a — Session-dependent built-in commands.** The slice of M1-17
   deferred until the session→entity map exists: `who` (list connected players),
   `quit` (clean session close through the FSM + gateway), and cross-player
