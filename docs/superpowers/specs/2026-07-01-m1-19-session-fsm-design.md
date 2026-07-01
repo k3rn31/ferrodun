@@ -41,9 +41,15 @@ by World, and records the rationale.
   (domain types and error enums) and `secrecy` (in-memory password handling).
   Emits typed messages and effects; the caller performs the I/O. This is the
   unit tested via pure transition tests.
-- **`mud-engine` (driver).** Owns the per-session state, executes the FSM's
-  effects against `mud-db`/`mud-account`, renders the FSM's typed messages
-  through `mud-i18n`, and supplies the real `SessionResolver`.
+- **`mud-engine` (driver).** Owns the per-session state, renders the FSM's
+  typed messages through `mud-i18n`, and supplies the real `SessionResolver`.
+  It does **not** depend on `mud-db`: the async I/O the effects need
+  (`authenticate`/`register`/`create_puppet`/`puppets_of` + puppet-key
+  resolution) is reached through an injected **`LoginBackend` port trait**
+  (dependency inversion, mirroring the pipeline's existing `Places` /
+  `SessionResolver` seams). The concrete `mud-db`-backed `LoginBackend`
+  implementation lives with the caller that owns the DB — the M1-19 integration
+  test now, and the `mudd` binary at M1-22.
 
 Single PR: the pure crate and its World wiring land together. Shipping the
 crate alone would violate the "don't build before you need it" rule, and the
@@ -120,15 +126,18 @@ the argon2 boundary — see the driver loop below.
 
 ### Effects & the driver loop (`mud-engine`)
 
-The FSM emits `Effect`s the World-side driver executes (`password` fields are
-`SecretString`):
+The FSM emits `Effect`s the World-side driver executes via the injected
+`LoginBackend` port (`password` fields are `SecretString`):
 
-- `Authenticate { username, password }` → `Accounts::authenticate`. On success
-  the driver also calls `puppets_of` and feeds `(account, puppets)` back.
-- `Register { username, password }` → hash + `Accounts::register`.
-- `CreatePuppet { account, name }` → `Accounts::create_puppet`.
-- `Enter { account, puppet }` → resolve the puppet's `EntityKey` → live
-  `EntityId` via `PersistentWorld`, then bind the session.
+- `Authenticate { username, password }` → `backend.authenticate`. On success the
+  driver also calls `backend.puppets_of` and feeds `(account, puppets)` back.
+- `Register { username, password }` → `backend.register` (which hashes).
+- `CreatePuppet { account, name }` → `backend.create_puppet`.
+- `Enter { account, puppet }` → `backend.resolve_puppet(key)` → live `EntityId`,
+  then bind the session.
+
+The concrete `LoginBackend` maps these onto `Accounts` +
+`PersistentWorld::entity_id`.
 
 The password's raw bytes are exposed via `expose_secret()` **only inside the
 `spawn_blocking` closure**, immediately before the argon2 `Credential::hash` /
