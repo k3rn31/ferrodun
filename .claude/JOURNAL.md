@@ -1235,3 +1235,50 @@ truth when this log drifts.
   work is wiring `SessionService` + `RegistryResolver` + the command
   `Pipeline` into the `mudd` binary's connection loop (M1-22) and supplying a
   real `LoginBackend` backed by `mud-db` (already exists per M1-18).
+
+## 2026-07-01 — mud-engine: end-to-end existing-puppet login integration (M1-19 Task 10)
+
+- **Spec:** §3.19.1 — login of an existing (boot-hydrated) puppet through a
+  real `mud-db`-backed `LoginBackend`, asserting the real `RegistryResolver`
+  resolves the in-world session to its persisted location. Deliberately does
+  **not** exercise `new <name>` (create-then-enter): a puppet created
+  mid-session is not hydrated into the running `World` until M1-22.
+- **Done:** added `crates/mud-engine/tests/session_login.rs` (dev-deps on
+  `mud-db`, `mud-account`, `mud-core`, `mud-schema`, `secrecy`, `tempfile`
+  added via `cargo add --dev`): a `DbBackend<'a>` wraps a real `Accounts<'a>` +
+  `&'a PersistentWorld` and implements `LoginBackend` with plain `async fn`
+  bodies. Two tests: (1) seed an account+puppet, commit, boot a
+  `PersistentWorld` (hydrates the puppet) with a separate `Accounts` handle
+  for login reads, drive `connect → login → password → play` through
+  `SessionService`, then resolve the in-world session via
+  `svc.resolver(&builtins).resolve(sid, world.world())` and assert
+  `resolved.caller.location() == hall()`; (2) wrong password then retry
+  reaches the world. Found and fixed a real API gap while wiring this up:
+  `BackendError` was `#[non_exhaustive]` with no public constructor, so no
+  crate outside `mud-engine` (this test, and `mudd` at M1-22) could produce
+  one to implement `LoginBackend` — added `Default` to its derive list
+  (`non_exhaustive` still blocks the bare unit-struct literal from outside the
+  crate, but a derived `Default::default()` is a normal associated function
+  and works). Replaced the brief's `panic!` arms with
+  `assert!(matches!(...))` / an `unreachable!()`-guarded `let else` (mirroring
+  `session/mod.rs`'s existing test style) since the workspace denies
+  `clippy::panic` even in tests.
+- **Verify:** RED first (missing dev-deps: `E0433` unresolved `mud_db`/etc.),
+  then a second RED (`E0423`: `BackendError`'s constructor is private —
+  the `non_exhaustive` gap above) before the `Default` fix; GREEN after:
+  `cargo test -p mud-engine --test session_login` 2 passed. Full gate:
+  `cargo test --workspace` 481 passed, 0 failed, 0 `warning:` lines;
+  `cargo clippy --workspace --all-targets` clean. `cargo fmt --check` is
+  **not** clean workspace-wide, but this predates this task: the installed
+  `rustfmt 1.9.0` reformats many pre-existing, untouched files (e.g.
+  `session/render.rs`, `session/resolver.rs`, `mud-session/src/fsm.rs`) that
+  were never touched by Tasks 7-10, indicating the checked-in formatting was
+  produced by an older rustfmt/style-edition. This new test file and the
+  `BackendError` derive edit were formatted with the installed `rustfmt` and
+  are individually fmt-clean.
+- **Next:** M1-19 is complete end-to-end for existing-puppet login. Open
+  items: (1) the pre-existing repo-wide `cargo fmt --check` drift (unrelated
+  to M1-19) should be investigated/reformatted in its own PR, ideally after
+  pinning a `rust-toolchain.toml` rustfmt version; (2) M1-22 still owns wiring
+  `SessionService`/`RegistryResolver`/`Pipeline` into the `mudd` binary and
+  live-hydrating a mid-session-created puppet into the running `World`.
