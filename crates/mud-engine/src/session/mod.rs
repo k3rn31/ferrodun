@@ -68,6 +68,9 @@ pub trait LoginBackend {
 }
 
 /// A session bound to a puppet and playing in-world.
+// Fields are written here and read by `RegistryResolver` (Task 9). The scoped
+// allow is removed in Task 9 when the reads land.
+#[allow(dead_code)] // LINT: read by RegistryResolver in Task 9 (M1-19)
 #[derive(Debug, Clone, Copy)]
 pub struct InWorldBinding {
     /// The owning account.
@@ -120,19 +123,6 @@ impl SessionService {
         self.sessions.remove(&session);
     }
 
-    /// The account and puppet a session is bound to, once in-world.
-    ///
-    /// Returns `None` for sessions still in the pre-login FSM or unknown to
-    /// this service. Callers route by [`Routing::InWorld`] and then use this
-    /// to resolve which puppet's caller context to run the command pipeline
-    /// against.
-    pub fn binding(&self, session: SessionId) -> Option<InWorldBinding> {
-        match self.sessions.get(&session)? {
-            SessionState::InWorld(binding) => Some(*binding),
-            SessionState::Login(_) => None,
-        }
-    }
-
     /// Feeds one input line, routing it to the FSM or signaling the pipeline.
     pub async fn on_input(
         &mut self,
@@ -142,7 +132,10 @@ impl SessionService {
     ) -> Routing {
         match self.sessions.get_mut(&session) {
             None => Routing::Unknown,
-            Some(SessionState::InWorld(_)) => Routing::InWorld,
+            // `_binding` (not `_`): the binding itself is what tells rustc the
+            // field is read; the value is unused here until `RegistryResolver`
+            // (Task 9) needs it to resolve the puppet's caller context.
+            Some(SessionState::InWorld(_binding)) => Routing::InWorld,
             Some(SessionState::Login(fsm)) => {
                 let transition = fsm.on_input(line);
                 self.drive(session, transition, backend).await
@@ -210,11 +203,6 @@ impl SessionService {
                 Some(_) => EffectResult::Entered,
                 None => EffectResult::BackendError,
             },
-            // `Effect` is `#[non_exhaustive]`; a future variant with no
-            // handling here is reported as a backend fault (the player may
-            // retry) rather than failing to compile against a sibling
-            // crate's addition.
-            _ => EffectResult::BackendError,
         }
     }
 
@@ -245,14 +233,6 @@ impl SessionService {
                 }
             }
             Terminal::Closed => {
-                self.sessions.remove(&session);
-                true
-            }
-            // `Terminal` is `#[non_exhaustive]`; a future variant with no
-            // handling here is treated as a safe drop rather than leaving the
-            // session in limbo, and rather than failing to compile against a
-            // sibling crate's addition.
-            _ => {
                 self.sessions.remove(&session);
                 true
             }

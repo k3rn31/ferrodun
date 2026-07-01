@@ -33,10 +33,6 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
             format!("Your characters: {list}. Type 'play <name>' or 'new <name>'.")
         }
         SessionMessage::PuppetCreated(name) => format!("Created {name}.", name = name.as_str()),
-        // `SessionMessage` is `#[non_exhaustive]`; a future variant with no
-        // rendering here falls back to the generic server-error text rather
-        // than failing to compile against a sibling crate's addition.
-        _ => t!(*locale, "session.server-error"),
     }
 }
 

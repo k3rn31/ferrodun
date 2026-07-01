@@ -3,7 +3,6 @@
 
 /// A message the FSM asks the driver to present to the session.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum SessionMessage {
     /// The tenant-authored welcome banner (§3.19.1).
     Banner,

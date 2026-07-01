@@ -48,7 +48,6 @@ fn split_command(line: &str) -> Option<(String, &str)> {
 
 /// How a login flow ended.
 #[derive(Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum Terminal {
     /// The session's connection should be closed (`quit`).
     Closed,

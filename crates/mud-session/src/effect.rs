@@ -8,7 +8,6 @@ use secrecy::SecretString;
 /// [`SecretString`]: zeroized on drop and redacted in `Debug`, exposed only at
 /// the argon2 boundary inside the driver's backend.
 #[derive(Debug)]
-#[non_exhaustive]
 pub enum Effect {
     /// Verify `username`/`password` against the account store.
     Authenticate { username: Username, password: SecretString },
@@ -22,7 +21,6 @@ pub enum Effect {
 
 /// The outcome of an [`Effect`], fed back via `SessionFsm::on_effect`.
 #[derive(Debug)]
-#[non_exhaustive]
 pub enum EffectResult {
     /// Authentication succeeded; the account and its puppets (oldest first).
     Authenticated { account: Account, puppets: Vec<Puppet> },

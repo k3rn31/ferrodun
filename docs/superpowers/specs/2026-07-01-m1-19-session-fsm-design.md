@@ -187,7 +187,14 @@ tests.
   `Suspended`/`Banned` render `Account::login_rejection()`'s policy message.
 - `mud-session` defines its error type with `thiserror`; no third-party error
   leaks across the public API. No `unwrap`/`expect` outside tests.
-- `SessionMessage` and `Effect` are `#[non_exhaustive]` at the crate boundary.
+- The FSM vocabulary enums (`SessionMessage`, `Effect`, `EffectResult`,
+  `Terminal`) are **not** `#[non_exhaustive]`: they are workspace-internal,
+  version-locked, non-serialized types matched exhaustively by the co-located
+  `mud-engine` driver. `#[non_exhaustive]` would force `_ =>` catch-all arms in
+  that cross-crate match, silently swallowing a future variant instead of
+  failing to compile — the opposite of the project's "no catch-all" rule. (The
+  IPC frame types keep `#[non_exhaustive]` for their genuine cross-version
+  reason; these do not cross a version boundary.)
 - Password confirm-mismatch and invalid-name (`Username::parse` /
   `PuppetName::parse`) failures are in-FSM messages, never effects.
 - In-memory passwords use `secrecy::SecretString` (added with `cargo add
