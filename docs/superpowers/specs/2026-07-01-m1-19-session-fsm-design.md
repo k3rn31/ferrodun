@@ -145,10 +145,21 @@ The password's raw bytes are exposed via `expose_secret()` **only inside the
 existing `&str` API (M1-18, unchanged); the momentary `&str` exposure is
 confined to that single call on the blocking thread.
 
-`PersistentWorld::load` already hydrates **all** persisted puppets into the
-arena at boot (consistent with the linkdead model: a puppet is in-world whether
-or not anyone is connected). `Enter` therefore only **binds** a session to an
-already-live puppet entity — no runtime hydration.
+`PersistentWorld::load` hydrates **all** persisted puppets into the arena at
+boot (consistent with the linkdead model: a puppet is in-world whether or not
+anyone is connected). For a puppet that existed at boot, `Enter` therefore only
+**binds** a session to an already-live puppet entity.
+
+**Gap (resolved at M1-22, not here):** a puppet created *mid-session* by the
+`create_puppet` effect is written to the DB but is **not** hydrated into the
+running `World`, so its `Enter` effect's `resolve_puppet` finds no live
+`EntityId` and fails against a real `PersistentWorld`. Hydrating a freshly
+created puppet into the live world belongs with the M1-22 boot/world-ownership
+wiring (which owns the `World` and the load path); see `PLAN.md` §M1-22. In
+M1-19 the create → enter FSM path is unit-tested with a fake backend that
+resolves any key; the end-to-end integration test (Task 10 of the plan) is
+therefore scoped to **login of an existing (boot-hydrated) puppet**, which is
+the path that works against a real `PersistentWorld` today.
 
 Driver loop per input line: run the FSM, render messages → `SessionOutput`,
 execute any effect asynchronously, feed the result back via `on_effect`, and

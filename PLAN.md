@@ -619,6 +619,19 @@ spine.
     trait-for-one-impl under current YAGNI rules — revisit when a second sink
     exists. If §2.5.3.3's "same transaction" framing is what forces apply logic
     into `mud-db`, refine the spec wording rather than working around it.
+  - **Newly-created-puppet hydration into the live world (from M1-19).**
+    `PersistentWorld::load` (§2.5.1.5) hydrates puppets into the arena only at
+    boot, so a puppet created **mid-session** by the M1-19 session FSM's
+    `create_puppet` effect is persisted in the DB but **not resident** in the
+    running `World` — its `Enter` effect's `resolve_puppet(EntityKey)` finds no
+    live `EntityId`. This PR owns the live `World`, so it wires the missing step:
+    after `create_puppet` writes the DB rows, hydrate that single `EntityKey`
+    into the arena (mint an `EntityId`, apply its start-room location) so the
+    subsequent `Enter` binds a resident puppet — the brand-new-player
+    register → create → play path (§3.19). M1-19 unit-tests the create → enter
+    FSM path with a fake backend; this is where it works end-to-end against a
+    real `PersistentWorld`. Likely shape: a `PersistentWorld::hydrate(key)`
+    method reusing `load`'s per-entity logic, called by the `LoginBackend` impl.
 - **M1-23 — M1 acceptance integration test.** Drive two scripted telnet
   sessions through login, movement, mutual visibility, and chat; assert ANSI
   + NAWS; kill and restart the process and assert credentials, location, and
