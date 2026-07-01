@@ -2,7 +2,8 @@
 
 use crate::effect::{Effect, EffectResult};
 use crate::message::SessionMessage;
-use mud_account::{Account, LoginError, Puppet, Username};
+use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, Username};
+use mud_core::EntityKey;
 use secrecy::{ExposeSecret, SecretString};
 
 /// The result of one FSM step: what to show, what I/O to perform, whether the
@@ -51,6 +52,9 @@ fn split_command(line: &str) -> Option<(String, &str)> {
 pub enum Terminal {
     /// The session's connection should be closed (`quit`).
     Closed,
+    /// The session is bound to a puppet and now in-world; the driver routes its
+    /// input to the command pipeline.
+    Bound { account: AccountId, puppet: EntityKey },
 }
 
 /// A single session's login state machine.
@@ -69,10 +73,9 @@ enum State {
     RegisterConfirm { username: Username, password: SecretString },
     // Carries no data for the same reason as `AwaitingAuth`.
     AwaitingRegister,
-    // Fields carried across turns; read by `puppet_select_input` (Task 5). The
-    // scoped allow is removed in Task 5 when the reads land.
-    #[allow(dead_code)] // LINT: consumed by puppet selection added in Task 5 (M1-19)
     PuppetSelect { account: Account, puppets: Vec<Puppet> },
+    AwaitingCreate { account: Account, puppets: Vec<Puppet> },
+    AwaitingEnter { account: Account, puppets: Vec<Puppet>, chosen: EntityKey },
 }
 
 impl Default for SessionFsm {
@@ -103,6 +106,7 @@ impl SessionFsm {
             State::RegisterConfirm { .. } => self.confirm_register_password(line),
             State::AwaitingRegister => Transition::messages(Vec::new()),
             State::PuppetSelect { .. } => self.puppet_select_input(line),
+            State::AwaitingCreate { .. } | State::AwaitingEnter { .. } => Transition::messages(Vec::new()),
         }
     }
 
@@ -192,8 +196,69 @@ impl SessionFsm {
         Transition::message(message)
     }
 
-    fn puppet_select_input(&mut self, _line: &str) -> Transition {
-        Transition::messages(Vec::new())
+    fn puppet_select_input(&mut self, line: &str) -> Transition {
+        let Some((command, rest)) = split_command(line) else {
+            return Transition::messages(Vec::new());
+        };
+        match command.as_str() {
+            "help" | "?" => Transition::message(SessionMessage::PreLoginHelp),
+            "quit" => Transition::closing(SessionMessage::Goodbye),
+            "play" => self.select_puppet(rest),
+            "new" => self.create_puppet(rest),
+            _ => Transition::message(SessionMessage::UnknownCommand),
+        }
+    }
+
+    fn select_puppet(&mut self, arg: &str) -> Transition {
+        let State::PuppetSelect { puppets, .. } = &self.state else {
+            return Transition::messages(Vec::new());
+        };
+        let Some(chosen) = match_puppet(puppets, arg) else {
+            return Transition::message(SessionMessage::UnknownCommand);
+        };
+        let key = chosen.key;
+        self.enter(key)
+    }
+
+    fn create_puppet(&mut self, arg: &str) -> Transition {
+        let State::PuppetSelect { account, .. } = &self.state else {
+            return Transition::messages(Vec::new());
+        };
+        let account_id = account.id;
+        match PuppetName::parse(arg) {
+            Ok(name) => {
+                let State::PuppetSelect { account, puppets } =
+                    std::mem::replace(&mut self.state, State::Anon)
+                else {
+                    // INVARIANT: only reached from the `State::PuppetSelect` match above.
+                    return Transition::messages(Vec::new());
+                };
+                self.state = State::AwaitingCreate { account, puppets };
+                Transition {
+                    messages: Vec::new(),
+                    effect: Some(Effect::CreatePuppet { account: account_id, name }),
+                    terminal: None,
+                }
+            }
+            Err(_) => Transition::message(SessionMessage::NameInvalid),
+        }
+    }
+
+    /// Moves to `AwaitingEnter` for `chosen` and emits the `Enter` effect.
+    fn enter(&mut self, chosen: EntityKey) -> Transition {
+        let State::PuppetSelect { account, puppets } =
+            std::mem::replace(&mut self.state, State::Anon)
+        else {
+            // INVARIANT: only reached from `select_puppet`/`on_effect` while in `PuppetSelect`.
+            return Transition::messages(Vec::new());
+        };
+        let account_id = account.id;
+        self.state = State::AwaitingEnter { account, puppets, chosen };
+        Transition {
+            messages: Vec::new(),
+            effect: Some(Effect::Enter { account: account_id, puppet: chosen }),
+            terminal: None,
+        }
     }
 
     /// Feeds an [`EffectResult`] back after the driver performed an [`Effect`].
@@ -217,6 +282,29 @@ impl SessionFsm {
             (State::AwaitingRegister, EffectResult::BackendError) => {
                 Transition::message(SessionMessage::ServerError)
             }
+            (State::AwaitingCreate { account, puppets }, EffectResult::PuppetCreated(created)) => {
+                let name = created.name.clone();
+                let key = created.key;
+                let mut puppets = puppets;
+                puppets.push(created);
+                self.state = State::PuppetSelect { account, puppets };
+                let mut transition = self.enter(key);
+                transition.messages.insert(0, SessionMessage::PuppetCreated(name));
+                transition
+            }
+            (State::AwaitingCreate { account, puppets }, EffectResult::BackendError) => {
+                self.state = State::PuppetSelect { account, puppets };
+                Transition::message(SessionMessage::ServerError)
+            }
+            (State::AwaitingEnter { account, chosen, .. }, EffectResult::Entered) => Transition {
+                messages: vec![SessionMessage::EnteredWorld],
+                effect: None,
+                terminal: Some(Terminal::Bound { account: account.id, puppet: chosen }),
+            },
+            (State::AwaitingEnter { account, puppets, .. }, EffectResult::BackendError) => {
+                self.state = State::PuppetSelect { account, puppets };
+                Transition::message(SessionMessage::ServerError)
+            }
             // No effect was outstanding for this state: ignore.
             (state, _) => {
                 self.state = state;
@@ -230,6 +318,14 @@ impl SessionFsm {
 /// share the same name alphabet).
 fn parse_name(raw: &str) -> Result<Username, mud_account::NameError> {
     Username::parse(raw)
+}
+
+/// Resolves a `play` argument to a puppet: a 1-based ordinal, or a name match.
+fn match_puppet<'a>(puppets: &'a [Puppet], arg: &str) -> Option<&'a Puppet> {
+    if let Ok(ordinal) = arg.parse::<usize>() {
+        return ordinal.checked_sub(1).and_then(|index| puppets.get(index));
+    }
+    puppets.iter().find(|p| p.name.as_str().eq_ignore_ascii_case(arg))
 }
 
 /// Maps a [`LoginError`] to its player-facing message. `UnknownUser` and
@@ -457,5 +553,93 @@ mod tests {
         let t = fsm.on_effect(EffectResult::RegisterRejected(mud_account::RegisterError::UsernameTaken));
         assert_eq!(t.messages, vec![SessionMessage::UsernameTaken]);
         assert_eq!(fsm.on_input("who").messages, vec![SessionMessage::WhoStub]);
+    }
+
+    #[test]
+    fn play_by_ordinal_enters_the_selected_puppet() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: vec![puppet(10, "arden"), puppet(11, "borel")],
+        });
+        let t = fsm.on_input("play 2");
+        match t.effect {
+            Some(Effect::Enter { account: acct, puppet }) => {
+                assert_eq!(acct, account().id);
+                assert_eq!(puppet, key(11));
+            }
+            // INVARIANT: `select_puppet` on an ordinal match always emits Enter.
+            other => unreachable!("expected Enter, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn play_by_name_enters_the_matching_puppet() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let t = fsm.on_input("play arden");
+        assert!(matches!(t.effect, Some(Effect::Enter { .. })));
+    }
+
+    #[test]
+    fn entering_the_world_is_terminal() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let _ = fsm.on_input("play arden");
+        let t = fsm.on_effect(EffectResult::Entered);
+        assert_eq!(t.messages, vec![SessionMessage::EnteredWorld]);
+        assert_eq!(
+            t.terminal,
+            Some(Terminal::Bound { account: account().id, puppet: key(10) })
+        );
+    }
+
+    #[test]
+    fn new_creates_a_puppet_then_enters_it() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: Vec::new() });
+        let t = fsm.on_input("new arden");
+        match t.effect {
+            Some(Effect::CreatePuppet { account: acct, name }) => {
+                assert_eq!(acct, account().id);
+                assert_eq!(name.as_str(), "arden");
+            }
+            // INVARIANT: `create_puppet` on a valid name always emits CreatePuppet.
+            other => unreachable!("expected CreatePuppet, got {other:?}"),
+        }
+        // The created puppet is echoed and immediately entered.
+        let t = fsm.on_effect(EffectResult::PuppetCreated(puppet(12, "arden")));
+        assert_eq!(t.messages, vec![SessionMessage::PuppetCreated(PuppetName::parse("arden").expect("name"))]);
+        assert!(matches!(t.effect, Some(Effect::Enter { .. })));
+    }
+
+    #[test]
+    fn play_with_no_match_reports_and_stays_in_select() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        let t = fsm.on_input("play ghost");
+        assert_eq!(t.messages, vec![SessionMessage::UnknownCommand]);
+        assert!(t.effect.is_none());
+        // Still selectable.
+        assert!(matches!(fsm.on_input("play arden").effect, Some(Effect::Enter { .. })));
+    }
+
+    #[test]
+    fn quit_from_puppet_select_closes() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated { account: account(), puppets: vec![puppet(10, "arden")] });
+        assert_eq!(fsm.on_input("quit").terminal, Some(Terminal::Closed));
     }
 }

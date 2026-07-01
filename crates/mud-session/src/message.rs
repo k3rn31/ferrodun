@@ -39,4 +39,8 @@ pub enum SessionMessage {
     NameInvalid,
     /// The requested username is already taken in this tenant.
     UsernameTaken,
+    /// A puppet was created; echoes its name.
+    PuppetCreated(mud_account::PuppetName),
+    /// The player has entered the world.
+    EnteredWorld,
 }
