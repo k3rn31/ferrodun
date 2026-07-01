@@ -2,7 +2,7 @@
 
 use crate::effect::{Effect, EffectResult};
 use crate::message::SessionMessage;
-use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, Username};
+use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterError, Username};
 use mud_core::EntityKey;
 use secrecy::{ExposeSecret, SecretString};
 
@@ -313,9 +313,10 @@ impl SessionFsm {
             (State::AwaitingRegister, EffectResult::Registered { account }) => {
                 self.enter_puppet_select(account, Vec::new())
             }
-            (State::AwaitingRegister, EffectResult::RegisterRejected(_)) => {
-                Transition::message(SessionMessage::UsernameTaken)
-            }
+            (
+                State::AwaitingRegister,
+                EffectResult::RegisterRejected(RegisterError::UsernameTaken),
+            ) => Transition::message(SessionMessage::UsernameTaken),
             (State::AwaitingRegister, EffectResult::BackendError) => {
                 Transition::message(SessionMessage::ServerError)
             }

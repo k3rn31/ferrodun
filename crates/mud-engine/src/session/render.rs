@@ -29,14 +29,16 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
         SessionMessage::EnteredWorld => t!(*locale, "session.entered"),
         SessionMessage::Goodbye => t!(*locale, "session.goodbye"),
         SessionMessage::PuppetList(names) => {
-            let list = names
+            let names = names
                 .iter()
                 .map(|n| n.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("Your characters: {list}. Type 'play <name>' or 'new <name>'.")
+            t!(*locale, "session.puppet-list", names = names)
         }
-        SessionMessage::PuppetCreated(name) => format!("Created {name}.", name = name.as_str()),
+        SessionMessage::PuppetCreated(name) => {
+            t!(*locale, "session.puppet-created", name = name.as_str())
+        }
     }
 }
 

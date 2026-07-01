@@ -111,6 +111,11 @@ fn builtin_en() -> Catalog {
         ("session.username-taken", "That username is already taken."),
         ("session.entered", "Welcome. You are now in the world."),
         ("session.goodbye", "Goodbye."),
+        (
+            "session.puppet-list",
+            "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
+        ),
+        ("session.puppet-created", "Created { $name }."),
     ];
 
     let mut catalog = Catalog::new();
@@ -180,6 +185,8 @@ mod tests {
             "session.username-taken",
             "session.entered",
             "session.goodbye",
+            "session.puppet-list",
+            "session.puppet-created",
         ] {
             assert!(
                 catalog
