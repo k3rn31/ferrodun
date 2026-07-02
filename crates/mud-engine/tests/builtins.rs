@@ -17,7 +17,6 @@ use mud_engine::{
     CallerContext, Dispatcher, LayerCommands, Pipeline, Places, Presence, ResolvedSession, Roster,
     SessionResolver,
 };
-use mud_i18n::Locale;
 use mud_schema::{InputLine, SessionId, SessionInput, SessionOutput};
 
 const HALL: u64 = 10;
@@ -108,7 +107,6 @@ impl SessionResolver for FakeResolver {
                 self.caller,
                 location,
                 mud_account::PuppetName::parse("hero").expect("name"),
-                Locale::EN,
                 LockContext::new(),
             ),
             layers: LayerCommands {

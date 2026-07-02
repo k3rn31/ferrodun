@@ -308,7 +308,6 @@ mod tests {
                     self.caller,
                     place,
                     PuppetName::parse("hero").expect("name"),
-                    Locale::EN,
                     LockContext::new(),
                 ),
                 // An empty table: the line parses to NotFound, but the run is still
@@ -399,7 +398,6 @@ mod tests {
                     self.speaker,
                     self.place,
                     mud_account::PuppetName::parse("arden").expect("name"),
-                    Locale::EN,
                     LockContext::new(),
                 ),
                 layers: LayerCommands {

@@ -14,7 +14,6 @@ use mud_engine::{
     CallerContext, Dispatcher, LayerCommands, Pipeline, Places, Presence, ResolvedSession, Roster,
     SessionResolver,
 };
-use mud_i18n::Locale;
 use mud_schema::{InputLine, SessionId, SessionInput, SessionOutput};
 
 const HALL: u64 = 10;
@@ -67,7 +66,7 @@ impl SessionResolver for Players {
         let (s, entity, name) = self.players.iter().find(|(s, ..)| *s == session).cloned()?;
         let location = world.location_of(entity)?;
         Some(ResolvedSession {
-            caller: CallerContext::new(s, entity, location, name, Locale::EN, LockContext::new()),
+            caller: CallerContext::new(s, entity, location, name, LockContext::new()),
             layers: LayerCommands {
                 builtins: self.builtins.clone(),
                 ..LayerCommands::default()
