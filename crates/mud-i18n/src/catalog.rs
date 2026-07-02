@@ -122,6 +122,8 @@ fn builtin_en() -> Catalog {
             "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
         ),
         ("session.puppet-created", "Created { $name }."),
+        // quit (§3.19)
+        ("quit.goodbye", "Goodbye!"),
     ];
 
     let mut catalog = Catalog::new();

@@ -74,6 +74,7 @@ fn table() -> Vec<(
         ("west", &["w"], Arc::new(Move(Direction::West))),
         ("up", &["u"], Arc::new(Move(Direction::Up))),
         ("down", &["d"], Arc::new(Move(Direction::Down))),
+        ("quit", &[], Arc::new(Quit)),
     ]
 }
 
@@ -204,6 +205,17 @@ impl CommandHandler for Who {
             .collect();
         names.sort();
         CommandReply::to_caller(system(t!(locale, "who.online", names = names.join(", "))))
+    }
+}
+
+/// `quit`: leave the game. Signals the driver to close the session (§3.19); the
+/// socket teardown is the gateway's job (M1-21/22).
+struct Quit;
+
+impl CommandHandler for Quit {
+    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
+        let locale = ctx.locale().clone();
+        CommandReply::to_caller(system(t!(locale, "quit.goodbye"))).closing()
     }
 }
 

@@ -216,5 +216,38 @@ fn who_lists_the_connected_players() {
         .expect("dispatch");
 
     let listed = text_for(&outcome.outputs, sid(1));
-    assert!(listed.contains("arden") && listed.contains("borel"), "who: {listed}");
+    assert!(
+        listed.contains("arden") && listed.contains("borel"),
+        "who: {listed}"
+    );
+}
+
+#[test]
+fn quit_signals_a_close_with_a_goodbye() {
+    use mud_engine::SessionDisposition;
+    let mut world = World::new(TenantTag::new(1).expect("tenant"));
+    let arden = world.create().expect("arden");
+    world.move_to(arden, place(HALL)).expect("seat arden");
+
+    let mut dispatcher = Dispatcher::new();
+    let builtins = mud_engine::register(&mut dispatcher);
+    let resolver = Players {
+        players: vec![(sid(1), arden, PuppetName::parse("arden").expect("name"))],
+        builtins,
+    };
+    let mut pipeline = Pipeline::new(dispatcher);
+
+    let input = SessionInput {
+        session_id: sid(1),
+        line: InputLine::new("quit"),
+    };
+    let outcome = pipeline
+        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .expect("dispatch");
+
+    assert_eq!(outcome.disposition, SessionDisposition::Close);
+    assert!(
+        text_for(&outcome.outputs, sid(1)).contains("Goodbye"),
+        "goodbye shown"
+    );
 }
