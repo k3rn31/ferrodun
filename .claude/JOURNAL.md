@@ -1199,3 +1199,55 @@ truth when this log drifts.
 - **Next:** M1-19a — real `who`, `say`/broadcast fan-out, clean `quit` through
   the gateway. **Known gaps:** no linkdead/ping/idle (M7); no echo masking on
   the password prompt (M1-20); create→enter live hydration (M1-22).
+
+## 2026-07-02 — M1-19a: session-dependent built-ins (`who`, `quit`, broadcast)
+
+- **Spec:** §2.7 step 8, §3.6.3 (in-Place say/emote), §3.19 (`who`/`quit`) —
+  the M1-17 built-ins deferred until the session→entity map existed (M1-19).
+- **Done:** Cross-player broadcast plus `who` and in-world `quit`.
+  - **mud-core:** `Direction::opposite()` (N↔S/E↔W/U↔D) so arrival reads as the
+    reverse of the traveller's heading.
+  - **mud-session:** `Terminal::Bound` carries the chosen `PuppetName` (threaded
+    through `AwaitingEnter`); so the in-world binding gets the real display name,
+    not the M1-17 first-keyword hack.
+  - **mud-engine:** new `Roster` port (`session_of` reverse map + `connected()`
+    presence list), implemented by the production `RegistryResolver` over the
+    live `SessionService` bindings; `InWorldBinding`/`CallerContext` gained
+    `name: PuppetName`. `CommandReply` grew a `broadcasts: Vec<Broadcast>` slot
+    (`Broadcast { place, except, message }`) and a `SessionDisposition`
+    (`Remain`/`Close`) via `.closing()`; `CommandContext` exposes `roster()` +
+    `caller_name()`. `Pipeline::dispatch` now returns `DispatchOutcome { outputs,
+    disposition }` and, in `run_matched`, resolves each broadcast against the
+    **pre-effect** world (`occupants_of(place)` minus `except`, mapped to
+    sessions via `Roster::session_of`) **before** applying the reply's effects —
+    so a departure still sees the mover in the room being left, and an arrival's
+    audience does not yet include them. `say` echoes the caller and broadcasts
+    to the room; the six movement commands broadcast departure (to the room
+    left) and directional arrival (to the destination); `who` lists connected
+    players (sorted); `quit` replies goodbye and signals `Close`.
+  - **mud-i18n:** `en` keys `say.broadcast`, `move.depart`/`move.arrive-from`/
+    `move.arrive` (the last, directionless, reserved for the spawn/portal path),
+    `who.online`, `quit.goodbye`.
+  - **§3.6.3 rationale (no code):** the broadcast audience is *occupants*
+    (entities); fan-out to sessions skips session-less entities, so present NPCs
+    are naturally passed over until M5, when the same occupants list feeds NPC
+    perception — the audience model is already the right shape.
+- **Verify:** `cargo test --workspace` 489 green (mud-core 165, mud-engine 78 —
+  incl. `tests/broadcast.rs`: say echo+room-broadcast, movement depart/arrive-
+  from-south, `who`, `quit`→`Close`; and a `say_broadcasts_through_the_real_
+  resolver` regression test proving the production `RegistryResolver` drives the
+  fan-out; mud-i18n 19, mud-session 24). `cargo clippy --workspace --all-targets
+  -D warnings`, `cargo fmt --all --check`, `uv run mkdocs build --strict` all
+  clean. No `unwrap`/`expect`/`panic` outside tests. Docs: `playing/commands.md`
+  gains `who`/`quit` and notes say/movement are heard by others.
+- **Next:** **M1-20** (telnet core). **Deferred:** gateway socket teardown when
+  `quit` returns `Close` (M1-21/22); directionless `move.arrive` wiring for
+  mid-session spawn/portal (M1-22 hydration); linkdead/idle/ping (M7).
+  **Tracked separate task — i18n per-world locale rework:** SPEC §3.14.6 still
+  specifies per-session locale resolution (plus GMCP `Core.Locale`, LLM
+  per-player speech §3.14.7.1, `mud.i18n.locale_of` §3.14.4.2, M2-I). The agreed
+  model is **per-tenant/world** locale (the builder localizes the world; all
+  players see that locale). Reworking spec + PLAN §M2-I + the per-caller locale
+  plumbing (`CallerContext.locale`) is its own PR, sequenced right after M1-19a
+  — see `docs/superpowers/specs/2026-07-02-m1-19a-session-dependent-builtins-
+  design.md`.
