@@ -141,3 +141,49 @@ fn say_echoes_to_the_speaker_and_broadcasts_to_the_room() {
         "listener must not see the echo: {listener}"
     );
 }
+
+#[test]
+fn moving_announces_departure_and_arrival_to_the_two_rooms() {
+    let mut world = World::new(TenantTag::new(1).expect("tenant"));
+    let arden = world.create().expect("arden"); // mover
+    let borel = world.create().expect("borel"); // stays in HALL
+    let cade = world.create().expect("cade"); // waits in STUDY
+    world.move_to(arden, place(HALL)).expect("seat arden");
+    world.move_to(borel, place(HALL)).expect("seat borel");
+    world.move_to(cade, place(STUDY)).expect("seat cade");
+
+    let mut dispatcher = Dispatcher::new();
+    let builtins = mud_engine::register(&mut dispatcher);
+    let resolver = Players {
+        players: vec![
+            (sid(1), arden, PuppetName::parse("arden").expect("name")),
+            (sid(2), borel, PuppetName::parse("borel").expect("name")),
+            (sid(3), cade, PuppetName::parse("cade").expect("name")),
+        ],
+        builtins,
+    };
+    let mut pipeline = Pipeline::new(dispatcher);
+
+    let input = SessionInput {
+        session_id: sid(1),
+        line: InputLine::new("north"),
+    };
+    let outcome = pipeline
+        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .expect("dispatch");
+
+    // Borel (left behind in HALL) sees the departure; Cade (in STUDY) sees the
+    // arrival from the south (the opposite of travelling north).
+    let left_behind = text_for(&outcome.outputs, sid(2));
+    let destination = text_for(&outcome.outputs, sid(3));
+    assert!(
+        left_behind.contains("arden") && left_behind.contains("leaves"),
+        "depart: {left_behind}"
+    );
+    assert!(
+        destination.contains("arden")
+            && destination.contains("arrives")
+            && destination.contains("south"),
+        "arrive: {destination}"
+    );
+}

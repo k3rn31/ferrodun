@@ -121,10 +121,35 @@ impl CommandHandler for Move {
         // Show the destination room as the caller arrives; the MoveTo effect is
         // applied by the pipeline after this handler returns.
         let arrival = render_room(place, ctx.world(), ctx.caller(), &locale);
-        CommandReply::to_caller(arrival).with_effect(Effect::MoveTo {
-            entity: ctx.caller(),
-            place: to,
-        })
+        let name = ctx.caller_name().as_str().to_owned();
+        // Both broadcasts are resolved against the pre-effect world: the room
+        // left still has the caller present, and the destination room doesn't
+        // yet — so the audiences match the departure/arrival semantics exactly.
+        let depart = StyledText::new().role(
+            t!(
+                locale,
+                "move.depart",
+                name = name.clone(),
+                direction = direction_name(self.0)
+            ),
+            RoleName::SYSTEM,
+        );
+        let arrive = StyledText::new().role(
+            t!(
+                locale,
+                "move.arrive-from",
+                name = name,
+                direction = direction_name(self.0.opposite())
+            ),
+            RoleName::SYSTEM,
+        );
+        CommandReply::to_caller(arrival)
+            .with_broadcast(Broadcast::to_place(ctx.location(), ctx.caller(), depart))
+            .with_broadcast(Broadcast::to_place(to, ctx.caller(), arrive))
+            .with_effect(Effect::MoveTo {
+                entity: ctx.caller(),
+                place: to,
+            })
     }
 }
 

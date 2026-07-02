@@ -65,6 +65,9 @@ fn builtin_en() -> Catalog {
         ("look.void", "You are nowhere in particular."),
         // movement (§3.2.2)
         ("move.no-exit", "You can't go that way."),
+        ("move.depart", "{ $name } leaves { $direction }."),
+        ("move.arrive-from", "{ $name } arrives from { $direction }."),
+        ("move.arrive", "{ $name } arrives."),
         // say (§3.6.3)
         ("say.speech", "You say, \"{ $message }\""),
         ("say.broadcast", "{ $name } says, \"{ $message }\""),
