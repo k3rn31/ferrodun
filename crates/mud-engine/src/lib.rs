@@ -22,6 +22,7 @@ mod layers;
 mod objects;
 mod pipeline;
 mod places;
+mod roster;
 pub mod session;
 mod text;
 
@@ -33,6 +34,7 @@ pub use layers::LayerCommands;
 pub use objects::{Resolution, resolve_among};
 pub use pipeline::{Pipeline, PipelineError};
 pub use places::Places;
+pub use roster::{Presence, Roster};
 pub use session::{
     BackendError, InWorldBinding, LoginBackend, RegistryResolver, Routing, SessionService,
 };

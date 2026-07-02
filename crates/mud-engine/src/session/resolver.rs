@@ -2,12 +2,13 @@
 //! only resolves once it is in-world (bound to a puppet).
 
 use mud_cmd::Command;
-use mud_core::{LockContext, World};
+use mud_core::{EntityId, LockContext, World};
 use mud_i18n::Locale;
 use mud_schema::SessionId;
 
 use crate::caller::{CallerContext, ResolvedSession, SessionResolver};
 use crate::layers::LayerCommands;
+use crate::roster::{Presence, Roster};
 use crate::session::SessionState;
 
 /// Resolves a session against the in-world bindings held by a `SessionService`.
@@ -40,6 +41,7 @@ impl SessionResolver for RegistryResolver<'_> {
                 session,
                 binding.puppet,
                 location,
+                binding.name.clone(),
                 Locale::EN,
                 LockContext::new(),
             ),
@@ -48,6 +50,29 @@ impl SessionResolver for RegistryResolver<'_> {
                 ..LayerCommands::default()
             },
         })
+    }
+}
+
+impl Roster for RegistryResolver<'_> {
+    fn session_of(&self, entity: EntityId) -> Option<SessionId> {
+        self.sessions
+            .iter()
+            .find_map(|(session, state)| match state {
+                SessionState::InWorld(binding) if binding.puppet == entity => Some(*session),
+                SessionState::InWorld(_) | SessionState::Login(_) => None,
+            })
+    }
+
+    fn connected(&self) -> Vec<Presence> {
+        self.sessions
+            .values()
+            .filter_map(|state| match state {
+                SessionState::InWorld(binding) => Some(Presence {
+                    name: binding.name.clone(),
+                }),
+                SessionState::Login(_) => None,
+            })
+            .collect()
     }
 }
 
@@ -89,5 +114,47 @@ mod tests {
 
         // An unknown session never resolves.
         assert!(resolver.resolve(sid(2), &world).is_none());
+    }
+
+    #[test]
+    fn roster_reports_sessions_and_connected_players() {
+        use crate::roster::Roster;
+        let mut world = World::new(TenantTag::new(1).expect("tenant"));
+        let arden = world.create().expect("create arden");
+        let borel = world.create().expect("create borel");
+        world.move_to(arden, place(10)).expect("seat arden");
+        world.move_to(borel, place(10)).expect("seat borel");
+
+        let mut svc = SessionService::new("W");
+        svc.bind_for_test(
+            sid(1),
+            InWorldBinding {
+                account: mud_account::AccountId::new(NonZeroU64::new(1).expect("nonzero")),
+                puppet: arden,
+                name: mud_account::PuppetName::parse("arden").expect("name"),
+            },
+        );
+        svc.bind_for_test(
+            sid(2),
+            InWorldBinding {
+                account: mud_account::AccountId::new(NonZeroU64::new(2).expect("nonzero")),
+                puppet: borel,
+                name: mud_account::PuppetName::parse("borel").expect("name"),
+            },
+        );
+
+        let builtins = Vec::new();
+        let resolver = svc.resolver(&builtins);
+
+        assert_eq!(resolver.session_of(arden), Some(sid(1)));
+        assert_eq!(resolver.session_of(borel), Some(sid(2)));
+
+        let mut names: Vec<String> = resolver
+            .connected()
+            .into_iter()
+            .map(|p| p.name.as_str().to_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["arden".to_owned(), "borel".to_owned()]);
     }
 }

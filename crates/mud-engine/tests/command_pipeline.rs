@@ -140,6 +140,7 @@ impl SessionResolver for FakeResolver {
                 session_id,
                 self.caller,
                 place(HALL),
+                mud_account::PuppetName::parse("hero").expect("name"),
                 Locale::EN,
                 self.access.clone(),
             ),

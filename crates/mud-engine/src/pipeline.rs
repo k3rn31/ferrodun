@@ -214,6 +214,7 @@ mod tests {
 
     use std::num::NonZeroU64;
 
+    use mud_account::PuppetName;
     use mud_core::{EntityId, LockContext, PlaceId, TenantTag, World};
     use mud_i18n::Locale;
     use mud_schema::InputLine;
@@ -238,6 +239,7 @@ mod tests {
                     session_id,
                     self.caller,
                     place,
+                    PuppetName::parse("hero").expect("name"),
                     Locale::EN,
                     LockContext::new(),
                 ),
