@@ -1894,7 +1894,8 @@ through an LLM at runtime. Translation is bundle-driven (§3.14.3).
 
 3.14.8.1 A conformant 1.0 release MUST be able to add a second
 locale (e.g. `fr`) by dropping a `.ftl` bundle into the tenant's
-`i18n/` directory and reloading (the tenant then renders engine strings in that locale), with no engine recompilation and no
+`i18n/` directory and reloading (the tenant then renders engine
+strings in that locale), with no engine recompilation and no
 restart. This MUST be demonstrated end-to-end against at least one
 non-English locale during the tutorial demo, even if the tutorial
 content itself ships in English only.

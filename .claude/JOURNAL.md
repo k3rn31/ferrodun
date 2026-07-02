@@ -1260,6 +1260,10 @@ truth when this log drifts.
   `Locale::EN`) to `Pipeline.locale` (default `en`, `with_locale` builder for
   the M1-22 driver); `CommandContext` borrows it so `ctx.locale()` is unchanged
   for built-ins. Color stays per-account (§3.20.6.1) for accessibility reasons.
+  Deviation from the plan (review-driven): the added `locale` param pushed
+  `CommandContext::new` to 8 args (tripping `clippy::too_many_arguments`); rather
+  than suppress the lint we bundled `world`/`places`/`roster` into a new
+  `EngineView<'a>`, dropping the constructor to 6 args with no `#[allow]`.
 - **Done:** Removed the now-unused `locale: Locale` field, constructor param,
   and `locale()` accessor from `CallerContext` (`crates/mud-engine/src/
   caller.rs`), and the `use mud_i18n::Locale;` import. Dropped the
