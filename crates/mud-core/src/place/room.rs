@@ -26,6 +26,23 @@ pub enum Direction {
     Down,
 }
 
+impl Direction {
+    /// The reverse heading: the direction you would face to return the way you
+    /// came (N↔S, E↔W, U↔D). Used to phrase an arrival ("arrives from the east")
+    /// as the opposite of the traveller's heading.
+    #[must_use]
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::North => Self::South,
+            Self::South => Self::North,
+            Self::East => Self::West,
+            Self::West => Self::East,
+            Self::Up => Self::Down,
+            Self::Down => Self::Up,
+        }
+    }
+}
+
 /// A description of a [`Place`] as seen by a viewer (§2.2.2), carried as
 /// [`StyledText`] so builder markup survives to the render boundary (§3.20.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -303,6 +320,21 @@ mod tests {
             .with_exit(Direction::Up, place_id(LOFT))
             .with_visible_places([place_id(STUDY), place_id(COURTYARD)]),
         )
+    }
+
+    #[test]
+    fn opposite_reverses_every_direction() {
+        use Direction::{Down, East, North, South, Up, West};
+        assert_eq!(North.opposite(), South);
+        assert_eq!(South.opposite(), North);
+        assert_eq!(East.opposite(), West);
+        assert_eq!(West.opposite(), East);
+        assert_eq!(Up.opposite(), Down);
+        assert_eq!(Down.opposite(), Up);
+        // Applying it twice returns the original heading.
+        for dir in [North, East, South, West, Up, Down] {
+            assert_eq!(dir.opposite().opposite(), dir);
+        }
     }
 
     #[test]
