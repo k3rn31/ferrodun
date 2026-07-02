@@ -1007,10 +1007,8 @@ messages are normative for 1.0; their full schemas live in
   re-declared here for non-telnet transports).
 - `Core.Welcome` (server → client, REQUIRED response): carries the
   selected major version, the server's package list, the
-  `session_id`, and the resolved locale (§3.14.6.1).
-- `Core.Locale` (either direction, OPTIONAL): client-initiated
-  request to switch locale, or server-initiated notification that
-  locale resolution changed. See §3.14.6.3.
+  `session_id`, and the tenant's locale (§3.14.6.1). The locale is
+  fixed for the world; the client cannot switch it.
 - `Core.Ping` / `Core.Pong` (REQUIRED on both sides): liveness on
   idle connections; see §3.15.3.
 - `Core.Goodbye` (either direction, OPTIONAL): graceful close with
@@ -1019,9 +1017,10 @@ messages are normative for 1.0; their full schemas live in
 
 2.8.3.4 If `Core.Hello` does not arrive within 5 s of negotiation
 completing, the server MUST assume the **default profile**: wire
-protocol major version 1, no GMCP packages subscribed, `en` locale.
-The connection MUST proceed; missing `Core.Hello` MUST NOT be a
-disconnect.
+protocol major version 1 and no GMCP packages subscribed. The
+tenant's locale (§3.14.6.1) applies regardless — locale is not part
+of the client profile. The connection MUST proceed; missing
+`Core.Hello` MUST NOT be a disconnect.
 
 #### 2.8.4 Reference client matrix
 
@@ -1834,8 +1833,8 @@ sentences MUST be single keyed messages so translators can reorder
 them.
 
 3.14.4.2 The `mud` stdlib (§2.4.5) MUST expose `mud.i18n.t(key,
-args)` and `mud.i18n.locale_of(entity)` so scripts can localize
-builder-authored strings using the same bundles.
+args)` so scripts can localize builder-authored strings using the
+same bundles.
 
 3.14.4.3 A missing key MUST fall back, in order: (a) the same key in
 `en`, then (b) the literal key string. A missing-key event MUST emit
@@ -1857,35 +1856,32 @@ across locales.
 3.14.5.2 Each locale bundle MAY declare additional **localized
 aliases** for built-in commands (e.g. `regarder` for `look` in
 `fr`). The CmdSet parser (§2.7 step 5) MUST accept localized aliases
-contributed by the active session's locale, merged via the standard
+contributed by the tenant's locale, merged via the standard
 Union / Replace / Remove rules.
 
-3.14.5.3 Command help output MUST render in the session's locale
+3.14.5.3 Command help output MUST render in the tenant's locale
 when a translation exists, falling back per §3.14.4.3.
 
-#### 3.14.6 Locale resolution per session
+#### 3.14.6 Tenant locale and load-time verification
 
-3.14.6.1 A session's effective locale MUST be resolved in the
-following order, first match wins:
-1. An explicit GMCP `Core.Locale` message from the client (additive
-   wire-protocol change per §2.8.5.1).
-2. A persisted per-account preference in the DB.
-3. The tenant's default locale (configurable; defaults to `en`).
-4. `en`.
+3.14.6.1 A tenant's effective locale MUST be a single value
+configured per tenant (§3.11), defaulting to `en`. The locale is a
+property of the world, not of a session or account: every session
+connected to a tenant renders engine-emitted strings in that one
+locale. There MUST be no per-session or per-account locale resolution
+and no mid-session switching — the world's content language and the
+engine's UI language are one builder-owned choice.
 
 3.14.6.2 At world load, the engine MUST verify that every key
 referenced via `t!` or `mud.i18n.t` exists in the `en` bundle. A
 missing English key MUST be a load-time error. Non-English bundles
 MAY be incomplete; missing keys fall back per §3.14.4.3.
 
-3.14.6.3 Locale switching mid-session MUST take effect on the next
-command without disconnect.
-
 #### 3.14.7 LLM interaction
 
-3.14.7.1 The LLM subsystem (§3.1) MUST be locale-aware. The active
-session's locale MUST be included in the system / persona prompt
-slice (§3.1.3 #1) so generated speech matches the player's locale.
+3.14.7.1 The LLM subsystem (§3.1) MUST be locale-aware. The tenant's
+locale MUST be included in the system / persona prompt slice (§3.1.3
+#1) so generated speech matches the world's locale.
 
 3.14.7.2 Fallback line tables (§3.1.6.3) MUST be keyed by locale.
 A missing locale-specific fallback MUST fall back to `en` per
@@ -1898,7 +1894,7 @@ through an LLM at runtime. Translation is bundle-driven (§3.14.3).
 
 3.14.8.1 A conformant 1.0 release MUST be able to add a second
 locale (e.g. `fr`) by dropping a `.ftl` bundle into the tenant's
-`i18n/` directory and reloading, with no engine recompilation and no
+`i18n/` directory and reloading (the tenant then renders engine strings in that locale), with no engine recompilation and no
 restart. This MUST be demonstrated end-to-end against at least one
 non-English locale during the tutorial demo, even if the tutorial
 content itself ships in English only.
@@ -2258,8 +2254,13 @@ tables MUST be fixed so rendering is reproducible for snapshot tests
 #### 3.20.6 Player preferences and accessibility
 
 3.20.6.1 An account MUST be able to persist a color preference (tier
-override and/or named palette selection), resolved like locale
-(§3.14.6.1) and switchable mid-session without disconnect.
+override and/or named palette selection), resolved first-match-wins
+from: the account preference, then the tenant's default palette
+(§3.20.3), then the engine default. Unlike locale (§3.14.6), color
+stays per-account and switchable mid-session without disconnect:
+color carries no meaning and is applied per-connection at the render
+edge (§3.20.5.4), and the color tier and colorblind-safe palette
+(§3.20.6.3) depend on the individual terminal and player.
 
 3.20.6.2 The engine MUST honor `NO_COLOR`.
 
