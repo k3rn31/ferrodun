@@ -8,8 +8,10 @@
 //! `anstyle-lossy`, confined to the conversion adapter.
 
 mod convert;
+mod ratelimit;
 mod render;
 mod tier;
 
+pub use ratelimit::{Burst, Decision, RateLimiter, SustainedRate};
 pub use render::render;
 pub use tier::{DEFAULT_TENANT_TIER, Tier, process_no_color, resolve_tier};
