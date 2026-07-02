@@ -8,8 +8,8 @@ mod negotiation;
 mod parser;
 
 use line::LineDecoder;
-use negotiation::{Negotiator, OPT_CHARSET, OPT_NAWS, OPT_TTYPE, TTYPE_IS};
-use parser::{IacParser, ParsedItem};
+use negotiation::{CharsetMode, Negotiator, OPT_CHARSET, OPT_NAWS, OPT_TTYPE, TTYPE_IS};
+use parser::{EOR_CMD, GA, IAC, IacParser, ParsedItem};
 
 /// A validated, decoded event from the client.
 #[non_exhaustive]
@@ -75,6 +75,44 @@ impl TelnetMachine {
     #[must_use]
     pub fn take_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.output)
+    }
+
+    /// Encodes server→client text per the negotiated charset: UTF-8
+    /// passthrough, or ASCII transliteration for legacy clients. Normalizes
+    /// LF to CRLF and escapes any literal IAC byte.
+    #[must_use]
+    pub fn encode_output(&self, text: &str) -> Vec<u8> {
+        let encoded: std::borrow::Cow<'_, str> = match self.negotiator.charset() {
+            CharsetMode::Utf8 => std::borrow::Cow::Borrowed(text),
+            // deunicode maps control bytes to "" once it hits its
+            // transliteration path, so '\n' must be shielded from it by
+            // transliterating line-by-line rather than the whole string.
+            CharsetMode::Ascii => {
+                std::borrow::Cow::Owned(text.split('\n').map(deunicode::deunicode).collect::<Vec<_>>().join("\n"))
+            }
+        };
+        let mut out = Vec::with_capacity(encoded.len() + 8);
+        for &byte in encoded.as_bytes() {
+            match byte {
+                b'\n' => out.extend_from_slice(b"\r\n"),
+                // Dropped: CRLF in input is re-emitted via the '\n' arm, so
+                // carriage returns never double.
+                b'\r' => {}
+                IAC => out.extend_from_slice(&[IAC, IAC]),
+                other => out.push(other),
+            }
+        }
+        out
+    }
+
+    /// The prompt-framing byte pair: IAC EOR when negotiated, else IAC GA.
+    #[must_use]
+    pub fn prompt_frame(&self) -> Vec<u8> {
+        if self.negotiator.eor_enabled() {
+            vec![IAC, EOR_CMD]
+        } else {
+            vec![IAC, GA]
+        }
     }
 
     fn on_subnegotiation(&mut self, option: u8, payload: &[u8], events: &mut Vec<TelnetEvent>) {
@@ -183,5 +221,56 @@ mod tests {
         let _ = machine.take_output();
         let _ = machine.receive(&[IAC, DO, 86]); // MCCP2: M3, refused in M1
         assert_eq!(machine.take_output(), vec![IAC, 252, 86]); // IAC WONT 86
+    }
+
+    use super::parser::{DONT, EOR_CMD, GA};
+    use super::negotiation::{CHARSET_ACCEPTED, OPT_CHARSET, OPT_EOR};
+
+    fn utf8_machine() -> TelnetMachine {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.receive(&[IAC, DO, OPT_CHARSET]);
+        let mut accepted = vec![IAC, SB, OPT_CHARSET, CHARSET_ACCEPTED];
+        accepted.extend_from_slice(b"UTF-8");
+        accepted.extend_from_slice(&[IAC, SE]);
+        let _ = machine.receive(&accepted);
+        machine
+    }
+
+    #[test]
+    fn utf8_client_gets_utf8_passthrough() {
+        let machine = utf8_machine();
+        assert_eq!(machine.encode_output("café\n"), "café\r\n".as_bytes().to_vec());
+    }
+
+    #[test]
+    fn legacy_client_gets_ascii_transliteration() {
+        let machine = TelnetMachine::new(); // CHARSET never accepted
+        assert_eq!(machine.encode_output("café\n"), b"cafe\r\n".to_vec());
+    }
+
+    #[test]
+    fn lf_normalizes_to_crlf_without_doubling() {
+        let machine = utf8_machine();
+        assert_eq!(machine.encode_output("a\r\nb\n"), b"a\r\nb\r\n".to_vec());
+    }
+
+    #[test]
+    fn prompt_frame_is_ga_by_default() {
+        let machine = TelnetMachine::new();
+        assert_eq!(machine.prompt_frame(), vec![IAC, GA]);
+    }
+
+    #[test]
+    fn prompt_frame_is_eor_after_do_eor() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.receive(&[IAC, DO, OPT_EOR]);
+        assert_eq!(machine.prompt_frame(), vec![IAC, EOR_CMD]);
+    }
+
+    #[test]
+    fn prompt_frame_falls_back_to_ga_after_dont_eor() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.receive(&[IAC, DONT, OPT_EOR]);
+        assert_eq!(machine.prompt_frame(), vec![IAC, GA]);
     }
 }
