@@ -120,8 +120,13 @@ name threads into `AwaitingEnter` and out through `Terminal::Bound`.
 ### mud-i18n (`src/catalog.rs`, additive `en` keys)
 
 `say.broadcast`, `move.depart`, `move.arrive-from`, `move.arrive` (directionless,
-future path), `dir.north`…`dir.down` (localizable direction words),
-`who.online`, `quit.goodbye`.
+future path), `who.online`, `quit.goodbye`.
+
+*As built:* the direction word interpolated into `move.depart`/`move.arrive-from`
+comes from the existing `direction_name()` helper (canonical, locale-invariant per
+§3.14.5.1 — the same rule that keeps built-in command names invariant), not from
+per-direction catalog keys. No `dir.*` keys are added; the broadcast *sentence*
+localizes while the embedded compass word stays canonical.
 
 ### §3.6.3 (present NPCs hear say/emote) — design note, no code
 
