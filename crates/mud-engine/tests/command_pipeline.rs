@@ -16,7 +16,8 @@ use mud_cmd::{Command, CommandName};
 use mud_core::{EntityId, Lock, LockContext, PlaceId, StyledText, TenantTag, World};
 use mud_engine::{
     CallerContext, CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher,
-    LayerCommands, Pipeline, PipelineError, Places, ResolvedSession, SessionResolver,
+    LayerCommands, Pipeline, PipelineError, Places, Presence, ResolvedSession, Roster,
+    SessionResolver,
 };
 use mud_i18n::Locale;
 use mud_schema::{InputLine, SessionId, SessionInput};
@@ -149,6 +150,16 @@ impl SessionResolver for FakeResolver {
     }
 }
 
+impl Roster for FakeResolver {
+    fn session_of(&self, entity: EntityId) -> Option<SessionId> {
+        (entity == self.caller).then(|| session(1))
+    }
+
+    fn connected(&self) -> Vec<Presence> {
+        Vec::new()
+    }
+}
+
 /// A places registry with no rooms: the commands these tests bind never read a
 /// `Place` (look/movement land in PR-B with their own room fixture).
 struct NoPlaces;
@@ -192,7 +203,8 @@ fn a_bound_command_runs_and_renders_its_reply() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("look"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(outputs.len(), 1);
     let reply = outputs.first().expect("one output");
@@ -212,7 +224,7 @@ fn the_handler_receives_the_parsed_switches_and_args() {
     );
     let mut pipeline = Pipeline::new(dispatcher);
 
-    pipeline
+    let _ = pipeline
         .dispatch(
             &mut world,
             &NoPlaces,
@@ -240,13 +252,15 @@ fn the_puppet_alias_survives_the_merge_but_the_locations_does_not() {
     // The puppet's `look` wins the collision, so its alias `p` resolves to it...
     let via_alias = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("p"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
     assert_eq!(only_line(&via_alias), "looked");
 
     // ...while the losing location binding's alias `q` is gone.
     let dropped = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("q"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
     assert_eq!(only_line(&dropped), "command.not-found");
     assert_eq!(look.runs(), 1, "only the alias hit runs the handler");
 }
@@ -264,7 +278,8 @@ fn an_unknown_command_reports_not_found_and_runs_nothing() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("dance"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "command.not-found");
     assert_eq!(look.runs(), 0);
@@ -281,7 +296,8 @@ fn an_ambiguous_prefix_reports_ambiguity() {
     // as its literal key; surfacing the candidates is a M2 catalog concern.
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("s"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "command.ambiguous");
 }
@@ -293,7 +309,8 @@ fn a_malformed_switch_reports_a_bad_switch() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("look/"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "command.bad-switch");
 }
@@ -305,7 +322,8 @@ fn a_blank_line_produces_no_output() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("   "))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert!(outputs.is_empty());
 }
@@ -318,7 +336,8 @@ fn a_matched_but_unbound_command_reports_generically() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("score"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "command.unbound");
 }
@@ -336,7 +355,8 @@ fn a_lock_denies_a_caller_without_permission() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("smite"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "command.denied");
     assert_eq!(smite.runs(), 0, "the gated handler must not run");
@@ -355,7 +375,8 @@ fn a_lock_grants_a_caller_with_permission() {
 
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("smite"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "smitten");
     assert_eq!(smite.runs(), 1);
@@ -372,7 +393,13 @@ fn an_unresolvable_session_is_an_error() {
 
     let result = pipeline.dispatch(&mut world, &NoPlaces, &resolver, &unknown);
 
-    assert_eq!(result, Err(PipelineError::UnknownSession(session(999))));
+    // `DispatchOutcome` (the `Ok` payload) does not derive `PartialEq` — it wraps
+    // a `Vec<SessionOutput>` that has no meaningful notion of test equality here
+    // — so this matches on the error variant directly instead of `assert_eq!`.
+    assert!(matches!(
+        result,
+        Err(PipelineError::UnknownSession(id)) if id == session(999)
+    ));
 }
 
 #[test]
@@ -387,10 +414,12 @@ fn each_run_mints_a_distinct_command_id() {
 
     let first = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("score"))
-        .expect("first dispatch");
+        .expect("first dispatch")
+        .outputs;
     let second = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("score"))
-        .expect("second dispatch");
+        .expect("second dispatch")
+        .outputs;
 
     assert_eq!(only_line(&first), "command.unbound");
     assert_eq!(only_line(&second), "command.unbound");
@@ -427,7 +456,8 @@ fn a_replys_effects_are_applied_to_the_world() {
     // The puppet starts in HALL (see `fixture`).
     let outputs = pipeline
         .dispatch(&mut world, &NoPlaces, &resolver, &input("look"))
-        .expect("dispatch succeeds");
+        .expect("dispatch succeeds")
+        .outputs;
 
     assert_eq!(only_line(&outputs), "whoosh");
     assert!(

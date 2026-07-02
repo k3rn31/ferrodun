@@ -29,10 +29,13 @@ mod text;
 pub use builtins::register;
 pub use caller::{CallerContext, ResolvedSession, SessionResolver};
 pub use command_id::CommandId;
-pub use dispatch::{CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher};
+pub use dispatch::{
+    Broadcast, CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher,
+    SessionDisposition,
+};
 pub use layers::LayerCommands;
 pub use objects::{Resolution, resolve_among};
-pub use pipeline::{Pipeline, PipelineError};
+pub use pipeline::{DispatchOutcome, Pipeline, PipelineError};
 pub use places::Places;
 pub use roster::{Presence, Roster};
 pub use session::{

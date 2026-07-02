@@ -8,12 +8,14 @@
 use std::collections::HashMap;
 use std::num::NonZeroU64;
 
+use mud_account::PuppetName;
 use mud_core::{
     Description, Direction, EntityId, Keyword, LockContext, Place, PlaceId, RegionId, RoomData,
     TenantTag, Title, World,
 };
 use mud_engine::{
-    CallerContext, Dispatcher, LayerCommands, Pipeline, Places, ResolvedSession, SessionResolver,
+    CallerContext, Dispatcher, LayerCommands, Pipeline, Places, Presence, ResolvedSession, Roster,
+    SessionResolver,
 };
 use mud_i18n::Locale;
 use mud_schema::{InputLine, SessionId, SessionInput, SessionOutput};
@@ -117,6 +119,18 @@ impl SessionResolver for FakeResolver {
     }
 }
 
+impl Roster for FakeResolver {
+    fn session_of(&self, entity: EntityId) -> Option<SessionId> {
+        (entity == self.caller).then(session)
+    }
+
+    fn connected(&self) -> Vec<Presence> {
+        vec![Presence {
+            name: PuppetName::parse("hero").expect("name"),
+        }]
+    }
+}
+
 /// A pipeline with all built-ins bound, a two-room map, a caller placed in HALL,
 /// and a resolver that re-reads the caller's live location each command (so a
 /// movement command is reflected in the next command's context).
@@ -172,6 +186,7 @@ impl Harness {
         self.pipeline
             .dispatch(&mut self.world, &self.places, &self.resolver, &input)
             .expect("dispatch succeeds")
+            .outputs
     }
 
     /// The single text line of a one-element output.
