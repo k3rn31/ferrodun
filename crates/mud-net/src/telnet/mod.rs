@@ -6,3 +6,182 @@
 mod line;
 mod negotiation;
 mod parser;
+
+use line::LineDecoder;
+use negotiation::{Negotiator, OPT_CHARSET, OPT_NAWS, OPT_TTYPE, TTYPE_IS};
+use parser::{IacParser, ParsedItem};
+
+/// A validated, decoded event from the client.
+#[non_exhaustive]
+#[derive(Debug, PartialEq, Eq)]
+pub enum TelnetEvent {
+    /// One complete input line (a command), lossily decoded to UTF-8.
+    Line(String),
+    /// Client window size from NAWS; 0 means "unspecified" per RFC 1073.
+    WindowSize { width: u16, height: u16 },
+    /// Client terminal name from TTYPE.
+    TerminalType(String),
+}
+
+/// Per-connection telnet protocol state machine (sans-IO).
+///
+/// Feed raw socket bytes to [`receive`](Self::receive) and get decoded
+/// [`TelnetEvent`]s; negotiation replies accumulate internally and must be
+/// drained with [`take_output`](Self::take_output) and written to the client.
+/// Construction queues the M1 opening offers (NAWS, TTYPE, EOR, CHARSET).
+#[derive(Debug)]
+pub struct TelnetMachine {
+    parser: IacParser,
+    negotiator: Negotiator,
+    line: LineDecoder,
+    output: Vec<u8>,
+}
+
+impl TelnetMachine {
+    /// Creates the machine with the opening option offers already queued.
+    #[must_use]
+    pub fn new() -> Self {
+        let mut output = Vec::new();
+        let negotiator = Negotiator::new(&mut output);
+        Self { parser: IacParser::new(), negotiator, line: LineDecoder::new(), output }
+    }
+
+    /// Consumes raw bytes from the socket, returning completed events.
+    ///
+    /// Negotiation replies triggered by the input are queued; drain them with
+    /// [`take_output`](Self::take_output) after each call.
+    pub fn receive(&mut self, bytes: &[u8]) -> Vec<TelnetEvent> {
+        let mut events = Vec::new();
+        for item in self.parser.push(bytes) {
+            match item {
+                ParsedItem::Data(byte) => {
+                    if let Some(text) = self.line.push(byte) {
+                        events.push(TelnetEvent::Line(text));
+                    }
+                }
+                ParsedItem::Command(_) => {}
+                ParsedItem::Negotiate { verb, option } => {
+                    self.negotiator.on_negotiate(verb, option, &mut self.output);
+                }
+                ParsedItem::Subnegotiation { option, payload } => {
+                    self.on_subnegotiation(option, &payload, &mut events);
+                }
+            }
+        }
+        events
+    }
+
+    /// Drains the bytes the server must write to the client.
+    #[must_use]
+    pub fn take_output(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.output)
+    }
+
+    fn on_subnegotiation(&mut self, option: u8, payload: &[u8], events: &mut Vec<TelnetEvent>) {
+        match option {
+            OPT_NAWS => {
+                // RFC 1073: exactly four bytes, width and height big-endian.
+                if let &[w_hi, w_lo, h_hi, h_lo] = payload {
+                    events.push(TelnetEvent::WindowSize {
+                        width: u16::from_be_bytes([w_hi, w_lo]),
+                        height: u16::from_be_bytes([h_hi, h_lo]),
+                    });
+                }
+            }
+            OPT_TTYPE => {
+                if let Some((&TTYPE_IS, name)) = payload.split_first() {
+                    events.push(TelnetEvent::TerminalType(String::from_utf8_lossy(name).into_owned()));
+                }
+            }
+            OPT_CHARSET => self.negotiator.on_charset_subnegotiation(payload),
+            _ => {}
+        }
+    }
+}
+
+impl Default for TelnetMachine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parser::{DO, IAC, SB, SE, WILL};
+    use super::negotiation::{OPT_NAWS, OPT_TTYPE, TTYPE_IS};
+    use super::*;
+
+    #[test]
+    fn new_machine_queues_opening_offers() {
+        let mut machine = TelnetMachine::new();
+        let out = machine.take_output();
+        assert!(!out.is_empty(), "opening offers must be queued at construction");
+        assert_eq!(out.first(), Some(&IAC));
+    }
+
+    #[test]
+    fn take_output_drains() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output();
+        assert!(machine.take_output().is_empty(), "second take_output must be empty");
+    }
+
+    #[test]
+    fn command_line_becomes_line_event() {
+        let mut machine = TelnetMachine::new();
+        let events = machine.receive(b"look\r\n");
+        assert_eq!(events, vec![TelnetEvent::Line("look".to_owned())]);
+    }
+
+    #[test]
+    fn naws_subnegotiation_becomes_window_size_event() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.receive(&[IAC, WILL, OPT_NAWS]);
+        let events = machine.receive(&[IAC, SB, OPT_NAWS, 0, 80, 0, 24, IAC, SE]);
+        assert_eq!(events, vec![TelnetEvent::WindowSize { width: 80, height: 24 }]);
+    }
+
+    #[test]
+    fn malformed_naws_payload_is_ignored() {
+        let mut machine = TelnetMachine::new();
+        let events = machine.receive(&[IAC, SB, OPT_NAWS, 0, 80, IAC, SE]);
+        assert!(events.is_empty(), "a 2-byte NAWS payload must not produce an event");
+    }
+
+    #[test]
+    fn ttype_is_becomes_terminal_type_event() {
+        let mut machine = TelnetMachine::new();
+        let mut sub = vec![IAC, SB, OPT_TTYPE, TTYPE_IS];
+        sub.extend_from_slice(b"MUDLET");
+        sub.extend_from_slice(&[IAC, SE]);
+        let events = machine.receive(&sub);
+        assert_eq!(events, vec![TelnetEvent::TerminalType("MUDLET".to_owned())]);
+    }
+
+    #[test]
+    fn negotiation_replies_are_queued_to_output() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output(); // discard opening offers
+        let events = machine.receive(&[IAC, WILL, OPT_TTYPE]);
+        assert!(events.is_empty(), "negotiation produces output, not events");
+        assert_eq!(machine.take_output(), vec![IAC, SB, OPT_TTYPE, 1, IAC, SE]);
+    }
+
+    #[test]
+    fn data_interleaved_with_negotiation_decodes() {
+        let mut machine = TelnetMachine::new();
+        let mut input = b"lo".to_vec();
+        input.extend_from_slice(&[IAC, WILL, OPT_NAWS]);
+        input.extend_from_slice(b"ok\r\n");
+        let events = machine.receive(&input);
+        assert_eq!(events, vec![TelnetEvent::Line("look".to_owned())]);
+    }
+
+    #[test]
+    fn do_unsupported_is_refused() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output();
+        let _ = machine.receive(&[IAC, DO, 86]); // MCCP2: M3, refused in M1
+        assert_eq!(machine.take_output(), vec![IAC, 252, 86]); // IAC WONT 86
+    }
+}

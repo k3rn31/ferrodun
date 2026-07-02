@@ -105,10 +105,13 @@ impl Negotiator {
         }
     }
 
-    /// Handles a CHARSET subnegotiation payload (ACCEPTED switches to UTF-8).
+    /// Handles a CHARSET subnegotiation payload: ACCEPTED switches to UTF-8,
+    /// REJECTED keeps ASCII transliteration. Any other payload is ignored.
     pub(crate) fn on_charset_subnegotiation(&mut self, payload: &[u8]) {
-        if let Some((&CHARSET_ACCEPTED, _)) = payload.split_first() {
-            self.charset_mode = CharsetMode::Utf8;
+        match payload.split_first() {
+            Some((&CHARSET_ACCEPTED, _)) => self.charset_mode = CharsetMode::Utf8,
+            Some((&CHARSET_REJECTED, _)) => self.charset_mode = CharsetMode::Ascii,
+            _ => {}
         }
     }
 
