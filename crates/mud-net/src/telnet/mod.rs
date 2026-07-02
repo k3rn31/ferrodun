@@ -3,4 +3,5 @@
 //! Sans-IO: bytes in, typed events plus reply bytes out. The gateway (M1-21)
 //! owns the socket and drives this state machine.
 
+mod line;
 mod parser;
