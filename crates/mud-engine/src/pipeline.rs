@@ -10,7 +10,7 @@
 
 use mud_cmd::ParseOutcome;
 use mud_core::{TickEvent, World};
-use mud_i18n::t;
+use mud_i18n::{Locale, t};
 use mud_schema::{OutputText, SessionInput, SessionOutput};
 
 use crate::CommandId;
@@ -29,6 +29,7 @@ use crate::roster::Roster;
 pub struct Pipeline {
     dispatcher: Dispatcher,
     ids: CommandIdGen,
+    locale: Locale,
 }
 
 /// What one `dispatch` produced: the outputs to route (caller reply plus any
@@ -56,7 +57,15 @@ impl Pipeline {
         Self {
             dispatcher,
             ids: CommandIdGen::new(),
+            locale: Locale::EN,
         }
+    }
+
+    /// Sets the tenant locale engine strings render in (§3.14.6). Defaults to
+    /// `en`; the driver (M1-22) supplies the tenant's configured locale.
+    pub fn with_locale(mut self, locale: Locale) -> Self {
+        self.locale = locale;
+        self
     }
 
     /// Runs one input line through §2.7 steps 3–8.
@@ -95,7 +104,7 @@ impl Pipeline {
             .resolve(session_id, world)
             .ok_or(PipelineError::UnknownSession(session_id))?;
         let caller = resolved.caller;
-        let locale = caller.locale().clone();
+        let locale = self.locale.clone();
 
         // Step 4: merge the caller's command layers into one table.
         let table = resolved.layers.merge();
@@ -159,7 +168,7 @@ impl Pipeline {
             args,
         } = parsed;
         let session_id = caller.session_id();
-        let locale = caller.locale();
+        let locale = &self.locale;
 
         let Some(binding) = self.dispatcher.binding(command.name()) else {
             // Parsed to a name with no behavior bound: a content/registry gap, not
@@ -188,8 +197,16 @@ impl Pipeline {
         // borrow in `ctx` ends before the mutation, so a handler cannot both read
         // and write the world in one run — mutation is data it requests.
         let reply = {
-            let ctx =
-                CommandContext::new(command_id, caller, switches, args, &*world, places, roster);
+            let ctx = CommandContext::new(
+                command_id,
+                caller,
+                &self.locale,
+                switches,
+                args,
+                &*world,
+                places,
+                roster,
+            );
             binding.handler().run(&ctx)
         };
 
@@ -410,6 +427,28 @@ mod tests {
         fn connected(&self) -> Vec<crate::roster::Presence> {
             Vec::new()
         }
+    }
+
+    #[test]
+    fn output_renders_in_the_pipeline_locale_not_the_caller() {
+        let mut world = World::new(TenantTag::new(1).expect("tenant in range"));
+        let caller = world.create().expect("create caller");
+        let resolver = FakeResolver { caller };
+        // The pipeline carries the tenant locale; the caller no longer supplies one.
+        let mut pipeline = Pipeline::new(Dispatcher::new()).with_locale(Locale::EN);
+
+        let outcome = pipeline
+            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
+            .expect("dispatch");
+
+        // `look` parses to NotFound against the empty table, rendered via the
+        // pipeline's locale (§3.14.6).
+        let expected = t!(Locale::EN, "command.not-found");
+        assert!(
+            outcome.outputs.iter().any(|o| o.text.as_str() == expected),
+            "expected not-found rendered in the pipeline locale, got {:?}",
+            outcome.outputs,
+        );
     }
 
     #[test]

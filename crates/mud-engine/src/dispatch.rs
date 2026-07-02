@@ -32,6 +32,7 @@ use crate::roster::Roster;
 pub struct CommandContext<'a> {
     command_id: CommandId,
     caller: &'a CallerContext,
+    locale: &'a Locale,
     switches: &'a [Switch],
     args: &'a str,
     world: &'a World,
@@ -43,11 +44,17 @@ impl<'a> CommandContext<'a> {
     /// Assembles the context for one handler invocation.
     ///
     /// Borrows the resolved [`CallerContext`] (session, caller entity, location,
-    /// locale) rather than restating its fields, so adding a caller fact does not
+    /// name) and the tenant `locale` separately, so adding a caller fact does not
     /// widen this signature.
+    // LINT: eight borrowed refs assembled once for a single call site
+    // (pipeline.rs); each is a genuinely distinct piece of per-run context, not
+    // a group that collapses into a smaller type without inventing one for its
+    // own sake.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         command_id: CommandId,
         caller: &'a CallerContext,
+        locale: &'a Locale,
         switches: &'a [Switch],
         args: &'a str,
         world: &'a World,
@@ -57,6 +64,7 @@ impl<'a> CommandContext<'a> {
         Self {
             command_id,
             caller,
+            locale,
             switches,
             args,
             world,
@@ -85,9 +93,9 @@ impl<'a> CommandContext<'a> {
         self.caller.location()
     }
 
-    /// The locale engine messages resolve against.
+    /// The tenant locale engine messages resolve against (§3.14.6).
     pub fn locale(&self) -> &Locale {
-        self.caller.locale()
+        self.locale
     }
 
     /// The switches given after the command (e.g. `quiet` in `look/quiet`).
