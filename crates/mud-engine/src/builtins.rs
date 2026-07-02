@@ -17,7 +17,9 @@ use mud_cmd::{Command, CommandName};
 use mud_core::{Direction, Effect, EntityId, Place, PlaceId, RoleName, Span, StyledText, World};
 use mud_i18n::{Locale, t};
 
-use crate::dispatch::{CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher};
+use crate::dispatch::{
+    Broadcast, CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher,
+};
 use crate::objects::{Resolution, resolve_among};
 use crate::text::sanitize;
 
@@ -126,8 +128,8 @@ impl CommandHandler for Move {
     }
 }
 
-/// `say`: speak to the room (§3.6.3). Caller echo only in M1; the room broadcast
-/// lands with the session→entity map (M1-19).
+/// `say`: speak to the room, echoing to the caller and broadcasting to every
+/// other co-located session (§3.6.3, M1-19a).
 struct Say;
 
 impl CommandHandler for Say {
@@ -140,11 +142,23 @@ impl CommandHandler for Say {
         if message.trim().is_empty() {
             return CommandReply::to_caller(system(t!(locale, "say.nothing")));
         }
-        // The whole line carries the `say` role; the sanitized body is plain text
-        // inside it, so any markup the player typed renders literally (§3.20.7).
+        let name = ctx.caller_name().as_str().to_owned();
+        // The caller hears "You say, …"; everyone else in the room hears
+        // "<name> says, …". Sanitized player text is plain, so any markup renders
+        // literally (§3.20.7).
+        let heard = StyledText::new().role(
+            t!(
+                locale,
+                "say.broadcast",
+                name = name,
+                message = message.clone()
+            ),
+            RoleName::SAY,
+        );
         CommandReply::to_caller(
             StyledText::new().role(t!(locale, "say.speech", message = message), RoleName::SAY),
         )
+        .with_broadcast(Broadcast::to_place(ctx.location(), ctx.caller(), heard))
     }
 }
 

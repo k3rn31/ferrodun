@@ -67,6 +67,7 @@ fn builtin_en() -> Catalog {
         ("move.no-exit", "You can't go that way."),
         // say (§3.6.3)
         ("say.speech", "You say, \"{ $message }\""),
+        ("say.broadcast", "{ $name } says, \"{ $message }\""),
         ("say.nothing", "Say what?"),
         // inventory
         ("inventory.header", "You are carrying:"),
