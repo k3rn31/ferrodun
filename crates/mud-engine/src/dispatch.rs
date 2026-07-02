@@ -35,31 +35,43 @@ pub struct CommandContext<'a> {
     locale: &'a Locale,
     switches: &'a [Switch],
     args: &'a str,
+    engine: EngineView<'a>,
+}
+
+/// A read-only view of the live engine handed to a command handler: the
+/// world, the tenant's places, and the session roster, grouped so the
+/// handler context takes one engine reference rather than three.
+pub(crate) struct EngineView<'a> {
     world: &'a World,
     places: &'a dyn Places,
     roster: &'a dyn Roster,
+}
+
+impl<'a> EngineView<'a> {
+    /// Groups the engine references a handler reads for one command run.
+    pub(crate) fn new(world: &'a World, places: &'a dyn Places, roster: &'a dyn Roster) -> Self {
+        Self {
+            world,
+            places,
+            roster,
+        }
+    }
 }
 
 impl<'a> CommandContext<'a> {
     /// Assembles the context for one handler invocation.
     ///
     /// Borrows the resolved [`CallerContext`] (session, caller entity, location,
-    /// name) and the tenant `locale` separately, so adding a caller fact does not
-    /// widen this signature.
-    // LINT: eight borrowed refs assembled once for a single call site
-    // (pipeline.rs); each is a genuinely distinct piece of per-run context, not
-    // a group that collapses into a smaller type without inventing one for its
-    // own sake.
-    #[allow(clippy::too_many_arguments)]
+    /// name), the tenant `locale`, and the [`EngineView`] (world, places,
+    /// roster) separately, so adding a caller fact does not widen this
+    /// signature.
     pub(crate) fn new(
         command_id: CommandId,
         caller: &'a CallerContext,
         locale: &'a Locale,
         switches: &'a [Switch],
         args: &'a str,
-        world: &'a World,
-        places: &'a dyn Places,
-        roster: &'a dyn Roster,
+        engine: EngineView<'a>,
     ) -> Self {
         Self {
             command_id,
@@ -67,9 +79,7 @@ impl<'a> CommandContext<'a> {
             locale,
             switches,
             args,
-            world,
-            places,
-            roster,
+            engine,
         }
     }
 
@@ -110,14 +120,14 @@ impl<'a> CommandContext<'a> {
 
     /// The live world, read-only.
     pub fn world(&self) -> &World {
-        self.world
+        self.engine.world
     }
 
     /// The tenant's places, for resolving the caller's location and exits
     /// (§2.2). A handler that mutates the world returns the change as an
     /// [`Effect`] on its [`CommandReply`] rather than reaching through here.
     pub fn places(&self) -> &dyn Places {
-        self.places
+        self.engine.places
     }
 
     /// The actor's display name, for naming them to other players.
@@ -128,7 +138,7 @@ impl<'a> CommandContext<'a> {
     /// The session roster, for commands that list or address other sessions
     /// (`who`, broadcast delivery is the pipeline's job).
     pub fn roster(&self) -> &dyn Roster {
-        self.roster
+        self.engine.roster
     }
 }
 

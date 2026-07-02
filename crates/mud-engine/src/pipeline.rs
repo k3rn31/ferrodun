@@ -16,7 +16,7 @@ use mud_schema::{OutputText, SessionInput, SessionOutput};
 use crate::CommandId;
 use crate::caller::{CallerContext, SessionResolver};
 use crate::command_id::CommandIdGen;
-use crate::dispatch::{CommandContext, Dispatcher, SessionDisposition};
+use crate::dispatch::{CommandContext, Dispatcher, EngineView, SessionDisposition};
 use crate::places::Places;
 use crate::roster::Roster;
 
@@ -203,9 +203,7 @@ impl Pipeline {
                 &self.locale,
                 switches,
                 args,
-                &*world,
-                places,
-                roster,
+                EngineView::new(&*world, places, roster),
             );
             binding.handler().run(&ctx)
         };
