@@ -48,8 +48,16 @@ enum State {
     Iac,
     Verb(Verb),
     SubOption,
-    SubPayload { option: u8, payload: Vec<u8>, overflowed: bool },
-    SubIac { option: u8, payload: Vec<u8>, overflowed: bool },
+    SubPayload {
+        option: u8,
+        payload: Vec<u8>,
+        overflowed: bool,
+    },
+    SubIac {
+        option: u8,
+        payload: Vec<u8>,
+        overflowed: bool,
+    },
 }
 
 /// Incremental IAC parser; one per connection.
@@ -88,15 +96,31 @@ impl IacParser {
                 items.push(ParsedItem::Negotiate { verb, option: byte });
                 State::Data
             }
-            State::SubOption => State::SubPayload { option: byte, payload: Vec::new(), overflowed: false },
-            State::SubPayload { option, payload, overflowed } => {
+            State::SubOption => State::SubPayload {
+                option: byte,
+                payload: Vec::new(),
+                overflowed: false,
+            },
+            State::SubPayload {
+                option,
+                payload,
+                overflowed,
+            } => {
                 if byte == IAC {
-                    State::SubIac { option, payload, overflowed }
+                    State::SubIac {
+                        option,
+                        payload,
+                        overflowed,
+                    }
                 } else {
                     Self::sub_push(option, payload, overflowed, byte)
                 }
             }
-            State::SubIac { option, payload, overflowed } => match byte {
+            State::SubIac {
+                option,
+                payload,
+                overflowed,
+            } => match byte {
                 SE => {
                     if !overflowed {
                         items.push(ParsedItem::Subnegotiation { option, payload });
@@ -134,7 +158,11 @@ impl IacParser {
         if !overflowed {
             payload.push(byte);
         }
-        State::SubPayload { option, payload, overflowed }
+        State::SubPayload {
+            option,
+            payload,
+            overflowed,
+        }
     }
 }
 
@@ -163,10 +191,22 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                ParsedItem::Negotiate { verb: Verb::Will, option: 31 },
-                ParsedItem::Negotiate { verb: Verb::Wont, option: 24 },
-                ParsedItem::Negotiate { verb: Verb::Do, option: 25 },
-                ParsedItem::Negotiate { verb: Verb::Dont, option: 42 },
+                ParsedItem::Negotiate {
+                    verb: Verb::Will,
+                    option: 31
+                },
+                ParsedItem::Negotiate {
+                    verb: Verb::Wont,
+                    option: 24
+                },
+                ParsedItem::Negotiate {
+                    verb: Verb::Do,
+                    option: 25
+                },
+                ParsedItem::Negotiate {
+                    verb: Verb::Dont,
+                    option: 42
+                },
             ]
         );
     }
@@ -185,7 +225,10 @@ mod tests {
         let items = parser.push(&[IAC, SB, 31, 0, 80, 0, 24, IAC, SE]);
         assert_eq!(
             items,
-            vec![ParsedItem::Subnegotiation { option: 31, payload: vec![0, 80, 0, 24] }]
+            vec![ParsedItem::Subnegotiation {
+                option: 31,
+                payload: vec![0, 80, 0, 24]
+            }]
         );
     }
 
@@ -195,7 +238,10 @@ mod tests {
         let items = parser.push(&[IAC, SB, 31, IAC, IAC, 7, IAC, SE]);
         assert_eq!(
             items,
-            vec![ParsedItem::Subnegotiation { option: 31, payload: vec![IAC, 7] }]
+            vec![ParsedItem::Subnegotiation {
+                option: 31,
+                payload: vec![IAC, 7]
+            }]
         );
     }
 
@@ -209,7 +255,10 @@ mod tests {
         items.extend(parser.push(&[0, 24, IAC, SE]));
         assert_eq!(
             items,
-            vec![ParsedItem::Subnegotiation { option: 31, payload: vec![0, 80, 0, 24] }]
+            vec![ParsedItem::Subnegotiation {
+                option: 31,
+                payload: vec![0, 80, 0, 24]
+            }]
         );
     }
 
@@ -234,7 +283,10 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                ParsedItem::Negotiate { verb: Verb::Will, option: 24 },
+                ParsedItem::Negotiate {
+                    verb: Verb::Will,
+                    option: 24
+                },
                 ParsedItem::Data(b'a'),
             ]
         );

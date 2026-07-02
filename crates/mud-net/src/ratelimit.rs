@@ -108,7 +108,11 @@ mod tests {
                 "command {i} within burst must be forwarded"
             );
         }
-        assert_eq!(limiter.check(t0), Decision::Drop, "21st command in the same instant must drop");
+        assert_eq!(
+            limiter.check(t0),
+            Decision::Drop,
+            "21st command in the same instant must drop"
+        );
     }
 
     #[test]
@@ -128,7 +132,11 @@ mod tests {
                 "drained slot {i} must be forwarded"
             );
         }
-        assert_eq!(limiter.check(t1), Decision::Drop, "11th command after 1 s must drop");
+        assert_eq!(
+            limiter.check(t1),
+            Decision::Drop,
+            "11th command after 1 s must drop"
+        );
     }
 
     #[test]
@@ -138,7 +146,11 @@ mod tests {
         // One command every 200 ms = 5/s, below the 10/s sustained rate.
         for i in 0..50u64 {
             let now = t0 + Duration::from_millis(200 * i);
-            assert_eq!(limiter.check(now), Decision::Forward, "command {i} at 5/s must be forwarded");
+            assert_eq!(
+                limiter.check(now),
+                Decision::Forward,
+                "command {i} at 5/s must be forwarded"
+            );
         }
     }
 

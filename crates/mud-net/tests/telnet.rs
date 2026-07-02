@@ -27,19 +27,35 @@ fn modern_client_full_session() {
     assert_eq!(
         offers,
         vec![
-            IAC, DO, OPT_NAWS,
-            IAC, DO, OPT_TTYPE,
-            IAC, WILL, OPT_EOR,
-            IAC, WILL, OPT_CHARSET,
+            IAC,
+            DO,
+            OPT_NAWS,
+            IAC,
+            DO,
+            OPT_TTYPE,
+            IAC,
+            WILL,
+            OPT_EOR,
+            IAC,
+            WILL,
+            OPT_CHARSET,
         ]
     );
 
     // Client accepts everything.
     let events = machine.receive(&[
-        IAC, WILL, OPT_NAWS,
-        IAC, WILL, OPT_TTYPE,
-        IAC, DO, OPT_EOR,
-        IAC, DO, OPT_CHARSET,
+        IAC,
+        WILL,
+        OPT_NAWS,
+        IAC,
+        WILL,
+        OPT_TTYPE,
+        IAC,
+        DO,
+        OPT_EOR,
+        IAC,
+        DO,
+        OPT_CHARSET,
     ]);
     assert!(events.is_empty(), "pure negotiation produces no events");
 
@@ -61,14 +77,20 @@ fn modern_client_full_session() {
         events,
         vec![
             TelnetEvent::TerminalType("MUDLET".to_owned()),
-            TelnetEvent::WindowSize { width: 120, height: 40 },
+            TelnetEvent::WindowSize {
+                width: 120,
+                height: 40
+            },
         ]
     );
 
     // A command flows through; output is UTF-8; prompts are EOR-framed.
     let events = machine.receive(b"say caf\xC3\xA9\r\n");
     assert_eq!(events, vec![TelnetEvent::Line("say café".to_owned())]);
-    assert_eq!(machine.encode_output("café\n"), "café\r\n".as_bytes().to_vec());
+    assert_eq!(
+        machine.encode_output("café\n"),
+        "café\r\n".as_bytes().to_vec()
+    );
     assert_eq!(machine.prompt_frame(), vec![IAC, EOR_CMD]);
 }
 
@@ -78,13 +100,24 @@ fn legacy_client_refuses_everything() {
     let _ = machine.take_output();
 
     let events = machine.receive(&[
-        IAC, WONT, OPT_NAWS,
-        IAC, WONT, OPT_TTYPE,
-        IAC, DONT, OPT_EOR,
-        IAC, DONT, OPT_CHARSET,
+        IAC,
+        WONT,
+        OPT_NAWS,
+        IAC,
+        WONT,
+        OPT_TTYPE,
+        IAC,
+        DONT,
+        OPT_EOR,
+        IAC,
+        DONT,
+        OPT_CHARSET,
     ]);
     assert!(events.is_empty());
-    assert!(machine.take_output().is_empty(), "refusals of pending offers need no replies");
+    assert!(
+        machine.take_output().is_empty(),
+        "refusals of pending offers need no replies"
+    );
 
     // Commands still work; output is transliterated; prompts are GA-framed.
     let events = machine.receive(b"look\r\n");

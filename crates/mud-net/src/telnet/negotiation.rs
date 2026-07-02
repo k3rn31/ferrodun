@@ -51,10 +51,18 @@ impl Negotiator {
     /// DO NAWS, DO TTYPE, WILL EOR, WILL CHARSET.
     pub(crate) fn new(out: &mut Vec<u8>) -> Self {
         out.extend_from_slice(&[
-            IAC, DO, OPT_NAWS,
-            IAC, DO, OPT_TTYPE,
-            IAC, WILL, OPT_EOR,
-            IAC, WILL, OPT_CHARSET,
+            IAC,
+            DO,
+            OPT_NAWS,
+            IAC,
+            DO,
+            OPT_TTYPE,
+            IAC,
+            WILL,
+            OPT_EOR,
+            IAC,
+            WILL,
+            OPT_CHARSET,
         ]);
         Self {
             him_naws: QState::WantYes,
@@ -174,10 +182,18 @@ mod tests {
         assert_eq!(
             out,
             vec![
-                IAC, DO, OPT_NAWS,
-                IAC, DO, OPT_TTYPE,
-                IAC, WILL, OPT_EOR,
-                IAC, WILL, OPT_CHARSET,
+                IAC,
+                DO,
+                OPT_NAWS,
+                IAC,
+                DO,
+                OPT_TTYPE,
+                IAC,
+                WILL,
+                OPT_EOR,
+                IAC,
+                WILL,
+                OPT_CHARSET,
             ]
         );
     }
@@ -186,7 +202,10 @@ mod tests {
     fn will_naws_after_our_do_needs_no_reply() {
         let (mut negotiator, mut out) = opened();
         negotiator.on_negotiate(Verb::Will, OPT_NAWS, &mut out);
-        assert!(out.is_empty(), "WILL answering our DO must not be re-acknowledged");
+        assert!(
+            out.is_empty(),
+            "WILL answering our DO must not be re-acknowledged"
+        );
     }
 
     #[test]
@@ -194,7 +213,10 @@ mod tests {
         let (mut negotiator, mut out) = opened();
         negotiator.on_negotiate(Verb::Will, OPT_NAWS, &mut out);
         negotiator.on_negotiate(Verb::Will, OPT_NAWS, &mut out);
-        assert!(out.is_empty(), "already-enabled option must be ignored (RFC 1143)");
+        assert!(
+            out.is_empty(),
+            "already-enabled option must be ignored (RFC 1143)"
+        );
     }
 
     #[test]
@@ -210,7 +232,10 @@ mod tests {
         assert!(!negotiator.eor_enabled());
         negotiator.on_negotiate(Verb::Do, OPT_EOR, &mut out);
         assert!(negotiator.eor_enabled());
-        assert!(out.is_empty(), "DO answering our WILL must not be re-acknowledged");
+        assert!(
+            out.is_empty(),
+            "DO answering our WILL must not be re-acknowledged"
+        );
     }
 
     #[test]
@@ -271,6 +296,10 @@ mod tests {
         negotiator.on_negotiate(Verb::Wont, OPT_NAWS, &mut out);
         assert!(out.is_empty(), "WONT answering a pending DO needs no reply");
         negotiator.on_negotiate(Verb::Will, OPT_NAWS, &mut out);
-        assert_eq!(out, vec![IAC, DO, OPT_NAWS], "late client-initiated WILL is accepted");
+        assert_eq!(
+            out,
+            vec![IAC, DO, OPT_NAWS],
+            "late client-initiated WILL is accepted"
+        );
     }
 }

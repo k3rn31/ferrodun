@@ -18,7 +18,11 @@ pub(crate) struct LineDecoder {
 
 impl LineDecoder {
     pub(crate) fn new() -> Self {
-        Self { buf: Vec::new(), overflowed: false, swallow_lf_or_nul: false }
+        Self {
+            buf: Vec::new(),
+            overflowed: false,
+            swallow_lf_or_nul: false,
+        }
     }
 
     /// Feeds one data byte; returns a completed line when a terminator arrives.
@@ -74,7 +78,10 @@ mod tests {
     #[test]
     fn cr_nul_terminates_a_line() {
         let mut decoder = LineDecoder::new();
-        assert_eq!(push_all(&mut decoder, b"north\r\0"), vec!["north".to_owned()]);
+        assert_eq!(
+            push_all(&mut decoder, b"north\r\0"),
+            vec!["north".to_owned()]
+        );
     }
 
     #[test]

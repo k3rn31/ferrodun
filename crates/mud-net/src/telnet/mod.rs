@@ -43,7 +43,12 @@ impl TelnetMachine {
     pub fn new() -> Self {
         let mut output = Vec::new();
         let negotiator = Negotiator::new(&mut output);
-        Self { parser: IacParser::new(), negotiator, line: LineDecoder::new(), output }
+        Self {
+            parser: IacParser::new(),
+            negotiator,
+            line: LineDecoder::new(),
+            output,
+        }
     }
 
     /// Consumes raw bytes from the socket, returning completed events.
@@ -87,9 +92,12 @@ impl TelnetMachine {
             // deunicode maps control bytes to "" once it hits its
             // transliteration path, so '\n' must be shielded from it by
             // transliterating line-by-line rather than the whole string.
-            CharsetMode::Ascii => {
-                std::borrow::Cow::Owned(text.split('\n').map(deunicode::deunicode).collect::<Vec<_>>().join("\n"))
-            }
+            CharsetMode::Ascii => std::borrow::Cow::Owned(
+                text.split('\n')
+                    .map(deunicode::deunicode)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
         };
         let mut out = Vec::with_capacity(encoded.len() + 8);
         for &byte in encoded.as_bytes() {
@@ -128,7 +136,9 @@ impl TelnetMachine {
             }
             OPT_TTYPE => {
                 if let Some((&TTYPE_IS, name)) = payload.split_first() {
-                    events.push(TelnetEvent::TerminalType(String::from_utf8_lossy(name).into_owned()));
+                    events.push(TelnetEvent::TerminalType(
+                        String::from_utf8_lossy(name).into_owned(),
+                    ));
                 }
             }
             OPT_CHARSET => self.negotiator.on_charset_subnegotiation(payload),
@@ -145,15 +155,18 @@ impl Default for TelnetMachine {
 
 #[cfg(test)]
 mod tests {
-    use super::parser::{DO, IAC, SB, SE, WILL};
     use super::negotiation::{OPT_NAWS, OPT_TTYPE, TTYPE_IS};
+    use super::parser::{DO, IAC, SB, SE, WILL};
     use super::*;
 
     #[test]
     fn new_machine_queues_opening_offers() {
         let mut machine = TelnetMachine::new();
         let out = machine.take_output();
-        assert!(!out.is_empty(), "opening offers must be queued at construction");
+        assert!(
+            !out.is_empty(),
+            "opening offers must be queued at construction"
+        );
         assert_eq!(out.first(), Some(&IAC));
     }
 
@@ -161,7 +174,10 @@ mod tests {
     fn take_output_drains() {
         let mut machine = TelnetMachine::new();
         let _ = machine.take_output();
-        assert!(machine.take_output().is_empty(), "second take_output must be empty");
+        assert!(
+            machine.take_output().is_empty(),
+            "second take_output must be empty"
+        );
     }
 
     #[test]
@@ -176,14 +192,23 @@ mod tests {
         let mut machine = TelnetMachine::new();
         let _ = machine.receive(&[IAC, WILL, OPT_NAWS]);
         let events = machine.receive(&[IAC, SB, OPT_NAWS, 0, 80, 0, 24, IAC, SE]);
-        assert_eq!(events, vec![TelnetEvent::WindowSize { width: 80, height: 24 }]);
+        assert_eq!(
+            events,
+            vec![TelnetEvent::WindowSize {
+                width: 80,
+                height: 24
+            }]
+        );
     }
 
     #[test]
     fn malformed_naws_payload_is_ignored() {
         let mut machine = TelnetMachine::new();
         let events = machine.receive(&[IAC, SB, OPT_NAWS, 0, 80, IAC, SE]);
-        assert!(events.is_empty(), "a 2-byte NAWS payload must not produce an event");
+        assert!(
+            events.is_empty(),
+            "a 2-byte NAWS payload must not produce an event"
+        );
     }
 
     #[test]
@@ -223,8 +248,8 @@ mod tests {
         assert_eq!(machine.take_output(), vec![IAC, 252, 86]); // IAC WONT 86
     }
 
-    use super::parser::{DONT, EOR_CMD, GA};
     use super::negotiation::{CHARSET_ACCEPTED, OPT_CHARSET, OPT_EOR};
+    use super::parser::{DONT, EOR_CMD, GA};
 
     fn utf8_machine() -> TelnetMachine {
         let mut machine = TelnetMachine::new();
@@ -239,7 +264,10 @@ mod tests {
     #[test]
     fn utf8_client_gets_utf8_passthrough() {
         let machine = utf8_machine();
-        assert_eq!(machine.encode_output("café\n"), "café\r\n".as_bytes().to_vec());
+        assert_eq!(
+            machine.encode_output("café\n"),
+            "café\r\n".as_bytes().to_vec()
+        );
     }
 
     #[test]
