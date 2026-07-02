@@ -1,0 +1,19 @@
+# GitGuardian secret-scanning configuration.
+#
+# The only "secrets" in this repository are throwaway test fixtures — the
+# canonical example username `alice` with the joke password `hunter2` (and the
+# short `pw` / `correct-horse` variants). They drive the session-FSM unit tests
+# and an ephemeral, per-test tempfile SQLite database; they authenticate against
+# no real service, so there is nothing to revoke or rotate. One of the tests
+# that uses them exists precisely to assert a password is *redacted* from
+# `Debug` output. These matches are ignored below so the scanner stays useful
+# for real leaks.
+version: 2
+
+secret:
+  ignored-paths:
+    # Integration test: seeds an ephemeral DB with fixture credentials.
+    - "crates/mud-engine/tests/session_login.rs"
+  ignored-matches:
+    - name: "Test fixture password 'hunter2' (session FSM + account unit tests)"
+      match: hunter2

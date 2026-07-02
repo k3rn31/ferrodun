@@ -1165,3 +1165,37 @@ truth when this log drifts.
   the `KeyOutOfRange`/`keys.rs`/name-const doc comments. Skipped (YAGNI / spec
   defers): typed `create_puppet` account-existence error (FK can't fire in M1 —
   no account deletion), the `UnknownUser` dummy-hash, and a name-newtype macro.
+
+## 2026-07-01 — M1-19: session FSM (login states)
+
+- **Spec:** §3.19.1, §3.19.3, §2.7 step 1/3, §3.15.1 — pre-login banner →
+  register/login → puppet select → in-world; wire accounts into the real
+  `SessionResolver`.
+- **Done:** New pure, sans-IO `mud-session` crate: a login state machine
+  (`SessionFsm`) mapping `(state, line)` → typed `SessionMessage`s + `Effect`s,
+  with `EffectResult` fed back; passwords held only in `secrecy::SecretString`
+  (zeroized/redacted, exposed only at the argon2 boundary). Flows: pre-login
+  `help`/`?`/`who`(stub)/`quit`, `login`/`register` (password + confirm,
+  non-leaky failure), puppet select (`play <name|N>`, `new <name>` →
+  create+enter). `mud-i18n`: `session.*` message templates. `mud-engine` gained
+  a `session` module: an injected async `LoginBackend` port (keeps `mud-db` out
+  of `mud-engine`), a `SessionService` driver + session registry, message
+  rendering via `t!`, and the real `RegistryResolver` (replaces the pipeline's
+  `FakeResolver` for in-world sessions; §2.7 step 3). Integration test drives
+  login of an existing puppet through a real `mud-db`-backed backend and asserts
+  the resolver resolves it at its persisted room.
+- **Decisions:** FSM vocabulary enums (`Effect`/`EffectResult`/`SessionMessage`/
+  `Terminal`) and `BackendError` are **not** `#[non_exhaustive]` — internal,
+  version-locked, matched exhaustively by the driver (a future variant should
+  fail compilation, not hit a `_` arm). A puppet created **mid-session** is not
+  hydrated into the running `World`, so create→enter fails against a real
+  backend; live hydration is **deferred to M1-22** (see PLAN §M1-22) and the
+  integration test is scoped to existing-puppet login. `PLAN.md` §M1-19 updated
+  (crate placement: `mud-session` + World-side driver, not `mud-net`).
+- **Verify:** `cargo test --workspace` green (mud-session transition tests incl.
+  password Debug-redaction; mud-engine driver/render/resolver + integration
+  `session_login.rs`); `clippy --workspace --all-targets`, `fmt --check` clean;
+  `mkdocs build --strict` clean. New player-facing onboarding docs page.
+- **Next:** M1-19a — real `who`, `say`/broadcast fan-out, clean `quit` through
+  the gateway. **Known gaps:** no linkdead/ping/idle (M7); no echo masking on
+  the password prompt (M1-20); create→enter live hydration (M1-22).

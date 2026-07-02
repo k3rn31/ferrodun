@@ -22,6 +22,7 @@ mod layers;
 mod objects;
 mod pipeline;
 mod places;
+pub mod session;
 mod text;
 
 pub use builtins::register;
@@ -32,4 +33,7 @@ pub use layers::LayerCommands;
 pub use objects::{Resolution, resolve_among};
 pub use pipeline::{Pipeline, PipelineError};
 pub use places::Places;
+pub use session::{
+    BackendError, InWorldBinding, LoginBackend, RegistryResolver, Routing, SessionService,
+};
 pub use text::{ContentTooLong, MAX_CONTENT_BYTES, sanitize};

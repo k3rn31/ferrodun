@@ -543,11 +543,17 @@ spine.
   - *Spec:* §3.15.1. *Verify:* register → login → wrong-password reject →
     restart → login-again tests. *Out of scope:* recovery flow, invite
     tokens, moderation states machinery (M7).
-- **M1-19 — Session FSM (login states).** In `mud-net`: pre-login banner →
-  register/login → puppet select → in-world. Pre-login `help` listing the
-  small command set (§3.19.1, §3.19.3). Linkdead/idle handling minimal
-  (full linkdead reattach is M7-grade; M1 just needs clean connect/quit).
-  - *Spec:* §3.19.1, §3.19.3, §2.7 step 1. *Verify:* FSM transition tests.
+- **M1-19 — Session FSM (login states).** A pure, sans-IO `mud-session` crate
+  (the login state machine) driven World-side by `mud-engine`: pre-login banner
+  → register/login → puppet select → in-world. Placed here, not in `mud-net`,
+  because accounts, the session→puppet map, and all input lines are World-side;
+  the driver reaches persistence through an injected `LoginBackend` port so
+  `mud-engine` stays free of `mud-db`. Pre-login `help` listing the small
+  command set (§3.19.1, §3.19.3). Linkdead/idle handling minimal (full linkdead
+  reattach is M7-grade; M1 just needs clean connect/quit). Entering a
+  **newly-created** puppet needs live-world hydration, deferred to M1-22.
+  - *Spec:* §3.19.1, §3.19.3, §2.7 step 1/3. *Verify:* FSM transition tests +
+    existing-puppet login integration test.
 - **M1-19a — Session-dependent built-in commands.** The slice of M1-17
   deferred until the session→entity map exists: `who` (list connected players),
   `quit` (clean session close through the FSM + gateway), and cross-player
@@ -619,6 +625,19 @@ spine.
     trait-for-one-impl under current YAGNI rules — revisit when a second sink
     exists. If §2.5.3.3's "same transaction" framing is what forces apply logic
     into `mud-db`, refine the spec wording rather than working around it.
+  - **Newly-created-puppet hydration into the live world (from M1-19).**
+    `PersistentWorld::load` (§2.5.1.5) hydrates puppets into the arena only at
+    boot, so a puppet created **mid-session** by the M1-19 session FSM's
+    `create_puppet` effect is persisted in the DB but **not resident** in the
+    running `World` — its `Enter` effect's `resolve_puppet(EntityKey)` finds no
+    live `EntityId`. This PR owns the live `World`, so it wires the missing step:
+    after `create_puppet` writes the DB rows, hydrate that single `EntityKey`
+    into the arena (mint an `EntityId`, apply its start-room location) so the
+    subsequent `Enter` binds a resident puppet — the brand-new-player
+    register → create → play path (§3.19). M1-19 unit-tests the create → enter
+    FSM path with a fake backend; this is where it works end-to-end against a
+    real `PersistentWorld`. Likely shape: a `PersistentWorld::hydrate(key)`
+    method reusing `load`'s per-entity logic, called by the `LoginBackend` impl.
 - **M1-23 — M1 acceptance integration test.** Drive two scripted telnet
   sessions through login, movement, mutual visibility, and chat; assert ANSI
   + NAWS; kill and restart the process and assert credentials, location, and

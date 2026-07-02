@@ -4,10 +4,13 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+mud-account = { version = "0.1.0", path = "../mud-account" }
 mud-cmd = { version = "0.1.0", path = "../mud-cmd" }
 mud-core = { version = "0.1.0", path = "../mud-core" }
 mud-i18n = { version = "0.1.0", path = "../mud-i18n" }
 mud-schema = { version = "0.1.0", path = "../mud-schema" }
+mud-session = { version = "0.1.0", path = "../mud-session" }
+secrecy = "0.10.3"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 unicode-normalization = "0.1.25"
@@ -16,4 +19,11 @@ unicode-normalization = "0.1.25"
 workspace = true
 
 [dev-dependencies]
+mud-account = { path = "../mud-account" }
+mud-core = { path = "../mud-core" }
+mud-db = { path = "../mud-db" }
+mud-schema = { path = "../mud-schema" }
+secrecy = "0.10.3"
+tempfile = "3.27.0"
+tokio = { version = "1.52.3", features = ["macros", "rt"] }
 tracing-test = "0.2.6"
