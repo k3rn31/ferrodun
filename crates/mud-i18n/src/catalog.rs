@@ -65,12 +65,18 @@ fn builtin_en() -> Catalog {
         ("look.void", "You are nowhere in particular."),
         // movement (§3.2.2)
         ("move.no-exit", "You can't go that way."),
+        ("move.depart", "{ $name } leaves { $direction }."),
+        ("move.arrive-from", "{ $name } arrives from { $direction }."),
+        ("move.arrive", "{ $name } arrives."),
         // say (§3.6.3)
         ("say.speech", "You say, \"{ $message }\""),
+        ("say.broadcast", "{ $name } says, \"{ $message }\""),
         ("say.nothing", "Say what?"),
         // inventory
         ("inventory.header", "You are carrying:"),
         ("inventory.empty", "You are carrying nothing."),
+        // who (§3.19)
+        ("who.online", "Players online: { $names }"),
         // get / drop and shared object-resolution outcomes (§2.7 step 5)
         ("get.taken", "You take { $item }."),
         ("drop.dropped", "You drop { $item }."),
@@ -116,6 +122,8 @@ fn builtin_en() -> Catalog {
             "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
         ),
         ("session.puppet-created", "Created { $name }."),
+        // quit (§3.19)
+        ("quit.goodbye", "Goodbye!"),
     ];
 
     let mut catalog = Catalog::new();

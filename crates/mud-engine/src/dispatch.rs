@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use mud_account::PuppetName;
 use mud_cmd::{CommandName, Switch};
 use mud_core::{Effect, EntityId, Lock, PlaceId, StyledText, World};
 use mud_i18n::Locale;
@@ -19,6 +20,7 @@ use mud_schema::SessionId;
 use crate::CommandId;
 use crate::caller::CallerContext;
 use crate::places::Places;
+use crate::roster::Roster;
 
 /// Everything a command handler may read about one run (§2.7 step 7).
 ///
@@ -34,6 +36,7 @@ pub struct CommandContext<'a> {
     args: &'a str,
     world: &'a World,
     places: &'a dyn Places,
+    roster: &'a dyn Roster,
 }
 
 impl<'a> CommandContext<'a> {
@@ -49,6 +52,7 @@ impl<'a> CommandContext<'a> {
         args: &'a str,
         world: &'a World,
         places: &'a dyn Places,
+        roster: &'a dyn Roster,
     ) -> Self {
         Self {
             command_id,
@@ -57,6 +61,7 @@ impl<'a> CommandContext<'a> {
             args,
             world,
             places,
+            roster,
         }
     }
 
@@ -106,6 +111,61 @@ impl<'a> CommandContext<'a> {
     pub fn places(&self) -> &dyn Places {
         self.places
     }
+
+    /// The actor's display name, for naming them to other players.
+    pub fn caller_name(&self) -> &PuppetName {
+        self.caller.caller_name()
+    }
+
+    /// The session roster, for commands that list or address other sessions
+    /// (`who`, broadcast delivery is the pipeline's job).
+    pub fn roster(&self) -> &dyn Roster {
+        self.roster
+    }
+}
+
+/// A styled message the pipeline delivers to an audience of *other* co-located
+/// sessions (§3.6.3): everyone in `place` except `except` (the actor, who gets
+/// the caller reply instead). Resolved against the pre-effect world, so a
+/// departure still sees the mover in the room they are leaving.
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct Broadcast {
+    place: PlaceId,
+    except: EntityId,
+    message: StyledText,
+}
+
+impl Broadcast {
+    /// A broadcast to the occupants of `place` other than `except`.
+    pub fn to_place(place: PlaceId, except: EntityId, message: StyledText) -> Self {
+        Self {
+            place,
+            except,
+            message,
+        }
+    }
+
+    pub(crate) fn place(&self) -> PlaceId {
+        self.place
+    }
+
+    pub(crate) fn except(&self) -> EntityId {
+        self.except
+    }
+
+    pub(crate) fn message(&self) -> &StyledText {
+        &self.message
+    }
+}
+
+/// Whether a command leaves the caller connected or asks the driver to close the
+/// session (`quit`). The socket teardown is the driver's job (M1-21/22); the
+/// pipeline only reports the intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionDisposition {
+    Remain,
+    Close,
 }
 
 /// What a command run produces (§2.7 step 7–8).
@@ -118,14 +178,14 @@ impl<'a> CommandContext<'a> {
 /// (§2.7 step 7). Effects apply in order, after the handler returns.
 ///
 /// Broadcasting a styled message to *other* co-located sessions (`say`,
-/// arrival/departure) is the next slot on this type, but is deferred until the
-/// session FSM (M1-19) supplies the entity→session map needed to turn a
-/// `PlaceId` audience into `SessionOutput`s; adding the field before anything can
-/// deliver it would be dead weight.
+/// arrival/departure) fans out via `broadcasts` (§3.6.3), resolved by the
+/// pipeline against the pre-effect world.
 #[must_use]
 pub struct CommandReply {
     output: StyledText,
     effects: Vec<Effect>,
+    broadcasts: Vec<Broadcast>,
+    disposition: SessionDisposition,
 }
 
 impl CommandReply {
@@ -134,6 +194,8 @@ impl CommandReply {
         Self {
             output,
             effects: Vec::new(),
+            broadcasts: Vec::new(),
+            disposition: SessionDisposition::Remain,
         }
     }
 
@@ -141,6 +203,19 @@ impl CommandReply {
     /// handler returns (§2.7 step 7). Effects apply in the order added.
     pub fn with_effect(mut self, effect: Effect) -> Self {
         self.effects.push(effect);
+        self
+    }
+
+    /// Adds a message delivered to other co-located sessions (§3.6.3). Broadcasts
+    /// are resolved before this reply's effects apply.
+    pub fn with_broadcast(mut self, broadcast: Broadcast) -> Self {
+        self.broadcasts.push(broadcast);
+        self
+    }
+
+    /// Marks this reply as ending the session (`quit`).
+    pub fn closing(mut self) -> Self {
+        self.disposition = SessionDisposition::Close;
         self
     }
 
@@ -152,6 +227,16 @@ impl CommandReply {
     /// The world effects to apply for this run, in application order.
     pub(crate) fn effects(&self) -> &[Effect] {
         &self.effects
+    }
+
+    /// The broadcasts to fan out to other sessions, in order.
+    pub(crate) fn broadcasts(&self) -> &[Broadcast] {
+        &self.broadcasts
+    }
+
+    /// Whether this reply asks the driver to close the caller's session.
+    pub(crate) fn disposition(&self) -> SessionDisposition {
+        self.disposition
     }
 }
 

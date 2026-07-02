@@ -64,6 +64,7 @@ pub enum Terminal {
     Bound {
         account: AccountId,
         puppet: EntityKey,
+        name: PuppetName,
     },
 }
 
@@ -102,6 +103,7 @@ enum State {
         account: Account,
         puppets: Vec<Puppet>,
         chosen: EntityKey,
+        chosen_name: PuppetName,
     },
 }
 
@@ -244,7 +246,8 @@ impl SessionFsm {
             return Transition::message(SessionMessage::UnknownCommand);
         };
         let key = chosen.key;
-        self.enter(key)
+        let name = chosen.name.clone();
+        self.enter(key, name)
     }
 
     fn create_puppet(&mut self, arg: &str) -> Transition {
@@ -275,7 +278,7 @@ impl SessionFsm {
     }
 
     /// Moves to `AwaitingEnter` for `chosen` and emits the `Enter` effect.
-    fn enter(&mut self, chosen: EntityKey) -> Transition {
+    fn enter(&mut self, chosen: EntityKey, chosen_name: PuppetName) -> Transition {
         let State::PuppetSelect { account, puppets } =
             std::mem::replace(&mut self.state, State::Anon)
         else {
@@ -287,6 +290,7 @@ impl SessionFsm {
             account,
             puppets,
             chosen,
+            chosen_name,
         };
         Transition {
             messages: Vec::new(),
@@ -326,7 +330,7 @@ impl SessionFsm {
                 let mut puppets = puppets;
                 puppets.push(created);
                 self.state = State::PuppetSelect { account, puppets };
-                let mut transition = self.enter(key);
+                let mut transition = self.enter(key, name.clone());
                 transition
                     .messages
                     .insert(0, SessionMessage::PuppetCreated(name));
@@ -338,7 +342,10 @@ impl SessionFsm {
             }
             (
                 State::AwaitingEnter {
-                    account, chosen, ..
+                    account,
+                    chosen,
+                    chosen_name,
+                    ..
                 },
                 EffectResult::Entered,
             ) => Transition {
@@ -347,6 +354,7 @@ impl SessionFsm {
                 terminal: Some(Terminal::Bound {
                     account: account.id,
                     puppet: chosen,
+                    name: chosen_name,
                 }),
             },
             (
@@ -690,7 +698,8 @@ mod tests {
             t.terminal,
             Some(Terminal::Bound {
                 account: account().id,
-                puppet: key(10)
+                puppet: key(10),
+                name: PuppetName::parse("arden").expect("name"),
             })
         );
     }

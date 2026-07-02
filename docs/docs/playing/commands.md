@@ -22,7 +22,8 @@ prompt and press enter. Commands match on a **prefix**, so `n` is enough for
 | `down` | `d` | Leave through the down exit. |
 
 Moving shows you the room you arrive in. If there is no exit that way, you are
-told so and stay put.
+told so and stay put. Other players in the room you leave see you depart, and
+those in the room you enter see you arrive.
 
 ## Talking
 
@@ -30,9 +31,16 @@ told so and stay put.
 |---|---|
 | `say <message>` | Speak aloud. |
 
-Your message is capped at 4 KiB. Terminal control codes and color markup you
-type are shown **literally** — you cannot inject styling or escape sequences
-into what others see.
+Everyone else in your room hears what you say. Your message is capped at 4 KiB.
+Terminal control codes and color markup you type are shown **literally** — you
+cannot inject styling or escape sequences into what others see.
+
+## Who's around and leaving
+
+| Command | What it does |
+|---|---|
+| `who` | List the players currently online. |
+| `quit` | Leave the game and disconnect. |
 
 ## Items
 

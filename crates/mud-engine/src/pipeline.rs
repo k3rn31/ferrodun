@@ -16,8 +16,9 @@ use mud_schema::{OutputText, SessionInput, SessionOutput};
 use crate::CommandId;
 use crate::caller::{CallerContext, SessionResolver};
 use crate::command_id::CommandIdGen;
-use crate::dispatch::{CommandContext, Dispatcher};
+use crate::dispatch::{CommandContext, Dispatcher, SessionDisposition};
 use crate::places::Places;
+use crate::roster::Roster;
 
 /// Runs player input through §2.7's command pipeline.
 ///
@@ -28,6 +29,25 @@ use crate::places::Places;
 pub struct Pipeline {
     dispatcher: Dispatcher,
     ids: CommandIdGen,
+}
+
+/// What one `dispatch` produced: the outputs to route (caller reply plus any
+/// broadcast fan-out, each addressed to its own session) and whether the caller's
+/// session should be closed.
+#[derive(Debug)]
+#[must_use]
+pub struct DispatchOutcome {
+    pub outputs: Vec<SessionOutput>,
+    pub disposition: SessionDisposition,
+}
+
+impl DispatchOutcome {
+    fn remain(outputs: Vec<SessionOutput>) -> Self {
+        Self {
+            outputs,
+            disposition: SessionDisposition::Remain,
+        }
+    }
 }
 
 impl Pipeline {
@@ -54,9 +74,9 @@ impl Pipeline {
         &mut self,
         world: &mut World,
         places: &dyn Places,
-        resolver: &impl SessionResolver,
+        resolver: &(impl SessionResolver + Roster),
         input: &SessionInput,
-    ) -> Result<Vec<SessionOutput>, PipelineError> {
+    ) -> Result<DispatchOutcome, PipelineError> {
         let command_id = self.ids.next()?;
         let session_id = input.session_id;
         let span = tracing::info_span!(
@@ -81,23 +101,26 @@ impl Pipeline {
         let table = resolved.layers.merge();
 
         // Step 5: parse the line against the merged table.
-        let outputs = match table.parse(input.line.as_str()) {
-            ParseOutcome::Empty => Vec::new(),
-            ParseOutcome::NotFound => message(session_id, t!(locale, "command.not-found")),
+        let outcome = match table.parse(input.line.as_str()) {
+            ParseOutcome::Empty => DispatchOutcome::remain(Vec::new()),
+            ParseOutcome::NotFound => {
+                DispatchOutcome::remain(message(session_id, t!(locale, "command.not-found")))
+            }
             ParseOutcome::Ambiguous(names) => {
                 let options = names
                     .iter()
                     .map(|name| name.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
-                message(
+                DispatchOutcome::remain(message(
                     session_id,
                     t!(locale, "command.ambiguous", options = options),
-                )
+                ))
             }
-            ParseOutcome::BadSwitch(error) => {
-                message(session_id, t!(locale, "command.bad-switch", reason = error))
-            }
+            ParseOutcome::BadSwitch(error) => DispatchOutcome::remain(message(
+                session_id,
+                t!(locale, "command.bad-switch", reason = error),
+            )),
             ParseOutcome::Matched {
                 command,
                 switches,
@@ -105,6 +128,7 @@ impl Pipeline {
             } => self.run_matched(
                 world,
                 places,
+                resolver,
                 command_id,
                 &caller,
                 Parsed {
@@ -115,19 +139,20 @@ impl Pipeline {
             ),
         };
 
-        Ok(outputs)
+        Ok(outcome)
     }
 
-    /// Steps 6–8 for a parsed command: lock-check, dispatch, apply effects,
-    /// render.
+    /// Steps 6–8 for a parsed command: lock-check, dispatch, fan out
+    /// broadcasts, apply effects, render.
     fn run_matched(
         &self,
         world: &mut World,
         places: &dyn Places,
+        roster: &dyn Roster,
         command_id: CommandId,
         caller: &CallerContext,
         parsed: Parsed<'_>,
-    ) -> Vec<SessionOutput> {
+    ) -> DispatchOutcome {
         let Parsed {
             command,
             switches,
@@ -141,7 +166,10 @@ impl Pipeline {
             // player error. Log it; tell the player generically without leaking
             // the unbound name.
             tracing::warn!(command = %command.name().as_str(), "matched command has no bound handler");
-            return message(session_id, t!(locale.clone(), "command.unbound"));
+            return DispatchOutcome::remain(message(
+                session_id,
+                t!(locale.clone(), "command.unbound"),
+            ));
         };
 
         // Step 6: lock-check the caller. An ungated command is always permitted.
@@ -149,7 +177,10 @@ impl Pipeline {
             && !lock.evaluate(caller.access())
         {
             tracing::warn!(command = %command.name().as_str(), "lock denied command");
-            return message(session_id, t!(locale.clone(), "command.denied"));
+            return DispatchOutcome::remain(message(
+                session_id,
+                t!(locale.clone(), "command.denied"),
+            ));
         }
 
         // Step 7: dispatch the handler over a read-only world, then apply the
@@ -157,9 +188,30 @@ impl Pipeline {
         // borrow in `ctx` ends before the mutation, so a handler cannot both read
         // and write the world in one run — mutation is data it requests.
         let reply = {
-            let ctx = CommandContext::new(command_id, caller, switches, args, &*world, places);
+            let ctx =
+                CommandContext::new(command_id, caller, switches, args, &*world, places, roster);
             binding.handler().run(&ctx)
         };
+
+        // Caller reply first, then fan out each broadcast to the other sessions
+        // in its audience — all resolved against the pre-effect world, before the
+        // reply's own effects apply.
+        let mut outputs = message(session_id, reply.output().to_plain_string());
+        for broadcast in reply.broadcasts() {
+            let rendered = broadcast.message().to_plain_string();
+            for occupant in world.occupants_of(broadcast.place()) {
+                if occupant == broadcast.except() {
+                    continue;
+                }
+                if let Some(recipient) = roster.session_of(occupant) {
+                    outputs.push(SessionOutput {
+                        session_id: recipient,
+                        text: OutputText::new(rendered.clone()),
+                    });
+                }
+            }
+        }
+
         for &effect in reply.effects() {
             if let Some(TickEvent::Rejected { effect, error }) = world.apply_effect(effect) {
                 tracing::warn!(
@@ -171,9 +223,10 @@ impl Pipeline {
             }
         }
 
-        // Step 8: render per session. The styled-text-over-IPC swap and ANSI
-        // rendering land in M1-21/22; for now flatten to plain text.
-        message(session_id, reply.output().to_plain_string())
+        DispatchOutcome {
+            outputs,
+            disposition: reply.disposition(),
+        }
     }
 }
 
@@ -214,6 +267,7 @@ mod tests {
 
     use std::num::NonZeroU64;
 
+    use mud_account::PuppetName;
     use mud_core::{EntityId, LockContext, PlaceId, TenantTag, World};
     use mud_i18n::Locale;
     use mud_schema::InputLine;
@@ -238,6 +292,7 @@ mod tests {
                     session_id,
                     self.caller,
                     place,
+                    PuppetName::parse("hero").expect("name"),
                     Locale::EN,
                     LockContext::new(),
                 ),
@@ -245,6 +300,17 @@ mod tests {
                 // traced — which is what this test observes.
                 layers: LayerCommands::default(),
             })
+        }
+    }
+
+    impl crate::roster::Roster for FakeResolver {
+        fn session_of(&self, entity: EntityId) -> Option<mud_schema::SessionId> {
+            (entity == self.caller)
+                .then(|| mud_schema::SessionId::new(NonZeroU64::new(1).expect("non-zero")))
+        }
+
+        fn connected(&self) -> Vec<crate::roster::Presence> {
+            Vec::new()
         }
     }
 
@@ -273,15 +339,122 @@ mod tests {
         let resolver = FakeResolver { caller };
         let mut pipeline = Pipeline::new(Dispatcher::new());
 
-        pipeline
+        let _ = pipeline
             .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("first dispatch");
-        pipeline
+        let _ = pipeline
             .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("second dispatch");
 
         // Each run logs under its own command span; the ids increase per run.
         assert!(logs_contain("command_id=1"));
         assert!(logs_contain("command_id=2"));
+    }
+
+    struct Announcing;
+
+    impl crate::dispatch::CommandHandler for Announcing {
+        fn run(&self, ctx: &CommandContext<'_>) -> crate::dispatch::CommandReply {
+            crate::dispatch::CommandReply::to_caller(mud_core::StyledText::new().plain("you shout"))
+                .with_broadcast(crate::dispatch::Broadcast::to_place(
+                    ctx.location(),
+                    ctx.caller(),
+                    mud_core::StyledText::new().plain("someone shouts"),
+                ))
+        }
+    }
+
+    struct TwoSessionResolver {
+        speaker_session: mud_schema::SessionId,
+        speaker: EntityId,
+        listener_session: mud_schema::SessionId,
+        listener: EntityId,
+        place: PlaceId,
+    }
+
+    impl SessionResolver for TwoSessionResolver {
+        fn resolve(
+            &self,
+            session: mud_schema::SessionId,
+            _world: &World,
+        ) -> Option<ResolvedSession> {
+            (session == self.speaker_session).then(|| ResolvedSession {
+                caller: CallerContext::new(
+                    session,
+                    self.speaker,
+                    self.place,
+                    mud_account::PuppetName::parse("arden").expect("name"),
+                    Locale::EN,
+                    LockContext::new(),
+                ),
+                layers: LayerCommands {
+                    builtins: vec![mud_cmd::Command::new(
+                        mud_cmd::CommandName::parse("shout").expect("name"),
+                    )],
+                    ..LayerCommands::default()
+                },
+            })
+        }
+    }
+
+    impl crate::roster::Roster for TwoSessionResolver {
+        fn session_of(&self, entity: EntityId) -> Option<mud_schema::SessionId> {
+            if entity == self.speaker {
+                Some(self.speaker_session)
+            } else if entity == self.listener {
+                Some(self.listener_session)
+            } else {
+                None
+            }
+        }
+        fn connected(&self) -> Vec<crate::roster::Presence> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn a_broadcast_reaches_other_sessions_and_excludes_the_speaker() {
+        let mut world = World::new(TenantTag::new(1).expect("tenant in range"));
+        let speaker = world.create().expect("speaker");
+        let listener = world.create().expect("listener");
+        let place = PlaceId::new(NonZeroU64::new(10).expect("non-zero"));
+        world.move_to(speaker, place).expect("seat speaker");
+        world.move_to(listener, place).expect("seat listener");
+
+        let resolver = TwoSessionResolver {
+            speaker_session: mud_schema::SessionId::new(NonZeroU64::new(1).expect("nz")),
+            speaker,
+            listener_session: mud_schema::SessionId::new(NonZeroU64::new(2).expect("nz")),
+            listener,
+            place,
+        };
+        let mut dispatcher = Dispatcher::new();
+        dispatcher.bind(
+            mud_cmd::CommandName::parse("shout").expect("name"),
+            crate::dispatch::CommandBinding::new(std::sync::Arc::new(Announcing)),
+        );
+        let mut pipeline = Pipeline::new(dispatcher);
+
+        let outcome = pipeline
+            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "shout"))
+            .expect("dispatch");
+
+        // The speaker hears the echo; the listener hears the broadcast; the
+        // speaker is not in the broadcast audience.
+        assert!(outcome.outputs.iter().any(|o| o.session_id
+            == mud_schema::SessionId::new(NonZeroU64::new(1).expect("nz"))
+            && o.text.as_str() == "you shout"));
+        assert!(outcome.outputs.iter().any(|o| o.session_id
+            == mud_schema::SessionId::new(NonZeroU64::new(2).expect("nz"))
+            && o.text.as_str() == "someone shouts"));
+        assert_eq!(
+            outcome
+                .outputs
+                .iter()
+                .filter(|o| o.text.as_str() == "someone shouts")
+                .count(),
+            1,
+            "the speaker must not hear their own broadcast"
+        );
     }
 }

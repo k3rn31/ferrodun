@@ -17,7 +17,9 @@ use mud_cmd::{Command, CommandName};
 use mud_core::{Direction, Effect, EntityId, Place, PlaceId, RoleName, Span, StyledText, World};
 use mud_i18n::{Locale, t};
 
-use crate::dispatch::{CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher};
+use crate::dispatch::{
+    Broadcast, CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher,
+};
 use crate::objects::{Resolution, resolve_among};
 use crate::text::sanitize;
 
@@ -63,6 +65,7 @@ fn table() -> Vec<(
         ("look", &["l"], Arc::new(Look)),
         ("inventory", &["i", "inv"], Arc::new(ShowInventory)),
         ("say", &[], Arc::new(Say)),
+        ("who", &[], Arc::new(Who)),
         ("get", &["take"], Arc::new(Get)),
         ("drop", &[], Arc::new(Drop)),
         ("north", &["n"], Arc::new(Move(Direction::North))),
@@ -71,6 +74,7 @@ fn table() -> Vec<(
         ("west", &["w"], Arc::new(Move(Direction::West))),
         ("up", &["u"], Arc::new(Move(Direction::Up))),
         ("down", &["d"], Arc::new(Move(Direction::Down))),
+        ("quit", &[], Arc::new(Quit)),
     ]
 }
 
@@ -119,15 +123,40 @@ impl CommandHandler for Move {
         // Show the destination room as the caller arrives; the MoveTo effect is
         // applied by the pipeline after this handler returns.
         let arrival = render_room(place, ctx.world(), ctx.caller(), &locale);
-        CommandReply::to_caller(arrival).with_effect(Effect::MoveTo {
-            entity: ctx.caller(),
-            place: to,
-        })
+        let name = ctx.caller_name().as_str().to_owned();
+        // Both broadcasts are resolved against the pre-effect world: the room
+        // left still has the caller present, and the destination room doesn't
+        // yet — so the audiences match the departure/arrival semantics exactly.
+        let depart = StyledText::new().role(
+            t!(
+                locale,
+                "move.depart",
+                name = name.clone(),
+                direction = direction_name(self.0)
+            ),
+            RoleName::SYSTEM,
+        );
+        let arrive = StyledText::new().role(
+            t!(
+                locale,
+                "move.arrive-from",
+                name = name,
+                direction = direction_name(self.0.opposite())
+            ),
+            RoleName::SYSTEM,
+        );
+        CommandReply::to_caller(arrival)
+            .with_broadcast(Broadcast::to_place(ctx.location(), ctx.caller(), depart))
+            .with_broadcast(Broadcast::to_place(to, ctx.caller(), arrive))
+            .with_effect(Effect::MoveTo {
+                entity: ctx.caller(),
+                place: to,
+            })
     }
 }
 
-/// `say`: speak to the room (§3.6.3). Caller echo only in M1; the room broadcast
-/// lands with the session→entity map (M1-19).
+/// `say`: speak to the room, echoing to the caller and broadcasting to every
+/// other co-located session (§3.6.3, M1-19a).
 struct Say;
 
 impl CommandHandler for Say {
@@ -140,11 +169,53 @@ impl CommandHandler for Say {
         if message.trim().is_empty() {
             return CommandReply::to_caller(system(t!(locale, "say.nothing")));
         }
-        // The whole line carries the `say` role; the sanitized body is plain text
-        // inside it, so any markup the player typed renders literally (§3.20.7).
+        let name = ctx.caller_name().as_str().to_owned();
+        // The caller hears "You say, …"; everyone else in the room hears
+        // "<name> says, …". Sanitized player text is plain, so any markup renders
+        // literally (§3.20.7).
+        let heard = StyledText::new().role(
+            t!(
+                locale,
+                "say.broadcast",
+                name = name,
+                message = message.clone()
+            ),
+            RoleName::SAY,
+        );
         CommandReply::to_caller(
             StyledText::new().role(t!(locale, "say.speech", message = message), RoleName::SAY),
         )
+        .with_broadcast(Broadcast::to_place(ctx.location(), ctx.caller(), heard))
+    }
+}
+
+/// `who`: list the players currently connected and in-world (§3.19).
+struct Who;
+
+impl CommandHandler for Who {
+    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
+        let locale = ctx.locale().clone();
+        // Sort by name so the listing is stable regardless of registry iteration
+        // order (the roster is backed by a HashMap).
+        let mut names: Vec<String> = ctx
+            .roster()
+            .connected()
+            .into_iter()
+            .map(|presence| presence.name.as_str().to_owned())
+            .collect();
+        names.sort();
+        CommandReply::to_caller(system(t!(locale, "who.online", names = names.join(", "))))
+    }
+}
+
+/// `quit`: leave the game. Signals the driver to close the session (§3.19); the
+/// socket teardown is the gateway's job (M1-21/22).
+struct Quit;
+
+impl CommandHandler for Quit {
+    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
+        let locale = ctx.locale().clone();
+        CommandReply::to_caller(system(t!(locale, "quit.goodbye"))).closing()
     }
 }
 
