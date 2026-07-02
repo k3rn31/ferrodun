@@ -1283,3 +1283,29 @@ truth when this log drifts.
   still passes `Locale::EN` by design (untouched this PR). A true
   cross-locale render test lands in M2-I once a second `.ftl` bundle exists
   (SPEC §3.14.8.1).
+
+## 2026-07-02 — M1-20: mud-net telnet core
+
+- **Spec:** §2.8.2 (M1 telnet subset: NAWS, TTYPE, CHARSET/UTF-8 with
+  transliteration fallback, EOR/GA prompt framing), §2.1.1 (per-session
+  command rate limit, leaky bucket 10/s sustained, burst 20).
+- **Done:** Sans-IO telnet core in `mud-net` (no tokio): `telnet/parser.rs`
+  (incremental IAC framing, IAC IAC unescaping, size-capped subnegotiation,
+  split-packet safe), `telnet/negotiation.rs` (RFC 1143 Q-method for
+  NAWS/TTYPE/EOR/CHARSET; unknown options refused), `telnet/line.rs` (CR LF /
+  CR NUL / bare LF; oversized lines dropped whole — no truncated command may
+  execute), `telnet/mod.rs` (`TelnetMachine`: receive → `TelnetEvent`s +
+  queued replies; `encode_output` UTF-8/`deunicode` transliteration +
+  LF→CRLF + IAC escaping; `prompt_frame` EOR/GA), `ratelimit.rs`
+  (`RateLimiter` leaky bucket with injected clock; `SustainedRate`/`Burst`
+  newtypes). New dep: `deunicode`. No error type: the M1 subset has no fatal
+  protocol violations (parser tolerates garbage) — YAGNI per design doc.
+  `deunicode` is applied line-by-line (it swallows `\n`/`\r`), so newlines
+  survive for CRLF normalization.
+- **Verify:** `cargo test --workspace` green (540 passed, incl. `mud-net`
+  `tests/telnet.rs` e2e modern/legacy client flows); `cargo clippy
+  --workspace --all-targets -- -D warnings` clean; `cargo fmt --all --check`
+  clean. No docs-site change (no externally visible surface until M1-21).
+- **Next:** M1-21 `mud-gateway` binary: telnet listener drives
+  `TelnetMachine` from tokio, wires `RateLimiter` enforcement (drop +
+  structured `rate_limited` event), forwards `SessionInput` over IPC.
