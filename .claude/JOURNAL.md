@@ -1251,3 +1251,35 @@ truth when this log drifts.
   plumbing (`CallerContext.locale`) is its own PR, sequenced right after M1-19a
   — see `docs/superpowers/specs/2026-07-02-m1-19a-session-dependent-builtins-
   design.md`.
+
+## 2026-07-02 — i18n per-world locale rework (final step: drop `CallerContext.locale`)
+
+- **Spec:** §3.14 (locale is a per-tenant/world property, not per-session or
+  per-caller), PLAN §M2-I/§M3-B — completes the rework started earlier this
+  session: moved locale from `CallerContext` (per-session, hardcoded
+  `Locale::EN`) to `Pipeline.locale` (default `en`, `with_locale` builder for
+  the M1-22 driver); `CommandContext` borrows it so `ctx.locale()` is unchanged
+  for built-ins. Color stays per-account (§3.20.6.1) for accessibility reasons.
+  Deviation from the plan (review-driven): the added `locale` param pushed
+  `CommandContext::new` to 8 args (tripping `clippy::too_many_arguments`); rather
+  than suppress the lint we bundled `world`/`places`/`roster` into a new
+  `EngineView<'a>`, dropping the constructor to 6 args with no `#[allow]`.
+- **Done:** Removed the now-unused `locale: Locale` field, constructor param,
+  and `locale()` accessor from `CallerContext` (`crates/mud-engine/src/
+  caller.rs`), and the `use mud_i18n::Locale;` import. Dropped the
+  `Locale::EN` argument from all 7 `CallerContext::new` call sites
+  (`caller.rs` unit test, `session/resolver.rs` production resolver,
+  `pipeline.rs`'s two test resolvers, `tests/broadcast.rs`,
+  `tests/builtins.rs`, `tests/command_pipeline.rs`), removing the
+  now-unused `Locale` import from each of those files. `pipeline.rs` keeps
+  `use mud_i18n::Locale;` — its `with_locale` test still uses `Locale::EN`.
+- **Verify:** `cargo test -p mud-engine --no-run` compiled clean (no
+  arg-count or unused-import errors). `cargo test -p mud-engine` — 16 + 13 +
+  2 integration + unit tests all pass. Full gate: `cargo test --workspace`
+  — 496 passed, 0 failed; `cargo clippy --workspace --all-targets -- -D
+  warnings` clean; `cargo fmt --all --check` clean.
+- **Next:** M1-22 driver sources the tenant locale from tenant config into
+  `Pipeline::with_locale`; the pre-login `render` path (`session/mod.rs`)
+  still passes `Locale::EN` by design (untouched this PR). A true
+  cross-locale render test lands in M2-I once a second `.ftl` bundle exists
+  (SPEC §3.14.8.1).

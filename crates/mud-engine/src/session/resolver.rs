@@ -3,7 +3,6 @@
 
 use mud_cmd::Command;
 use mud_core::{EntityId, LockContext, World};
-use mud_i18n::Locale;
 use mud_schema::SessionId;
 
 use crate::caller::{CallerContext, ResolvedSession, SessionResolver};
@@ -42,7 +41,6 @@ impl SessionResolver for RegistryResolver<'_> {
                 binding.puppet,
                 location,
                 binding.name.clone(),
-                Locale::EN,
                 LockContext::new(),
             ),
             layers: LayerCommands {

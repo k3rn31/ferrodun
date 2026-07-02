@@ -654,8 +654,8 @@ spine.
 component, a Lua command, and a prototype, and **hot-reloads with no restart
 and no recompile**. `mud check` catches a broken lock string and a bad hook
 signature before load. A non-English `.ftl` bundle is dropped into a
-tenant's `i18n/`, hot-reloaded, and a localized engine string renders to a
-session whose locale resolves to it (§3.14.8.1).
+tenant's `i18n/`, hot-reloaded, and a localized engine string renders in the
+tenant's configured locale (§3.14.8.1).
 
 Depends on M1 core (§7.5.2). Epics → PRs:
 
@@ -698,10 +698,10 @@ Depends on M1 core (§7.5.2). Epics → PRs:
   emits a structured error.
 - **M2-I — `mud-i18n` (Fluent).** Replace the M1-14 static `en` table with
   `fluent-rs`; two-source tenant-overriding bundle discovery (§3.14.3.2);
-  tenant-scoped loader; hot-reloadable bundles; locale resolution per session
-  (§3.14.6); `mud.i18n.t` / `mud.i18n.locale_of` for scripts (§3.14.4.2);
-  localized command aliases in the CmdSet merge (§3.14.5.2); load-time
-  verification that every `t!`/`mud.i18n.t` key exists in `en` (§3.14.6.2).
+  tenant-scoped loader; hot-reloadable bundles; per-tenant locale selection
+  (§3.14.6); `mud.i18n.t` for scripts (§3.14.4.2); localized command aliases
+  in the CmdSet merge (§3.14.5.2); load-time verification that every
+  `t!`/`mud.i18n.t` key exists in `en` (§3.14.6.2).
 - **M2-J — `mud-cli` + `mud check`.** `mud-cli` crate; `mud check` statically
   validates lock strings against known lock functions and permission names,
   warns (not errors) on unknown tags (§2.6.2.3–2.6.2.4), and validates hook
@@ -726,7 +726,7 @@ Epics (decompose into PRs when reached):
 
 - **M3-A — MCCP2** compression in the telnet stack (§2.8.2).
 - **M3-B — GMCP** with the engine's documented, versioned namespace; the
-  reserved `Core.*` handshake messages (`Hello`/`Welcome`/`Locale`/`Ping`/
+  reserved `Core.*` handshake messages (`Hello`/`Welcome`/`Ping`/
   `Pong`/`Goodbye`) defined in `mud-schema` first (§2.8.3.3, §8 rule 4),
   including the 5 s default-profile fallback (§2.8.3.4).
 - **M3-C — MSDP** as the alternative out-of-band channel; **MXP** clickable

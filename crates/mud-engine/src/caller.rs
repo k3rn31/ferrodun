@@ -9,7 +9,6 @@
 
 use mud_account::PuppetName;
 use mud_core::{EntityId, LockContext, PlaceId, World};
-use mud_i18n::Locale;
 use mud_schema::SessionId;
 
 use crate::LayerCommands;
@@ -27,7 +26,6 @@ pub struct CallerContext {
     caller: EntityId,
     location: PlaceId,
     name: PuppetName,
-    locale: Locale,
     access: LockContext,
 }
 
@@ -38,7 +36,6 @@ impl CallerContext {
         caller: EntityId,
         location: PlaceId,
         name: PuppetName,
-        locale: Locale,
         access: LockContext,
     ) -> Self {
         Self {
@@ -46,7 +43,6 @@ impl CallerContext {
             caller,
             location,
             name,
-            locale,
             access,
         }
     }
@@ -70,11 +66,6 @@ impl CallerContext {
     /// players (`say`, movement). M1: always a player's puppet name.
     pub fn caller_name(&self) -> &PuppetName {
         &self.name
-    }
-
-    /// The locale engine messages for this caller resolve against.
-    pub fn locale(&self) -> &Locale {
-        &self.locale
     }
 
     /// The caller's accessor facts for lock evaluation (§2.7 step 6).
@@ -126,7 +117,6 @@ mod tests {
             caller,
             place(10),
             PuppetName::parse("hero").expect("name"),
-            Locale::EN,
             LockContext::new().with_perm("admin"),
         );
 
@@ -134,7 +124,6 @@ mod tests {
         assert_eq!(ctx.caller(), caller);
         assert_eq!(ctx.location(), place(10));
         assert_eq!(ctx.caller_name().as_str(), "hero");
-        assert_eq!(ctx.locale().as_str(), "en");
         // The access context carries the perm we granted: a lock requiring it passes.
         let lock =
             mud_core::resolve(mud_core::parse("x:perm(admin)").expect("parse")).expect("resolve");
