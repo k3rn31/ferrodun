@@ -4,4 +4,5 @@
 //! owns the socket and drives this state machine.
 
 mod line;
+mod negotiation;
 mod parser;
