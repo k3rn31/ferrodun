@@ -469,6 +469,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#whos-around-and-leaving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who's around and leaving
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#items" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -748,6 +759,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#whos-around-and-leaving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who's around and leaving
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#items" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -859,7 +881,8 @@ prompt and press enter. Commands match on a <strong>prefix</strong>, so <code>n<
 </tbody>
 </table>
 <p>Moving shows you the room you arrive in. If there is no exit that way, you are
-told so and stay put.</p>
+told so and stay put. Other players in the room you leave see you depart, and
+those in the room you enter see you arrive.</p>
 <h2 id="talking">Talking<a class="headerlink" href="#talking" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -875,9 +898,28 @@ told so and stay put.</p>
 </tr>
 </tbody>
 </table>
-<p>Your message is capped at 4 KiB. Terminal control codes and color markup you
-type are shown <strong>literally</strong> — you cannot inject styling or escape sequences
-into what others see.</p>
+<p>Everyone else in your room hears what you say. Your message is capped at 4 KiB.
+Terminal control codes and color markup you type are shown <strong>literally</strong> — you
+cannot inject styling or escape sequences into what others see.</p>
+<h2 id="whos-around-and-leaving">Who's around and leaving<a class="headerlink" href="#whos-around-and-leaving" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>who</code></td>
+<td>List the players currently online.</td>
+</tr>
+<tr>
+<td><code>quit</code></td>
+<td>Leave the game and disconnect.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="items">Items<a class="headerlink" href="#items" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
