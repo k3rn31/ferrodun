@@ -10,6 +10,7 @@
 mod convert;
 mod ratelimit;
 mod render;
+mod telnet;
 mod tier;
 
 pub use ratelimit::{Burst, Decision, RateLimiter, SustainedRate};
