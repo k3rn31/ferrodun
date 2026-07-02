@@ -439,4 +439,76 @@ mod tests {
             Routing::Unknown
         ));
     }
+
+    #[tokio::test]
+    async fn say_broadcasts_through_the_real_resolver() {
+        use crate::{Dispatcher, Pipeline, Places};
+        use mud_core::{Description, PlaceId, RegionId, RoomData, Title};
+        use mud_schema::{InputLine, SessionInput};
+
+        struct OneRoom(mud_core::Place);
+        impl Places for OneRoom {
+            fn get(&self, id: PlaceId) -> Option<&mud_core::Place> {
+                (id == self.0.id()).then_some(&self.0)
+            }
+        }
+
+        let mut world = mud_core::World::new(TenantTag::new(1).expect("tenant"));
+        let arden = world.create().expect("arden");
+        let borel = world.create().expect("borel");
+        let room_id = PlaceId::new(NonZeroU64::new(10).expect("nz"));
+        world.move_to(arden, room_id).expect("seat arden");
+        world.move_to(borel, room_id).expect("seat borel");
+        let room = OneRoom(mud_core::Place::Room(
+            RoomData::new(
+                room_id,
+                RegionId::new(NonZeroU64::new(1).expect("nz")),
+                Description::new("A room."),
+            )
+            .with_title(Title::new("A Room")),
+        ));
+
+        let acct = |n| AccountId::new(NonZeroU64::new(n).expect("nz"));
+        let mut svc = SessionService::new("W");
+        svc.bind_for_test(
+            sid(1),
+            InWorldBinding {
+                account: acct(1),
+                puppet: arden,
+                name: PuppetName::parse("arden").expect("name"),
+            },
+        );
+        svc.bind_for_test(
+            sid(2),
+            InWorldBinding {
+                account: acct(2),
+                puppet: borel,
+                name: PuppetName::parse("borel").expect("name"),
+            },
+        );
+
+        let mut dispatcher = Dispatcher::new();
+        let builtins = crate::register(&mut dispatcher);
+        let resolver = svc.resolver(&builtins);
+        let mut pipeline = Pipeline::new(dispatcher);
+
+        let outcome = pipeline
+            .dispatch(
+                &mut world,
+                &room,
+                &resolver,
+                &SessionInput {
+                    session_id: sid(1),
+                    line: InputLine::new("say hi"),
+                },
+            )
+            .expect("dispatch");
+
+        assert!(
+            outcome.outputs.iter().any(|o| o.session_id == sid(2)
+                && o.text.as_str().contains("arden")
+                && o.text.as_str().contains("hi")),
+            "the second session must receive the broadcast",
+        );
+    }
 }
