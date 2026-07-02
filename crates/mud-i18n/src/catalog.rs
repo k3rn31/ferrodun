@@ -75,6 +75,8 @@ fn builtin_en() -> Catalog {
         // inventory
         ("inventory.header", "You are carrying:"),
         ("inventory.empty", "You are carrying nothing."),
+        // who (§3.19)
+        ("who.online", "Players online: { $names }"),
         // get / drop and shared object-resolution outcomes (§2.7 step 5)
         ("get.taken", "You take { $item }."),
         ("drop.dropped", "You drop { $item }."),

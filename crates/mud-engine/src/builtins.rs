@@ -65,6 +65,7 @@ fn table() -> Vec<(
         ("look", &["l"], Arc::new(Look)),
         ("inventory", &["i", "inv"], Arc::new(ShowInventory)),
         ("say", &[], Arc::new(Say)),
+        ("who", &[], Arc::new(Who)),
         ("get", &["take"], Arc::new(Get)),
         ("drop", &[], Arc::new(Drop)),
         ("north", &["n"], Arc::new(Move(Direction::North))),
@@ -184,6 +185,25 @@ impl CommandHandler for Say {
             StyledText::new().role(t!(locale, "say.speech", message = message), RoleName::SAY),
         )
         .with_broadcast(Broadcast::to_place(ctx.location(), ctx.caller(), heard))
+    }
+}
+
+/// `who`: list the players currently connected and in-world (§3.19).
+struct Who;
+
+impl CommandHandler for Who {
+    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
+        let locale = ctx.locale().clone();
+        // Sort by name so the listing is stable regardless of registry iteration
+        // order (the roster is backed by a HashMap).
+        let mut names: Vec<String> = ctx
+            .roster()
+            .connected()
+            .into_iter()
+            .map(|presence| presence.name.as_str().to_owned())
+            .collect();
+        names.sort();
+        CommandReply::to_caller(system(t!(locale, "who.online", names = names.join(", "))))
     }
 }
 

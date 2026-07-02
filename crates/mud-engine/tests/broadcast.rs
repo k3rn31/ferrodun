@@ -187,3 +187,34 @@ fn moving_announces_departure_and_arrival_to_the_two_rooms() {
         "arrive: {destination}"
     );
 }
+
+#[test]
+fn who_lists_the_connected_players() {
+    let mut world = World::new(TenantTag::new(1).expect("tenant"));
+    let arden = world.create().expect("arden");
+    let borel = world.create().expect("borel");
+    world.move_to(arden, place(HALL)).expect("seat arden");
+    world.move_to(borel, place(HALL)).expect("seat borel");
+
+    let mut dispatcher = Dispatcher::new();
+    let builtins = mud_engine::register(&mut dispatcher);
+    let resolver = Players {
+        players: vec![
+            (sid(1), arden, PuppetName::parse("arden").expect("name")),
+            (sid(2), borel, PuppetName::parse("borel").expect("name")),
+        ],
+        builtins,
+    };
+    let mut pipeline = Pipeline::new(dispatcher);
+
+    let input = SessionInput {
+        session_id: sid(1),
+        line: InputLine::new("who"),
+    };
+    let outcome = pipeline
+        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .expect("dispatch");
+
+    let listed = text_for(&outcome.outputs, sid(1));
+    assert!(listed.contains("arden") && listed.contains("borel"), "who: {listed}");
+}
