@@ -74,6 +74,7 @@ mod tests {
         let binding = InWorldBinding {
             account: mud_account::AccountId::new(NonZeroU64::new(1).expect("nonzero")),
             puppet,
+            name: mud_account::PuppetName::parse("arden").expect("name"),
         };
         let mut svc = SessionService::new("W");
         svc.bind_for_test(sid(1), binding);

@@ -71,12 +71,14 @@ pub trait LoginBackend {
 }
 
 /// A session bound to a puppet and playing in-world.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct InWorldBinding {
     /// The owning account.
     pub account: AccountId,
     /// The puppet entity the session controls.
     pub puppet: EntityId,
+    /// The puppet's authored display name (for `who` and broadcasts).
+    pub name: PuppetName,
 }
 
 pub(crate) enum SessionState {
@@ -237,7 +239,11 @@ impl SessionService {
         backend: &impl LoginBackend,
     ) -> bool {
         match terminal {
-            Terminal::Bound { account, puppet } => {
+            Terminal::Bound {
+                account,
+                puppet,
+                name,
+            } => {
                 // The FSM already emitted Enter and saw it succeed, so the key
                 // resolves; on the vanishing chance it does not, drop cleanly.
                 match backend.resolve_puppet(puppet) {
@@ -247,6 +253,7 @@ impl SessionService {
                             SessionState::InWorld(InWorldBinding {
                                 account,
                                 puppet: entity,
+                                name,
                             }),
                         );
                         false
