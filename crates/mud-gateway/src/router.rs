@@ -228,6 +228,29 @@ mod tests {
             .send(ToRouter::Deregister { session_id: id })
             .await
             .expect("router must accept deregistration");
+
+        // Barrier: a Frame rides the same FIFO command channel as the
+        // Deregister, so the router processes the Deregister before it forwards
+        // this frame. Receiving it on the world side proves the deregistration
+        // is complete before we send any Output. Without this barrier the
+        // Output (on the endpoint channel) can race ahead of the Deregister
+        // (on the command channel) in the router's select! and be delivered
+        // while the session is still registered.
+        let probe = session(5);
+        commands_tx
+            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
+                session_id: probe,
+            })))
+            .await
+            .expect("router must accept the barrier frame");
+        match world_end.recv().await {
+            Ok(Some(GatewayFrame::Connect(connect))) => {
+                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
+            }
+            other => panic!("expected the barrier Connect frame, got {other:?}"),
+        }
+
+        // Now enqueue Output for the deregistered session; it must be dropped.
         world_end
             .send(WorldFrame::Output(SessionOutput {
                 session_id: id,
@@ -236,7 +259,7 @@ mod tests {
             .await
             .expect("world endpoint must send");
 
-        drop(world_end); // ends the router, closing the registry entry it removed
+        drop(world_end); // endpoint closes -> router returns Ok after draining
         router
             .await
             .expect("router task must not panic")
