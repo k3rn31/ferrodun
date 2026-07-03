@@ -20,6 +20,7 @@
 //! - Task 7: Alternative protocols: login-phase gating, MCP/GMCP (M7), HTTP/TLS/SSH/WebSocket listeners (M3+).
 
 mod config;
+mod connection;
 mod error;
 mod router;
 mod session;

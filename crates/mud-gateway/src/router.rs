@@ -17,12 +17,10 @@ use crate::error::GatewayError;
 /// Bound on per-connection output frames buffered ahead of the client socket.
 /// Backpressure, not correctness: a slower client loses output beyond this
 /// (see [`route`]) rather than stalling the router for every session.
-#[allow(dead_code)] // LINT: used by Task 3 (connection task)
 pub(crate) const OUTPUT_CAPACITY: usize = 64;
 
 /// What the router tells one connection task.
 #[derive(Debug)]
-#[allow(dead_code)] // LINT: used by Task 3 (connection task)
 pub(crate) enum ToConnection {
     /// Rendered text to write to the client, followed by a prompt frame.
     Output(OutputText),
@@ -32,7 +30,6 @@ pub(crate) enum ToConnection {
 
 /// What a connection task (or `serve`) tells the router.
 #[derive(Debug)]
-#[allow(dead_code)] // LINT: used by Task 3 (connection task) and Task 4 (serve task)
 pub(crate) enum ToRouter {
     /// A new session exists; route its frames to `tx`. Sent before `Connect`.
     Register {
