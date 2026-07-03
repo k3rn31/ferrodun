@@ -171,8 +171,9 @@ loss, listener failure, or a `DbError` from `tick()` logs the error, stops
 frame processing immediately (nothing dispatched after a failed durable
 write), drops the endpoint, and exits non-zero. Restart is the supervisor's
 job (systemd / container runtime / operator); no in-process restart loop.
-Retry tiers only become worth having with a networked Postgres (later
-milestone) and can be added in front of fail-stop without structural change.
+Retry tiers only become worth having with a networked Postgres and can be
+added in front of fail-stop without structural change; PLAN.md's M7-E
+(Postgres backend) now records that requirement.
 
 ## Testing (TDD)
 
@@ -193,9 +194,17 @@ milestone) and can be added in front of fail-stop without structural change.
 
 ## Documentation
 
-New operator page under `docs/docs/` ("Running a server": CLI flags,
-`mudd.toml` keys, `MUDD_*` env overrides, supervisor expectation) + `nav`
-entry in `mkdocs.yml`; verified with `uv run mkdocs build --strict`.
+New operator page under `docs/docs/` ("Running a server") + `nav` entry in
+`mkdocs.yml`; verified with `uv run mkdocs build --strict`. Contents:
+
+- CLI flags, `mudd.toml` keys, `MUDD_*` env overrides.
+- **Running under a supervisor (Linux only for now):** `mudd` is fail-stop
+  by design — on an unrecoverable error it exits non-zero and expects a
+  supervisor to restart it (state is rebuilt from the database at boot). The
+  page ships a worked systemd unit example (`Restart=on-failure`,
+  `RestartSec`, plus a start-limit guard against crash loops on persistent
+  faults such as a full disk) and notes the equivalent expectation for
+  container runtimes (`restart: on-failure`).
 
 ## Out of scope
 

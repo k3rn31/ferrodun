@@ -909,6 +909,10 @@ Epics:
   endpoint, retention windows (§3.17); invite-only registration + recovery
   tokens (§3.15.1.3); full linkdead reattach + idle/liveness (§3.15.2–3.15.3);
   background snapshot (§2.5.3.4); Postgres backend + per-DB roles (§2.5.1.4).
+  The Postgres backend PR must also replace M1-22's fail-stop-on-`DbError`
+  policy with a retry tier (transient network/connection errors retried with
+  backoff in front of fail-stop): fail-stop is the right response to a broken
+  local SQLite file, but not to a blip on a networked database.
 - **M7-F — Hardening.** Synthetic load test proving 10k entities / sub-50 ms
   tick p99 with command-path script p99 reported separately (§2.3.4.3);
   security pass (Lua sandbox fuzzing, §10); performance pass.
