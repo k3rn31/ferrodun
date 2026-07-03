@@ -21,6 +21,7 @@
 
 mod config;
 mod error;
+mod router;
 mod session;
 
 pub use config::GatewayConfig;
