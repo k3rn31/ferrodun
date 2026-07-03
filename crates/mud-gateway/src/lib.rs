@@ -1,23 +1,17 @@
-//! # Gateway — telnet connection handler
+//! # Gateway — telnet listener bridged to a World over IPC
 //!
-//! The Gateway accepts inbound telnet connections and routes each to a [`mud_session::Session`].
-//! Each session is pinned to a [`mud_engine::World`] at connect time; after handshake it may
-//! migrate to another world via OOB commands, but a single [`Session`] is its session lifetime.
-//! If the world crashes, the session is dropped; if the player is still connected, the client sees
-//! an abrupt disconnect and must reconnect.
+//! [`serve`] accepts inbound telnet connections and bridges each to a World
+//! over the session-multiplexed [`mud_ipc::Endpoint`]. It drives the resume
+//! handshake, then runs an actor-style router task (sole owner of the endpoint
+//! and the `SessionId → connection` registry) and one task per connection
+//! (driving the telnet state machine and rate limiter). Generic over
+//! [`Endpoint`]: `mudd` embeds it in-proc in single-process mode or drives it
+//! over the unix socket in split mode (§2.1.1, §2.1.3).
 //!
-//! The Gateway is **stateless**: its only live data is the set of peer TCP/TLS sockets and their
-//! negotiated protocol state. Once a [`Session`] is established, the Gateway does not track it —
-//! the World does. Reconnection is a new [`Session`].
-//!
-//! **Task allocation:**
-//! - Task 1 (this): crate scaffold, error/config types, session-id minting.
-//! - Task 2: telnet socket reader; telnet line/frame parsing (via `mud_net`).
-//! - Task 3: telnet socket writer; buffering + backpressure.
-//! - Task 4: IPC negotiation + World channel acquire.
-//! - Task 5: Session FSM (idle, setup, play, quit), built-in commands.
-//! - Task 6: Reconnect handshake.
-//! - Task 7: Alternative protocols: login-phase gating, MCP/GMCP (M7), HTTP/TLS/SSH/WebSocket listeners (M3+).
+//! The Gateway holds no session state of its own beyond the live sockets and
+//! their negotiated protocol state; session lifecycle lives in the World. On
+//! IPC loss the gateway shuts down cleanly — holding connections open for a
+//! reconnect is a later milestone (M7).
 
 mod config;
 mod connection;
