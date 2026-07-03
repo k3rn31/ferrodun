@@ -1,0 +1,18 @@
+[package]
+name = "mud-gateway"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mud-ipc = { version = "0.1.0", path = "../mud-ipc" }
+mud-net = { version = "0.1.0", path = "../mud-net" }
+mud-schema = { version = "0.1.0", path = "../mud-schema" }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["net", "io-util", "sync", "rt", "macros", "time"] }
+tracing = "0.1.44"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "time"] }

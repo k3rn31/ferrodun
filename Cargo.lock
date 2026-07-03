@@ -956,6 +956,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mud-gateway"
+version = "0.1.0"
+dependencies = [
+ "mud-ipc",
+ "mud-net",
+ "mud-schema",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "mud-i18n"
 version = "0.1.0"
 dependencies = [

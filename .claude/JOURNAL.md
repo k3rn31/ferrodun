@@ -1309,3 +1309,37 @@ truth when this log drifts.
 - **Next:** M1-21 `mud-gateway` binary: telnet listener drives
   `TelnetMachine` from tokio, wires `RateLimiter` enforcement (drop +
   structured `rate_limited` event), forwards `SessionInput` over IPC.
+
+## 2026-07-02 — M1-21: mud-gateway library
+
+- **Spec:** §2.1.1 (gateway responsibilities, M1 slice), §2.1.3 (IPC),
+  §2.8.2 (EOR/GA prompt framing). Design doc:
+  `docs/superpowers/specs/2026-07-02-m1-21-mud-gateway-design.md`.
+- **Done:** New `mud-gateway` **library** crate (no binary — `mudd` is the
+  sole binary per §5.2; PLAN M1-21 reworded). `serve(listener, endpoint,
+  config)` generic over `mud_ipc::Endpoint`: resume handshake, then an
+  actor-style router task (owns the endpoint + `SessionId → sender`
+  registry; single FIFO command channel so Register precedes Connect) and
+  one task per telnet connection (`TelnetMachine` + `RateLimiter`;
+  EOR/GA prompt frame after every output block; exit cause decides whether
+  a `Disconnect` is owed — World-initiated `Close` does not echo one).
+  Throttled commands dropped silently (structured `rate_limited` event
+  annotated at PLAN's M3 GMCP item); World-down hold-open/reconnect is M7.
+- **Verify:** `cargo test --workspace` green incl.
+  `mud-gateway/tests/loopback.rs` (DoD: negotiation on connect, echo
+  round-trip + prompt frame, client-drop → Disconnect, World Close → socket
+  closed without Disconnect echo, throttled lines never reach the stub
+  World). Clippy `-D warnings` + fmt clean. No docs-site change (no
+  externally observable surface until M1-22's CLI).
+- **Next:** M1-22 `mudd` single-process wiring: embed `serve` via
+  `in_memory_pair`, drive the World side, tenant config → `GatewayConfig`.
+- **Known risk (split-mode, later):** the router awaits `endpoint.send(frame)`
+  inside its `select!` command arm, so while blocked on a full IPC outbound
+  queue it is not draining `endpoint.recv()`. If the World is simultaneously
+  blocked sending `Output` into a full inbound queue, neither side progresses
+  — a bidirectional-backpressure deadlock. Needs ~`IN_MEMORY_CAPACITY` (256)
+  frames backed up in each direction at once, so M1 in-proc echo cannot hit
+  it, but the `SocketEndpoint` split-mode path must drain inbound while
+  draining outbound (buffer outbound in a `VecDeque` / `try_send` + pending
+  queue). Flagged by the M1-21 whole-branch review; address when split mode
+  lands.
