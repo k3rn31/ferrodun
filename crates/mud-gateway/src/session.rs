@@ -10,14 +10,10 @@ use crate::error::GatewayError;
 /// Mints monotonically increasing, non-zero [`SessionId`]s for accepted
 /// connections (§2.1.3.1: the Gateway owns the id space of its channel).
 #[derive(Debug)]
-#[allow(dead_code)]
-// LINT: SessionMinter and its methods are public API consumed by M1-21 Tasks 2–6
 pub(crate) struct SessionMinter(AtomicU64);
 
 impl SessionMinter {
     /// Starts minting at id 1 (ids are 1-based; 0 is unrepresentable).
-    #[allow(dead_code)]
-    // LINT: methods are consumed by M1-21 Tasks 2–6
     pub(crate) fn new() -> Self {
         Self(AtomicU64::new(1))
     }
@@ -29,8 +25,6 @@ impl SessionMinter {
     /// [`GatewayError::SessionIdOverflow`] if the counter wrapped to zero —
     /// practically unreachable (2^64 connections) but mapped to an error so
     /// the non-zero invariant holds without panicking.
-    #[allow(dead_code)]
-    // LINT: methods are consumed by M1-21 Tasks 2–6
     pub(crate) fn next(&self) -> Result<SessionId, GatewayError> {
         let raw = self.0.fetch_add(1, Ordering::Relaxed);
         NonZeroU64::new(raw)

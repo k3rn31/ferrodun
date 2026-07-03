@@ -26,7 +26,6 @@ enum ExitCause {
 /// Serves one client connection until the client hangs up or the World closes
 /// the session. Infallible from the caller's view: every failure path is a
 /// per-connection teardown, never a gateway-wide error.
-#[allow(dead_code)] // LINT: used by Task 4 (serve task)
 pub(crate) async fn run_connection<S>(
     socket: S,
     session_id: SessionId,

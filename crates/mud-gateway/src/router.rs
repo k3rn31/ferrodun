@@ -44,13 +44,12 @@ pub(crate) enum ToRouter {
 
 /// Runs the router until the World closes the endpoint (`Ok`), every command
 /// sender is dropped (`Ok`), or the endpoint fails (`Err`).
-#[allow(dead_code)] // LINT: used by Task 4 (serve task)
 pub(crate) async fn run_router<E>(
     mut endpoint: E,
     mut commands: mpsc::Receiver<ToRouter>,
 ) -> Result<(), GatewayError>
 where
-    E: Endpoint<Outbound = GatewayFrame, Inbound = WorldFrame>,
+    E: Endpoint<Outbound = GatewayFrame, Inbound = WorldFrame> + Send + 'static,
 {
     let mut registry: HashMap<SessionId, mpsc::Sender<ToConnection>> = HashMap::new();
     loop {
@@ -90,7 +89,6 @@ where
 /// learns of the disconnect from the in-flight `Disconnect`), and a full
 /// buffer drops the frame with a warning rather than stalling every session
 /// behind one slow client.
-#[allow(dead_code)] // LINT: used by run_router (both marked dead_code in this task)
 fn route(
     registry: &HashMap<SessionId, mpsc::Sender<ToConnection>>,
     session_id: SessionId,
@@ -133,6 +131,28 @@ mod tests {
             .send(ToRouter::Register { session_id: id, tx })
             .await
             .expect("router must accept registration");
+
+        // Barrier: a Frame rides the same FIFO command channel as the
+        // Register, so the router processes the Register before it forwards
+        // this frame. Receiving it on the world side proves the registration
+        // is complete before we send the Output. Without this barrier the
+        // Output (on the endpoint channel) can race ahead of the Register
+        // (on the command channel) in the router's select! and be dropped as
+        // addressed to an unknown session, hanging output_rx.recv() forever.
+        let probe = session(2);
+        commands_tx
+            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
+                session_id: probe,
+            })))
+            .await
+            .expect("router must accept the barrier frame");
+        match world_end.recv().await {
+            Ok(Some(GatewayFrame::Connect(connect))) => {
+                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
+            }
+            other => panic!("expected the barrier Connect frame, got {other:?}"),
+        }
+
         world_end
             .send(WorldFrame::Output(SessionOutput {
                 session_id: id,
@@ -172,6 +192,26 @@ mod tests {
             .send(ToRouter::Register { session_id: id, tx })
             .await
             .expect("router must accept registration");
+
+        // Barrier: forward a Frame on the same FIFO command channel and await
+        // it on the world side, proving the Register was processed before we
+        // send the Close. Without it the Close (endpoint channel) can race
+        // ahead of the Register (command channel) in the router's select!,
+        // be dropped as unknown, and hang output_rx.recv().
+        let probe = session(3);
+        commands_tx
+            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
+                session_id: probe,
+            })))
+            .await
+            .expect("router must accept the barrier frame");
+        match world_end.recv().await {
+            Ok(Some(GatewayFrame::Connect(connect))) => {
+                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
+            }
+            other => panic!("expected the barrier Connect frame, got {other:?}"),
+        }
+
         world_end
             .send(WorldFrame::Close(SessionClose { session_id: id }))
             .await
