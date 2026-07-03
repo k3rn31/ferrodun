@@ -574,11 +574,15 @@ spine.
   - *Spec:* §2.8.2 (subset), §2.1.1. *Verify:* IAC negotiation unit tests;
     rate-limit drop test. *Out of scope:* MCCP2/GMCP/MSDP/MXP/MSSP (M3),
     TLS/SSH/WebSocket (M3).
-- **M1-21 — `mud-gateway` binary.** Owns the telnet listener; decodes input
-  and forwards `SessionInput` over IPC; renders `SessionOutput` back to the
-  client (§2.1.1). Holds connections and shows a reconnect banner on IPC
-  loss — banner deferred to M7; M1 gateway assumes World is up in single-
-  process mode.
+- **M1-21 — `mud-gateway` library.** Owns the telnet listener; decodes input,
+  forwards `SessionInput` over IPC; renders `SessionOutput` back to the
+  client (§2.1.1). Shipped as a **library generic over `Endpoint`** — `mudd`
+  is the sole binary (§5.2) and embeds it in-proc (M1-22) or drives it over
+  the unix socket in split mode (later milestone). M1 assumes the World is
+  up in single-process mode; on IPC loss the gateway shuts down cleanly
+  (hold-connections-open + reconnect banner is M7). Rate-limited commands
+  are dropped **silently** in M1 — the §2.1.1 structured `rate_limited`
+  event needs a structured channel and is annotated at the M3 GMCP item.
   - *Spec:* §2.1.1. *Verify:* gateway↔World loopback test in single-process
     mode.
 - **M1-22 — `mudd` single-process wiring.** Boot a tenant: load world
@@ -728,7 +732,11 @@ Epics (decompose into PRs when reached):
 - **M3-B — GMCP** with the engine's documented, versioned namespace; the
   reserved `Core.*` handshake messages (`Hello`/`Welcome`/`Ping`/
   `Pong`/`Goodbye`) defined in `mud-schema` first (§2.8.3.3, §8 rule 4),
-  including the 5 s default-profile fallback (§2.8.3.4).
+  including the 5 s default-profile fallback (§2.8.3.4). Includes the
+  **deferred §2.1.1 obligation from M1-21**: emit the structured
+  `rate_limited` event to the session when the gateway drops a throttled
+  command (M1 drops silently — a bare telnet client has no structured
+  channel).
 - **M3-C — MSDP** as the alternative out-of-band channel; **MXP** clickable
   links/styling; **MSSP** server status; round out TTYPE/NAWS/CHARSET edge
   cases (§2.8.2).
