@@ -1380,3 +1380,33 @@ truth when this log drifts.
   `mud-world`, wire the scheduler driver loop, embed the gateway via
   `in_memory_pair`. Task 10 covers cross-tenant `tenant_tag` uniqueness and
   the `lib.rs` integration-test seam.
+
+## 2026-07-04 — M1-22 Task 11: mudd e2e telnet tests (DoD)
+
+- **Spec:** §Boot, §2.5.1.4 (per-tenant DB isolation), M1-22 Definition of
+  Done — a real telnet client driven through boot → gateway → World loop →
+  session FSM → command pipeline, plus concurrent multi-tenant isolation.
+- **Done:** Gave `mudd` a library target: added `crates/mudd/src/lib.rs`
+  (re-exports `boot`, `Cli`, `ServerConfig`, `TenantEntry`; keeps
+  `backend`/`places`/`world_loop` crate-private) and rewrote `main.rs` to
+  consume the lib instead of declaring its own `mod`s (binary behavior
+  unchanged). Added `crates/mudd/tests/telnet_login.rs`: a `write_tenant`
+  fixture writer, a `ClientReader` helper (buffers bytes across `read_until`
+  calls so a needle arriving batched with an earlier one isn't lost — this
+  caught a real intermittent test-only race, not a product bug), and three
+  tests: `a_full_register_create_enter_flow_over_telnet` (single tenant,
+  full register → password → confirm → `new` puppet → enter-world → `look`
+  over a real `TcpStream`), `two_tenants_serve_independent_logins_at_once`
+  (two tenants on `127.0.0.1:0`, same username `alice` on both, concurrent
+  logins prove per-tenant DB isolation), `duplicate_tenant_tags_fail_boot`
+  (two tenants both `tenant_tag = 1` → `boot` returns `Err`). Tests build
+  `ServerConfig`/`TenantEntry` directly (not via `resolve()`), since
+  `resolve()`'s duplicate-listen check would wrongly reject two `:0`
+  tenants that are `Eq` as configured (but bind to distinct ephemeral
+  ports).
+- **Verify:** `cargo test -p mudd --test telnet_login` (3 passed, stable
+  across repeated runs), `cargo test --workspace` (578 passed, 1 ignored),
+  `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt
+  --all --check` clean. Committed as `d904f5ca4f32`.
+- **Next:** M1-22 is now complete end-to-end. Next PR per `PLAN.md` moves
+  to the following M1 milestone item.
