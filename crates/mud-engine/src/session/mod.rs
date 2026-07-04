@@ -67,7 +67,9 @@ pub trait LoginBackend {
     ) -> impl Future<Output = Result<Puppet, BackendError>> + Send;
 
     /// Resolves a puppet's durable key to its live entity, if resident.
-    fn resolve_puppet(&self, key: EntityKey) -> Option<EntityId>;
+    ///
+    /// Async because implementors reach shared world state behind an async lock.
+    fn resolve_puppet(&self, key: EntityKey) -> impl Future<Output = Option<EntityId>> + Send;
 }
 
 /// A session bound to a puppet and playing in-world.
@@ -175,7 +177,7 @@ impl SessionService {
             outputs.extend(self.render_outputs(session, std::mem::take(&mut transition.messages)));
 
             if let Some(terminal) = transition.terminal {
-                let close = self.apply_terminal(session, terminal, backend);
+                let close = self.apply_terminal(session, terminal, backend).await;
                 return Routing::Login { outputs, close };
             }
 
@@ -223,7 +225,7 @@ impl SessionService {
                     Err(BackendError) => EffectResult::BackendError,
                 }
             }
-            Effect::Enter { account: _, puppet } => match backend.resolve_puppet(puppet) {
+            Effect::Enter { account: _, puppet } => match backend.resolve_puppet(puppet).await {
                 Some(_) => EffectResult::Entered,
                 None => EffectResult::BackendError,
             },
@@ -232,7 +234,7 @@ impl SessionService {
 
     /// Applies a terminal transition. `Bound` moves the session in-world;
     /// `Closed` drops it. Returns whether the connection should close.
-    fn apply_terminal(
+    async fn apply_terminal(
         &mut self,
         session: SessionId,
         terminal: Terminal,
@@ -246,7 +248,7 @@ impl SessionService {
             } => {
                 // The FSM already emitted Enter and saw it succeed, so the key
                 // resolves; on the vanishing chance it does not, drop cleanly.
-                match backend.resolve_puppet(puppet) {
+                match backend.resolve_puppet(puppet).await {
                     Some(entity) => {
                         self.sessions.insert(
                             session,
@@ -344,13 +346,17 @@ mod tests {
                 name.clone(),
             ))
         }
-        fn resolve_puppet(&self, _key: EntityKey) -> Option<EntityId> {
+        fn resolve_puppet(
+            &self,
+            _key: EntityKey,
+        ) -> impl std::future::Future<Output = Option<EntityId>> + Send {
             // Any well-formed id: these driver tests assert on routing, not identity.
-            Some(EntityId::new(
+            let result = Some(EntityId::new(
                 TenantTag::new(1).expect("tenant"),
                 SlotIndex::new(0),
                 Generation::FIRST,
-            ))
+            ));
+            async move { result }
         }
     }
 

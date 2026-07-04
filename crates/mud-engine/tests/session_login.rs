@@ -90,8 +90,12 @@ impl LoginBackend for DbBackend<'_> {
             .map_err(|_| BackendError)
     }
 
-    fn resolve_puppet(&self, key: EntityKey) -> Option<EntityId> {
-        self.world.entity_id(key)
+    fn resolve_puppet(
+        &self,
+        key: EntityKey,
+    ) -> impl std::future::Future<Output = Option<EntityId>> + Send {
+        let result = self.world.entity_id(key);
+        async move { result }
     }
 }
 
