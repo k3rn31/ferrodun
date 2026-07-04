@@ -190,7 +190,7 @@ fn only_line(outputs: &[mud_schema::SessionOutput]) -> &str {
 
 #[test]
 fn a_bound_command_runs_and_renders_its_reply() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let look = Recording::new("You look around.");
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
@@ -200,7 +200,7 @@ fn a_bound_command_runs_and_renders_its_reply() {
     let mut pipeline = Pipeline::new(dispatcher);
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("look"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("look"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -213,7 +213,7 @@ fn a_bound_command_runs_and_renders_its_reply() {
 
 #[test]
 fn the_handler_receives_the_parsed_switches_and_args() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let look = Capturing::new();
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
@@ -224,7 +224,7 @@ fn the_handler_receives_the_parsed_switches_and_args() {
 
     let _ = pipeline
         .dispatch(
-            &mut world,
+            &world,
             &NoPlaces,
             &resolver,
             &input("look/quiet at the door"),
@@ -238,7 +238,7 @@ fn the_handler_receives_the_parsed_switches_and_args() {
 
 #[test]
 fn the_puppet_alias_survives_the_merge_but_the_locations_does_not() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let look = Recording::new("looked");
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
@@ -249,14 +249,14 @@ fn the_puppet_alias_survives_the_merge_but_the_locations_does_not() {
 
     // The puppet's `look` wins the collision, so its alias `p` resolves to it...
     let via_alias = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("p"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("p"))
         .expect("dispatch succeeds")
         .outputs;
     assert_eq!(only_line(&via_alias), "looked");
 
     // ...while the losing location binding's alias `q` is gone.
     let dropped = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("q"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("q"))
         .expect("dispatch succeeds")
         .outputs;
     assert_eq!(only_line(&dropped), "command.not-found");
@@ -265,7 +265,7 @@ fn the_puppet_alias_survives_the_merge_but_the_locations_does_not() {
 
 #[test]
 fn an_unknown_command_reports_not_found_and_runs_nothing() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let look = Recording::new("looked");
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
@@ -275,7 +275,7 @@ fn an_unknown_command_reports_not_found_and_runs_nothing() {
     let mut pipeline = Pipeline::new(dispatcher);
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("dance"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("dance"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -285,7 +285,7 @@ fn an_unknown_command_reports_not_found_and_runs_nothing() {
 
 #[test]
 fn an_ambiguous_prefix_reports_ambiguity() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let mut pipeline = Pipeline::new(Dispatcher::new());
 
     // `s` prefixes both `say` and `score`. The candidate list is threaded to the
@@ -293,7 +293,7 @@ fn an_ambiguous_prefix_reports_ambiguity() {
     // catalog (only the M1-17 command bodies' keys are), so the message renders
     // as its literal key; surfacing the candidates is a M2 catalog concern.
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("s"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("s"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -302,11 +302,11 @@ fn an_ambiguous_prefix_reports_ambiguity() {
 
 #[test]
 fn a_malformed_switch_reports_a_bad_switch() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let mut pipeline = Pipeline::new(Dispatcher::new());
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("look/"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("look/"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -315,11 +315,11 @@ fn a_malformed_switch_reports_a_bad_switch() {
 
 #[test]
 fn a_blank_line_produces_no_output() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let mut pipeline = Pipeline::new(Dispatcher::new());
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("   "))
+        .dispatch(&world, &NoPlaces, &resolver, &input("   "))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -328,12 +328,12 @@ fn a_blank_line_produces_no_output() {
 
 #[test]
 fn a_matched_but_unbound_command_reports_generically() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     // `score` is in the location layer but no handler is bound to it.
     let mut pipeline = Pipeline::new(Dispatcher::new());
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("score"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("score"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -342,7 +342,7 @@ fn a_matched_but_unbound_command_reports_generically() {
 
 #[test]
 fn a_lock_denies_a_caller_without_permission() {
-    let (mut world, resolver) = fixture(LockContext::new()); // no `admin` perm
+    let (world, resolver) = fixture(LockContext::new()); // no `admin` perm
     let smite = Recording::new("smitten");
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
@@ -352,7 +352,7 @@ fn a_lock_denies_a_caller_without_permission() {
     let mut pipeline = Pipeline::new(dispatcher);
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("smite"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("smite"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -362,7 +362,7 @@ fn a_lock_denies_a_caller_without_permission() {
 
 #[test]
 fn a_lock_grants_a_caller_with_permission() {
-    let (mut world, resolver) = fixture(LockContext::new().with_perm("admin"));
+    let (world, resolver) = fixture(LockContext::new().with_perm("admin"));
     let smite = Recording::new("smitten");
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
@@ -372,7 +372,7 @@ fn a_lock_grants_a_caller_with_permission() {
     let mut pipeline = Pipeline::new(dispatcher);
 
     let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("smite"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("smite"))
         .expect("dispatch succeeds")
         .outputs;
 
@@ -382,14 +382,14 @@ fn a_lock_grants_a_caller_with_permission() {
 
 #[test]
 fn an_unresolvable_session_is_an_error() {
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let mut pipeline = Pipeline::new(Dispatcher::new());
     let unknown = SessionInput {
         session_id: session(999),
         line: InputLine::new("look"),
     };
 
-    let result = pipeline.dispatch(&mut world, &NoPlaces, &resolver, &unknown);
+    let result = pipeline.dispatch(&world, &NoPlaces, &resolver, &unknown);
 
     // `DispatchOutcome` (the `Ok` payload) does not derive `PartialEq` — it wraps
     // a `Vec<SessionOutput>` that has no meaningful notion of test equality here
@@ -407,15 +407,15 @@ fn each_run_mints_a_distinct_command_id() {
     // the test binary's own crate, so a library crate's events are invisible from
     // an integration test. Here we assert the observable proxy: each run is a
     // fresh dispatch and both succeed independently.
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let mut pipeline = Pipeline::new(Dispatcher::new());
 
     let first = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("score"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("score"))
         .expect("first dispatch")
         .outputs;
     let second = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("score"))
+        .dispatch(&world, &NoPlaces, &resolver, &input("score"))
         .expect("second dispatch")
         .outputs;
 
@@ -424,7 +424,7 @@ fn each_run_mints_a_distinct_command_id() {
 }
 
 /// A handler that returns a `MoveTo` effect for the caller, to prove the
-/// pipeline applies a [`CommandReply`]'s effects against the `&mut World`.
+/// pipeline returns a [`CommandReply`]'s effects instead of applying them.
 struct Teleport {
     to: PlaceId,
 }
@@ -441,9 +441,9 @@ impl CommandHandler for Teleport {
 }
 
 #[test]
-fn a_replys_effects_are_applied_to_the_world() {
+fn effects_are_returned_not_applied() {
     const STUDY: u64 = 11;
-    let (mut world, resolver) = fixture(LockContext::new());
+    let (world, resolver) = fixture(LockContext::new());
     let mut dispatcher = Dispatcher::new();
     dispatcher.bind(
         name("look"),
@@ -452,14 +452,21 @@ fn a_replys_effects_are_applied_to_the_world() {
     let mut pipeline = Pipeline::new(dispatcher);
 
     // The puppet starts in HALL (see `fixture`).
-    let outputs = pipeline
-        .dispatch(&mut world, &NoPlaces, &resolver, &input("look"))
-        .expect("dispatch succeeds")
-        .outputs;
+    let outcome = pipeline
+        .dispatch(&world, &NoPlaces, &resolver, &input("look"))
+        .expect("dispatch succeeds");
 
-    assert_eq!(only_line(&outputs), "whoosh");
+    assert_eq!(only_line(&outcome.outputs), "whoosh");
+    assert_eq!(
+        outcome.effects,
+        vec![mud_core::Effect::MoveTo {
+            entity: resolver.caller,
+            place: place(STUDY),
+        }],
+        "the MoveTo effect must be returned for the scheduler to apply"
+    );
     assert!(
-        world.is_located_in(resolver.caller, place(STUDY)),
-        "the MoveTo effect must have moved the caller to the study"
+        world.is_located_in(resolver.caller, place(HALL)),
+        "the pipeline must not mutate the arena directly"
     );
 }

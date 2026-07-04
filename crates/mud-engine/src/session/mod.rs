@@ -494,7 +494,7 @@ mod tests {
 
         let outcome = pipeline
             .dispatch(
-                &mut world,
+                &world,
                 &room,
                 &resolver,
                 &SessionInput {
