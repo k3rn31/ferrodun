@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT place_key AS \"place_key!\" FROM location WHERE entity_key = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "place_key!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "location",
+            "name": "place_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ba919085072f43e90e8bbc2ea45800a27d4e5a515d9c632b98971b9ffc438900"
+}
