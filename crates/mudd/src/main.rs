@@ -1,12 +1,7 @@
-mod backend;
-mod boot;
-mod config;
-mod places;
-mod world_loop;
-
 use anyhow::Context;
 use clap::Parser;
-use config::{Cli, ServerConfig};
+use mudd::boot::boot;
+use mudd::config::{Cli, ServerConfig};
 use tracing_subscriber::EnvFilter;
 
 /// Entry point for the `mudd` server binary.
@@ -34,7 +29,7 @@ fn main() -> anyhow::Result<()> {
 /// tenant task ends.
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
     let config = ServerConfig::resolve(&cli)?;
-    let (addrs, mut tasks) = boot::boot(config).await?;
+    let (addrs, mut tasks) = boot(config).await?;
     for addr in &addrs {
         tracing::info!(%addr, "tenant listening");
     }
