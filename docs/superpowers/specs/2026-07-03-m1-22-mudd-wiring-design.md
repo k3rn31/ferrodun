@@ -8,10 +8,13 @@ here), §2.5.3.5 (scheduler serialization), §2.1.3.2 (resume handshake), §5.2
 
 ## Goal
 
-Boot one tenant end-to-end in a single process: load the world, open the
-database, run the scheduler driver loop, run the command pipeline, and embed
-the gateway over the in-memory IPC channel. Definition of done: `cargo run -p
-mudd -- --tenant-dir <dir>` serves a telnet login locally.
+Boot tenants end-to-end in a single process: for each registered tenant,
+load its world, open its database, run its scheduler driver loop, run its
+command pipeline, and embed a gateway over an in-memory IPC channel.
+Multiple tenants run concurrently — each an isolated stack on its own
+listen address. Definition of done: `cargo run -p mudd -- --tenant-dir
+<dir>` serves a telnet login locally, and a registry with two tenants
+serves both at once.
 
 This PR also resolves the two design decisions PLAN.md deferred here: the
 **single write path** (how `Scheduler`, `PersistentWorld`, and `Pipeline`
@@ -25,10 +28,15 @@ M1-19 leftover of hydrating a mid-session-created puppet into the live world.
 2. **SPEC §2.5.3.3 is amended** — its "same transaction" wording cannot hold
    for an in-memory arena; the real model is write-through with the database
    as the sole source of truth.
-3. **Server settings live in a separate `mudd.toml`**, not in the tenant's
-   `config.toml` (which stays `mud-world`'s file).
-4. **Topology: one World task + one gateway task**, no locks between
-   subsystems beyond a shared handle on `PersistentWorld`.
+3. **Server settings are server-wide, not per-tenant:** they live in
+   `$XDG_CONFIG_HOME/ferrodun/config.toml` (default `~/.config/ferrodun/`),
+   overridable with `--config`. The server config carries the **tenant
+   registry** — multiple tenants run concurrently in one `mudd` process
+   (§2.5.1.4's whole point). The tenant's own `config.toml` stays
+   `mud-world`'s file inside the tenant dir.
+4. **Topology: one World task + one gateway task per tenant**, no locks
+   between subsystems beyond a shared handle on that tenant's
+   `PersistentWorld`. Tenants share nothing but the tokio runtime.
 5. **DB errors are fail-stop.** Halt dispatch immediately, exit non-zero,
    let the supervisor restart; boot rebuilds the arena from the DB.
 6. **Extend the existing `0001_initial.sql` migration** for the `server`
@@ -92,16 +100,26 @@ recovery mechanism.
 
 ### 3. CLI and configuration
 
-- `clap`-derived args: `--tenant-dir <DIR>` (required), `--config <PATH>`
-  (default `<tenant-dir>/mudd.toml`), plus overrides `--listen`, `--rate`,
-  `--burst`.
-- `figment` layering, weakest first: built-in defaults < `mudd.toml` <
-  `MUDD_*` env vars < CLI flags.
-- `mudd.toml` keys: `listen` (default `127.0.0.1:4000`), `rate`, `burst`
-  (rate-limiter defaults from `mud-net`). The file is optional — defaults
-  apply when absent.
-- The tenant's `config.toml` remains `mud-world`'s: world content,
-  `tenant_tag` (default 0), tenant locale.
+Two config planes, cleanly split:
+
+- **Server-wide config** — `$XDG_CONFIG_HOME/ferrodun/config.toml`
+  (`XDG_CONFIG_HOME` env var, falling back to `~/.config`; Linux is the only
+  supported deployment target for now). Optional file — defaults apply when
+  absent. Keys:
+  - `rate`, `burst` — shared rate-limiter settings (defaults from `mud-net`:
+    10/s, 20).
+  - `[[tenants]]` — the tenant registry: each entry has `dir` (the tenant
+    folder) and `listen` (that tenant's telnet address). Listen addresses
+    must be distinct.
+- **Per-tenant config** — `<tenant-dir>/config.toml`, `mud-world`'s file:
+  world content, `tenant_tag` (default 0), tenant locale.
+
+`clap`-derived args and layering, weakest first: built-in defaults <
+server `config.toml` < `MUDD_*` env vars < CLI flags. Flags:
+`--config <PATH>` (server config path), `--tenant-dir <DIR>` (**replaces**
+the registry with this single tenant, listening on `--listen`, default
+`127.0.0.1:4000`), `--rate`, `--burst`. Booting with an empty tenant
+registry and no `--tenant-dir` is a startup error.
 
 ### 4. Identity
 
@@ -109,21 +127,29 @@ recovery mechanism.
   row) added to `0001_initial.sql` stores a randomly generated `NonZeroU64`,
   exposed as `TenantDb::world_id()`. Stable across restarts, as the resume
   handshake (§2.1.3.2) requires.
-- **`tenant_tag`** — read from `config.toml` (default 0) into `TenantTag` and
-  passed to `World::new` via `PersistentWorld::load`.
+- **`tenant_tag`** — read from each tenant's `config.toml` (default 0) into
+  `TenantTag` and passed to `World::new` via `PersistentWorld::load`. With
+  multiple tenants in one process, tags must be **unique across the
+  configured tenants** — validated at boot, since the tag is the §2.3.1.1
+  isolation handle the cross-tenant rejection tests (M1-23) rely on.
 
 ### 5. Runtime topology and boot sequence
 
-Two tokio tasks: `mud_gateway::serve` on one side of
-`mud_ipc::in_memory_pair()`, and the World loop on the main task.
+Per tenant, two tokio tasks: `mud_gateway::serve` on one side of
+`mud_ipc::in_memory_pair()`, and that tenant's World loop on the other.
+Tenants are fully independent stacks — own DB, own arena, own scheduler,
+own session registry, own listener — sharing only the runtime.
 
-Boot order: parse CLI + figment → init `tracing-subscriber` →
-`TenantConfig::load` + `load_world` → `TenantDb::open` → `world_id`
-get-or-create → `PlaceMap` from `rooms().place_keys()` →
+Process boot: parse CLI + figment → init `tracing-subscriber` → for each
+registered tenant, boot it; validate `tenant_tag` uniqueness across tenants;
+then run all tenant tasks under a `JoinSet`.
+
+Per-tenant boot order: `TenantConfig::load` + `load_world` → `TenantDb::open`
+→ `world_id` get-or-create → `PlaceMap` from `rooms().place_keys()` →
 `PersistentWorld::load(db, tenant, place_map)` → build `SessionService`
 (world banner), `Pipeline` (tenant locale), builtin registration →
 `in_memory_pair()` → spawn gateway (`TcpListener::bind(listen)`,
-`GatewayConfig { world_id, rate, burst }`) → run World loop.
+`GatewayConfig { world_id, rate, burst }`) → spawn World loop.
 
 `PersistentWorld` lives in an `Arc<tokio::sync::Mutex<_>>` so the
 `LoginBackend` can reach it; the mutex is uncontended in practice (one
@@ -186,18 +212,24 @@ added in front of fail-stop without structural change; PLAN.md's M7-E
 - `mud-engine`: pipeline tests updated — dispatch over `&World`, effects
   returned in `DispatchOutcome`, no direct arena mutation.
 - `mudd`: thin `main.rs` over internal modules with a testable
-  `run(BootConfig)`; integration test boots a temp tenant dir on an
-  ephemeral port, connects a real `TcpStream`, and drives register → create
-  puppet → enter → one command, asserting outputs. Config-layering unit
-  tests (defaults < file < env < flags). Full restart-persistence acceptance
-  remains M1-23.
+  `run(CliArgs)`; integration tests boot temp tenant dirs on ephemeral
+  ports and connect real `TcpStream`s: (a) single tenant — register →
+  create puppet → enter → one command, asserting outputs; (b) **two tenants
+  concurrently** — both listeners serve logins, and the same username
+  registers independently on each (per-file isolation, §2.5.1.4).
+  Config-layering unit tests (defaults < file < env < flags; `--tenant-dir`
+  replaces the registry; duplicate listen addresses and duplicate
+  `tenant_tag`s rejected). Full restart-persistence acceptance remains
+  M1-23.
 
 ## Documentation
 
 New operator page under `docs/docs/` ("Running a server") + `nav` entry in
 `mkdocs.yml`; verified with `uv run mkdocs build --strict`. Contents:
 
-- CLI flags, `mudd.toml` keys, `MUDD_*` env overrides.
+- CLI flags, the server config (`$XDG_CONFIG_HOME/ferrodun/config.toml`:
+  `rate`, `burst`, the `[[tenants]]` registry), `MUDD_*` env overrides, and
+  how server-wide vs per-tenant configuration split.
 - **Running under a supervisor (Linux only for now):** `mudd` is fail-stop
   by design — on an unrecoverable error it exits non-zero and expects a
   supervisor to restart it (state is rebuilt from the database at boot). The
@@ -214,4 +246,9 @@ New operator page under `docs/docs/` ("Running a server") + `nav` entry in
 - Background snapshots (§2.5.3.4).
 - Surfacing tick rejections to the originating session (M3 structured
   channel).
-- Multi-tenant registry / server-wide config.
+- Shared-listener / host-based tenant routing (each tenant has its own
+  listen address in M1).
+- Per-tenant supervision: in M1 a fatal error in any tenant fail-stops the
+  whole process; keeping sibling tenants alive through one tenant's failure
+  (§ "stopping tenant B must not stop A", SPEC line on tenant lifecycle) is
+  a later milestone alongside admin start/stop.
