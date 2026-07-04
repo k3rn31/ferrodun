@@ -807,9 +807,16 @@ entity's `EntityId` handle and its `EntityKey`↔`EntityId` mapping
 database (§2.5.3.1).
 
 2.5.3.3 A **write-through layer** MUST maintain arena/DB consistency:
-every mutation MUST go through a `MutationCommand` enum that applies
-the change to the arena and queues the corresponding DB write in the
-same transaction.
+every mutation MUST go through a `MutationCommand`. The layer applies
+each command to the arena and, if and only if the arena accepts it,
+performs the corresponding durable write before the next command
+applies; the durable write for one command MUST be atomic, and a
+command the arena rejects MUST NOT reach the database. The database is
+the sole source of truth; the arena is a cache rebuilt from it at boot.
+On a failed durable write the engine MUST stop applying further
+mutations and terminate (fail-stop): restart-and-rebuild is the
+divergence recovery mechanism. (Entity creation MAY be database-first
+where the database allocates the durable identity.)
 
 2.5.3.4 The engine MUST perform a background snapshot every N seconds
 for crash recovery beyond the SQLite/PG WAL. `N` is configurable.
