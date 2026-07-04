@@ -14,8 +14,10 @@ pub use accounts::Accounts;
 pub use persistent_world::PersistentWorld;
 pub use place_map::PlaceMap;
 
+use std::num::NonZeroU64;
 use std::path::Path;
 
+use mud_schema::WorldId;
 use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -29,6 +31,7 @@ static MIGRATOR: Migrator = sqlx::migrate!("./migrations/sqlite");
 const DATABASE_FILE: &str = "world.db";
 
 /// A connection pool over one tenant's SQLite database file.
+#[derive(Clone)]
 pub struct TenantDb {
     pool: SqlitePool,
 }
@@ -64,6 +67,31 @@ impl TenantDb {
     #[must_use]
     pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    /// This tenant's stable World identity (§2.1.3.2), generated at first call
+    /// and persisted; every later call — including after a restart — returns
+    /// the same value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DbError`] on a query failure or a corrupt persisted id.
+    pub async fn world_id(&self) -> Result<WorldId, DbError> {
+        // Random positive i64; NonZeroU64 rules out 0, the CHECK-ed single
+        // row rules out a second value ever being written.
+        let fresh = i64::from(rand::random::<u32>()).saturating_add(1);
+        sqlx::query!(
+            "INSERT INTO server (id, world_id) VALUES (1, ?) ON CONFLICT(id) DO NOTHING",
+            fresh
+        )
+        .execute(&self.pool)
+        .await?;
+        let row = sqlx::query!(r#"SELECT world_id AS "world_id!" FROM server WHERE id = 1"#)
+            .fetch_one(&self.pool)
+            .await?;
+        let raw = u64::try_from(row.world_id).map_err(|_| DbError::InvalidId(row.world_id))?;
+        let value = NonZeroU64::new(raw).ok_or(DbError::InvalidId(row.world_id))?;
+        Ok(WorldId::new(value))
     }
 }
 
@@ -109,7 +137,14 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let db = open_in(&dir).await;
 
-        for table in ["entities", "accounts", "puppets", "location", "inventory"] {
+        for table in [
+            "entities",
+            "accounts",
+            "puppets",
+            "location",
+            "inventory",
+            "server",
+        ] {
             assert!(
                 table_exists(&db, table).await,
                 "migration should create table {table}"
@@ -208,5 +243,26 @@ mod tests {
 
         let db = open_in(&dir).await;
         assert_eq!(accounts_count(&db).await, 1, "the account persisted");
+    }
+
+    #[tokio::test]
+    async fn world_id_is_created_once_and_stable_across_reopens() {
+        let dir = TempDir::new().expect("temp dir");
+        let first = {
+            let db = open_in(&dir).await;
+            db.world_id().await.expect("first world_id")
+        }; // pool dropped — simulates a restart.
+        let db = open_in(&dir).await;
+        let second = db.world_id().await.expect("second world_id");
+        assert_eq!(first, second, "world_id must survive a restart");
+    }
+
+    #[tokio::test]
+    async fn two_tenants_get_distinct_world_ids() {
+        let dir_a = TempDir::new().expect("temp dir a");
+        let dir_b = TempDir::new().expect("temp dir b");
+        let a = open_in(&dir_a).await.world_id().await.expect("world_id a");
+        let b = open_in(&dir_b).await.world_id().await.expect("world_id b");
+        assert_ne!(a, b, "random world ids must not collide across tenants");
     }
 }

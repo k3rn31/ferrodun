@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT world_id AS \"world_id!\" FROM server WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "world_id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "server",
+            "name": "world_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "de716ad2b39c1f508cf35c8ba6e3df30e39507f3840dcf1ad4466080636b5cf0"
+}
