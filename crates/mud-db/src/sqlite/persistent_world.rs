@@ -56,7 +56,8 @@
 use std::collections::HashMap;
 
 use mud_core::{
-    Effect, EntityId, EntityKey, MutationCommand, PlaceId, PlaceKey, TenantTag, TickEvent, World,
+    Effect, EntityId, EntityKey, MutationCommand, PlaceId, PlaceKey, Scheduler, TenantTag,
+    TickEvent, World,
 };
 
 use crate::error::DbError;
@@ -81,6 +82,7 @@ pub struct PersistentWorld {
     // Translates a location's durable slug to/from the ephemeral `PlaceId` the
     // in-memory `World` uses, supplied by the world loader at construction.
     places: PlaceMap,
+    scheduler: Scheduler,
 }
 
 impl PersistentWorld {
@@ -153,6 +155,7 @@ impl PersistentWorld {
             by_key,
             by_id,
             places,
+            scheduler: Scheduler::new(),
         })
     }
 
@@ -211,6 +214,37 @@ impl PersistentWorld {
             // silently dropped.
             _ => Err(DbError::UnsupportedEffect),
         }
+    }
+
+    /// Enqueues `command` for the next [`tick`](PersistentWorld::tick)
+    /// (§2.5.3.5: arrival order is application order).
+    pub fn submit(&mut self, command: MutationCommand) {
+        self.scheduler.submit(command);
+    }
+
+    /// Drains the scheduler queue, applying each command to the arena and the
+    /// database via [`apply`](PersistentWorld::apply), and returns the
+    /// observable events (created handles, precondition failures, rejections).
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`DbError`] and stops: commands after the failure are
+    /// neither applied nor persisted (fail-stop, the M1-22 consistency model —
+    /// the caller must halt dispatch and exit).
+    pub async fn tick(&mut self) -> Result<Vec<TickEvent>, DbError> {
+        let mut events = Vec::new();
+        for command in self.scheduler.drain() {
+            if let Some(event) = self.apply(command).await? {
+                events.push(event);
+            }
+        }
+        Ok(events)
+    }
+
+    /// The current tick number (source for `mud.time.tick()`, §3.16.4).
+    #[must_use]
+    pub fn tick_number(&self) -> u64 {
+        self.scheduler.tick_number()
     }
 
     /// The current `EntityId` mapped to `key`, if the entity is resident.
