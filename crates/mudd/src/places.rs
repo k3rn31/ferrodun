@@ -9,7 +9,6 @@ pub struct WorldPlaces(Rooms);
 
 impl WorldPlaces {
     /// Wraps a tenant's loaded room registry for the pipeline.
-    #[allow(dead_code)] // LINT: constructed by the tenant boot loop in Task 10 (mudd boot); no other consumer exists yet
     pub fn new(rooms: Rooms) -> Self {
         Self(rooms)
     }

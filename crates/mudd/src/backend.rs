@@ -16,7 +16,6 @@ use tokio::sync::Mutex;
 /// Owns a cloneable `TenantDb` handle rather than borrowing one, so it can be
 /// constructed once at boot and shared across sessions without lifetime ties
 /// to the world it hydrates puppets into.
-#[allow(dead_code)] // LINT: constructed by the tenant boot loop in Task 10 (mudd boot); no other consumer exists yet
 pub struct DbBackend {
     db: TenantDb,
     world: Arc<Mutex<PersistentWorld>>,
@@ -25,7 +24,6 @@ pub struct DbBackend {
 
 impl DbBackend {
     /// A backend over `db`, hydrating new puppets into `world` at `start_room`.
-    #[allow(dead_code)] // LINT: constructed by the tenant boot loop in Task 10 (mudd boot); no other consumer exists yet
     pub fn new(db: TenantDb, world: Arc<Mutex<PersistentWorld>>, start_room: PlaceKey) -> Self {
         Self {
             db,
