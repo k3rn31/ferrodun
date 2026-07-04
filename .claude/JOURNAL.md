@@ -1343,3 +1343,40 @@ truth when this log drifts.
   draining outbound (buffer outbound in a `VecDeque` / `try_send` + pending
   queue). Flagged by the M1-21 whole-branch review; address when split mode
   lands.
+
+## 2026-07-03 — M1-22 Task 8: `mudd` CLI + XDG server config + tenant registry
+
+- **Spec:** PLAN M1-22 Task 8 (configuration layer only — boot/run wiring is
+  a later task). Precedence: defaults < `config.toml` < `MUDD_*` env < CLI flags.
+- **Done:** Added `crates/mudd/src/config.rs`: `Cli` (clap derive; `--config`,
+  `--tenant-dir`, `--listen`, `--rate`, `--burst`), `TenantEntry { dir, listen }`,
+  `ServerConfig { rate: SustainedRate, burst: Burst, tenants: Vec<TenantEntry> }`,
+  and `ServerConfig::resolve(&Cli) -> anyhow::Result<ServerConfig>`. Config path
+  is `--config` or `$XDG_CONFIG_HOME/ferrodun/config.toml` (falls back to
+  `$HOME/.config`, plain `std::env::var`, Linux-only). Layered via
+  `figment`: `Serialized::defaults(RawServerConfig::default())` (rate=10,
+  burst=20, empty tenants) → `Toml::file(path)` → `Env::prefixed("MUDD_")`,
+  then CLI fields overwrite manually. `--tenant-dir` replaces the whole
+  registry with one entry (`--listen` default `127.0.0.1:4000`, via
+  `SocketAddr::from` — no unwrap/expect needed). Validates non-empty tenants
+  and distinct listen addresses (`HashSet`), `anyhow::bail!` otherwise. Added
+  deps (clap, figment, serde, anyhow, tokio, tracing, tracing-subscriber,
+  secrecy, mud-core/-db/-engine/-gateway/-ipc/-world/-i18n/-schema/-net/-account,
+  dev tempfile + figment/test) via `cargo add`, all currently unused except
+  clap/figment/serde/anyhow/mud-net (later mudd tasks need the rest; no
+  `unused_crate_dependencies` lint enabled). `main.rs` now parses `Cli`,
+  calls `resolve`, and logs the resolved tenant count via `tracing::info!`
+  (no boot loop — that is Task 10). `crates/mudd` stays a binary crate (no
+  `lib.rs` yet).
+- **Verify:** 6 new `figment::Jail` tests in `config.rs` (defaults w/
+  `--tenant-dir`, registry loads from `config.toml`, `--tenant-dir` replaces
+  a file-configured registry, env overrides file / flags override env,
+  empty registry without `--tenant-dir` errors, duplicate listen addresses
+  error). `cargo test -p mudd` (6 passed), `cargo clippy -p mudd
+  --all-targets -- -D warnings` clean (needed `#[allow(clippy::result_large_err)]`
+  on the test module — `figment::Jail`'s `Result` is the test harness's type,
+  mirroring `mud-world/src/config.rs`), `cargo fmt --all --check` clean.
+- **Next:** Task 9+ of M1-22 (boot wiring): load tenant configs via
+  `mud-world`, wire the scheduler driver loop, embed the gateway via
+  `in_memory_pair`. Task 10 covers cross-tenant `tenant_tag` uniqueness and
+  the `lib.rs` integration-test seam.
