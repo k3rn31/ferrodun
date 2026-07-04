@@ -89,11 +89,11 @@ pub(crate) enum SessionState {
 }
 
 /// Owns every connected session's state and drives the pre-login FSM.
-#[derive(Default)]
 #[must_use]
 pub struct SessionService {
     sessions: HashMap<SessionId, SessionState>,
     banner: String,
+    locale: Locale,
 }
 
 /// How an input line was routed.
@@ -112,11 +112,12 @@ pub enum Routing {
 }
 
 impl SessionService {
-    /// A service greeting new sessions with `banner`.
-    pub fn new(banner: impl Into<String>) -> Self {
+    /// A service greeting new sessions with `banner` and rendering in `locale`.
+    pub fn new(banner: impl Into<String>, locale: Locale) -> Self {
         Self {
             sessions: HashMap::new(),
             banner: banner.into(),
+            locale,
         }
     }
 
@@ -282,7 +283,7 @@ impl SessionService {
             .into_iter()
             .map(|message| SessionOutput {
                 session_id: session,
-                text: OutputText::new(render(&message, &self.banner, &Locale::EN)),
+                text: OutputText::new(render(&message, &self.banner, &self.locale)),
             })
             .collect()
     }
@@ -370,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn connect_greets_with_a_banner_and_prompt() {
-        let mut svc = SessionService::new("WELCOME");
+        let mut svc = SessionService::new("WELCOME", Locale::EN);
         let outputs = svc.connect(sid(1));
         let text = text_of(&outputs);
         assert!(
@@ -381,7 +382,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_full_login_reaches_in_world() {
-        let mut svc = SessionService::new("WELCOME");
+        let mut svc = SessionService::new("WELCOME", Locale::EN);
         svc.connect(sid(1));
         for line in ["login alice", "hunter2", "play arden"] {
             let routing = svc.on_input(sid(1), line, &FakeBackend).await;
@@ -399,7 +400,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_wrong_password_stays_pre_login() {
-        let mut svc = SessionService::new("W");
+        let mut svc = SessionService::new("W", Locale::EN);
         svc.connect(sid(1));
         let _ = svc.on_input(sid(1), "login alice", &FakeBackend).await;
         let routing = svc.on_input(sid(1), "wrong", &FakeBackend).await;
@@ -426,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn quit_closes_the_session() {
-        let mut svc = SessionService::new("W");
+        let mut svc = SessionService::new("W", Locale::EN);
         svc.connect(sid(1));
         let routing = svc.on_input(sid(1), "quit", &FakeBackend).await;
         assert!(matches!(routing, Routing::Login { close: true, .. }));
@@ -439,7 +440,7 @@ mod tests {
 
     #[tokio::test]
     async fn input_for_an_unknown_session_is_unknown() {
-        let mut svc = SessionService::new("W");
+        let mut svc = SessionService::new("W", Locale::EN);
         assert!(matches!(
             svc.on_input(sid(7), "hi", &FakeBackend).await,
             Routing::Unknown
@@ -475,7 +476,7 @@ mod tests {
         ));
 
         let acct = |n| AccountId::new(NonZeroU64::new(n).expect("nz"));
-        let mut svc = SessionService::new("W");
+        let mut svc = SessionService::new("W", Locale::EN);
         svc.bind_for_test(
             sid(1),
             InWorldBinding {

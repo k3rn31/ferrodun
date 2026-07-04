@@ -77,6 +77,14 @@ impl TryFrom<u16> for TenantTag {
     }
 }
 
+impl Default for TenantTag {
+    /// Tenant `0` is the default tenant (a single-tenant server that never
+    /// sets `tenant_tag`), and `0` is always within `0..=MAX`.
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
 /// Indexes a slot in a tenant's entity arena. The full 32-bit range is valid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[must_use]

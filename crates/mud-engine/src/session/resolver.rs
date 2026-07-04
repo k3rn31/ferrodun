@@ -79,6 +79,7 @@ mod tests {
     use super::*;
     use crate::session::{InWorldBinding, SessionService};
     use mud_core::{PlaceId, TenantTag};
+    use mud_i18n::Locale;
     use std::num::NonZeroU64;
 
     fn sid(n: u64) -> SessionId {
@@ -99,7 +100,7 @@ mod tests {
             puppet,
             name: mud_account::PuppetName::parse("arden").expect("name"),
         };
-        let mut svc = SessionService::new("W");
+        let mut svc = SessionService::new("W", Locale::EN);
         svc.bind_for_test(sid(1), binding);
 
         let builtins = Vec::new();
@@ -123,7 +124,7 @@ mod tests {
         world.move_to(arden, place(10)).expect("seat arden");
         world.move_to(borel, place(10)).expect("seat borel");
 
-        let mut svc = SessionService::new("W");
+        let mut svc = SessionService::new("W", Locale::EN);
         svc.bind_for_test(
             sid(1),
             InWorldBinding {
