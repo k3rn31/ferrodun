@@ -1,4 +1,6 @@
+mod backend;
 mod config;
+mod places;
 
 use clap::Parser;
 use config::{Cli, ServerConfig};
