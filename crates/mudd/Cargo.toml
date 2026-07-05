@@ -4,6 +4,29 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+anyhow = "1.0.103"
+clap = { version = "4.6.1", features = ["derive"] }
+figment = { version = "0.10.19", features = ["toml", "env"] }
+mud-account = { version = "0.1.0", path = "../mud-account" }
+mud-cmd = { version = "0.1.0", path = "../mud-cmd" }
+mud-core = { version = "0.1.0", path = "../mud-core" }
+mud-db = { version = "0.1.0", path = "../mud-db" }
+mud-engine = { version = "0.1.0", path = "../mud-engine" }
+mud-gateway = { version = "0.1.0", path = "../mud-gateway" }
+mud-i18n = { version = "0.1.0", path = "../mud-i18n" }
+mud-ipc = { version = "0.1.0", path = "../mud-ipc" }
+mud-net = { version = "0.1.0", path = "../mud-net" }
+mud-schema = { version = "0.1.0", path = "../mud-schema" }
+mud-world = { version = "0.1.0", path = "../mud-world" }
+secrecy = "0.10.3"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+figment = { version = "0.10.19", features = ["test"] }
+tempfile = "3.27.0"

@@ -12,6 +12,7 @@ use mud_account::{
 use mud_core::{EntityId, EntityKey, PlaceId, PlaceKey, TenantTag};
 use mud_db::{Accounts, PersistentWorld, PlaceMap, TenantDb};
 use mud_engine::{BackendError, LoginBackend, Routing, SessionResolver, SessionService};
+use mud_i18n::Locale;
 use mud_schema::SessionId;
 use secrecy::{ExposeSecret, SecretString};
 use tempfile::TempDir;
@@ -90,8 +91,12 @@ impl LoginBackend for DbBackend<'_> {
             .map_err(|_| BackendError)
     }
 
-    fn resolve_puppet(&self, key: EntityKey) -> Option<EntityId> {
-        self.world.entity_id(key)
+    fn resolve_puppet(
+        &self,
+        key: EntityKey,
+    ) -> impl std::future::Future<Output = Option<EntityId>> + Send {
+        let result = self.world.entity_id(key);
+        async move { result }
     }
 }
 
@@ -134,7 +139,7 @@ async fn login_of_an_existing_puppet_resolves_in_world() {
         start: hall_slug(),
     };
 
-    let mut svc = SessionService::new("WELCOME");
+    let mut svc = SessionService::new("WELCOME", Locale::EN);
     svc.connect(sid(1));
     for line in ["login alice", "hunter2", "play arden"] {
         let routing = svc.on_input(sid(1), line, &backend).await;
@@ -178,7 +183,7 @@ async fn a_wrong_password_then_retry_succeeds() {
         start: hall_slug(),
     };
 
-    let mut svc = SessionService::new("W");
+    let mut svc = SessionService::new("W", Locale::EN);
     svc.connect(sid(1));
     let _ = svc.on_input(sid(1), "login alice", &backend).await;
     let routing = svc.on_input(sid(1), "wrong", &backend).await;

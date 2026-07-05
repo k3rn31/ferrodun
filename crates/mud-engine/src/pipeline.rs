@@ -9,7 +9,7 @@
 //! correlation id (§2.7.1).
 
 use mud_cmd::ParseOutcome;
-use mud_core::{TickEvent, World};
+use mud_core::{Effect, World};
 use mud_i18n::{Locale, t};
 use mud_schema::{OutputText, SessionInput, SessionOutput};
 
@@ -40,6 +40,7 @@ pub struct Pipeline {
 pub struct DispatchOutcome {
     pub outputs: Vec<SessionOutput>,
     pub disposition: SessionDisposition,
+    pub effects: Vec<Effect>,
 }
 
 impl DispatchOutcome {
@@ -47,6 +48,7 @@ impl DispatchOutcome {
         Self {
             outputs,
             disposition: SessionDisposition::Remain,
+            effects: Vec::new(),
         }
     }
 }
@@ -81,7 +83,7 @@ impl Pipeline {
     /// [`PipelineError::CommandIdExhausted`] if the per-run id space is spent.
     pub fn dispatch(
         &mut self,
-        world: &mut World,
+        world: &World,
         places: &dyn Places,
         resolver: &(impl SessionResolver + Roster),
         input: &SessionInput,
@@ -155,7 +157,7 @@ impl Pipeline {
     /// broadcasts, apply effects, render.
     fn run_matched(
         &self,
-        world: &mut World,
+        world: &World,
         places: &dyn Places,
         roster: &dyn Roster,
         command_id: CommandId,
@@ -192,10 +194,9 @@ impl Pipeline {
             ));
         }
 
-        // Step 7: dispatch the handler over a read-only world, then apply the
-        // effects it returned against the &mut World held here. The immutable
-        // borrow in `ctx` ends before the mutation, so a handler cannot both read
-        // and write the world in one run — mutation is data it requests.
+        // Step 7: dispatch the handler over the read-only world. The effects it
+        // returns are not applied here — the driver submits them to the
+        // scheduler, and they apply on the next tick (§2.5.3.5).
         let reply = {
             let ctx = CommandContext::new(
                 command_id,
@@ -203,7 +204,7 @@ impl Pipeline {
                 &self.locale,
                 switches,
                 args,
-                EngineView::new(&*world, places, roster),
+                EngineView::new(world, places, roster),
             );
             binding.handler().run(&ctx)
         };
@@ -227,20 +228,10 @@ impl Pipeline {
             }
         }
 
-        for &effect in reply.effects() {
-            if let Some(TickEvent::Rejected { effect, error }) = world.apply_effect(effect) {
-                tracing::warn!(
-                    command = %command.name().as_str(),
-                    ?effect,
-                    ?error,
-                    "command effect rejected",
-                );
-            }
-        }
-
         DispatchOutcome {
             outputs,
             disposition: reply.disposition(),
+            effects: reply.effects().to_vec(),
         }
     }
 }
@@ -354,10 +345,10 @@ mod tests {
         let mut pipeline = Pipeline::new(Dispatcher::new());
 
         let _ = pipeline
-            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
+            .dispatch(&world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("first dispatch");
         let _ = pipeline
-            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
+            .dispatch(&world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("second dispatch");
 
         // Each run logs under its own command span; the ids increase per run.
@@ -434,7 +425,7 @@ mod tests {
         let mut pipeline = Pipeline::new(Dispatcher::new()).with_locale(Locale::EN);
 
         let outcome = pipeline
-            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "look"))
+            .dispatch(&world, &NoPlaces, &resolver, &input(1, "look"))
             .expect("dispatch");
 
         // `look` parses to NotFound against the empty table, rendered via the
@@ -471,7 +462,7 @@ mod tests {
         let mut pipeline = Pipeline::new(dispatcher);
 
         let outcome = pipeline
-            .dispatch(&mut world, &NoPlaces, &resolver, &input(1, "shout"))
+            .dispatch(&world, &NoPlaces, &resolver, &input(1, "shout"))
             .expect("dispatch");
 
         // The speaker hears the echo; the listener hears the broadcast; the

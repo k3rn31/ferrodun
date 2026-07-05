@@ -220,10 +220,8 @@ impl Scheduler {
     /// rejection becomes a [`TickEvent::Rejected`]. Increments the tick counter
     /// once (saturating at [`u64::MAX`]).
     pub fn tick(&mut self, world: &mut World) -> Vec<TickEvent> {
-        self.tick = self.tick.saturating_add(1);
-
         let mut events = Vec::new();
-        while let Some(command) = self.queue.pop_front() {
+        for command in self.drain() {
             if let Some(precondition) = command.precondition
                 && !world.satisfies(precondition)
             {
@@ -238,6 +236,17 @@ impl Scheduler {
             }
         }
         events
+    }
+
+    /// Advances the tick counter once (saturating at [`u64::MAX`]) and hands
+    /// off every queued command, in arrival order, emptying the queue.
+    ///
+    /// This is the seam a durable applier consumes: unlike
+    /// [`tick`](Scheduler::tick), it does not apply commands against a
+    /// [`World`] itself.
+    pub fn drain(&mut self) -> Vec<MutationCommand> {
+        self.tick = self.tick.saturating_add(1);
+        self.queue.drain(..).collect()
     }
 }
 
@@ -560,5 +569,32 @@ mod tests {
     fn tick_period_matches_the_fixed_rate() {
         assert_eq!(TICK_HZ, 20);
         assert_eq!(TICK_PERIOD, Duration::from_millis(50));
+    }
+
+    #[test]
+    fn drain_returns_queued_commands_in_arrival_order_and_advances_the_tick() {
+        let mut scheduler = Scheduler::new();
+        let first = MutationCommand::new(Effect::Create);
+        let second = MutationCommand::new(Effect::Create);
+        scheduler.submit(first);
+        scheduler.submit(second);
+
+        let drained = scheduler.drain();
+
+        assert_eq!(scheduler.tick_number(), 1, "drain counts as one tick");
+        assert_eq!(drained.len(), 2);
+        assert!(matches!(
+            drained.first().map(MutationCommand::effect),
+            Some(Effect::Create)
+        ));
+    }
+
+    #[test]
+    fn drain_empties_the_queue() {
+        let mut scheduler = Scheduler::new();
+        scheduler.submit(MutationCommand::new(Effect::Create));
+        let _ = scheduler.drain();
+        assert!(scheduler.drain().is_empty(), "second drain finds nothing");
+        assert_eq!(scheduler.tick_number(), 2, "every drain advances the tick");
     }
 }

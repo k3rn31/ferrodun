@@ -122,7 +122,7 @@ fn say_echoes_to_the_speaker_and_broadcasts_to_the_room() {
         line: InputLine::new("say hello"),
     };
     let outcome = pipeline
-        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .dispatch(&world, &Rooms::two(), &resolver, &input)
         .expect("dispatch");
 
     let speaker = text_for(&outcome.outputs, sid(1));
@@ -168,7 +168,7 @@ fn moving_announces_departure_and_arrival_to_the_two_rooms() {
         line: InputLine::new("north"),
     };
     let outcome = pipeline
-        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .dispatch(&world, &Rooms::two(), &resolver, &input)
         .expect("dispatch");
 
     // Borel (left behind in HALL) sees the departure; Cade (in STUDY) sees the
@@ -211,7 +211,7 @@ fn who_lists_the_connected_players() {
         line: InputLine::new("who"),
     };
     let outcome = pipeline
-        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .dispatch(&world, &Rooms::two(), &resolver, &input)
         .expect("dispatch");
 
     let listed = text_for(&outcome.outputs, sid(1));
@@ -241,7 +241,7 @@ fn quit_signals_a_close_with_a_goodbye() {
         line: InputLine::new("quit"),
     };
     let outcome = pipeline
-        .dispatch(&mut world, &Rooms::two(), &resolver, &input)
+        .dispatch(&world, &Rooms::two(), &resolver, &input)
         .expect("dispatch");
 
     assert_eq!(outcome.disposition, SessionDisposition::Close);

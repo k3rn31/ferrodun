@@ -56,7 +56,8 @@
 use std::collections::HashMap;
 
 use mud_core::{
-    Effect, EntityId, EntityKey, MutationCommand, PlaceId, PlaceKey, TenantTag, TickEvent, World,
+    Effect, EntityId, EntityKey, MutationCommand, PlaceId, PlaceKey, Scheduler, TenantTag,
+    TickEvent, World,
 };
 
 use crate::error::DbError;
@@ -81,6 +82,7 @@ pub struct PersistentWorld {
     // Translates a location's durable slug to/from the ephemeral `PlaceId` the
     // in-memory `World` uses, supplied by the world loader at construction.
     places: PlaceMap,
+    scheduler: Scheduler,
 }
 
 impl PersistentWorld {
@@ -153,6 +155,7 @@ impl PersistentWorld {
             by_key,
             by_id,
             places,
+            scheduler: Scheduler::new(),
         })
     }
 
@@ -213,6 +216,37 @@ impl PersistentWorld {
         }
     }
 
+    /// Enqueues `command` for the next [`tick`](PersistentWorld::tick)
+    /// (§2.5.3.5: arrival order is application order).
+    pub fn submit(&mut self, command: MutationCommand) {
+        self.scheduler.submit(command);
+    }
+
+    /// Drains the scheduler queue, applying each command to the arena and the
+    /// database via [`apply`](PersistentWorld::apply), and returns the
+    /// observable events (created handles, precondition failures, rejections).
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`DbError`] and stops: commands after the failure are
+    /// neither applied nor persisted (fail-stop, the M1-22 consistency model —
+    /// the caller must halt dispatch and exit).
+    pub async fn tick(&mut self) -> Result<Vec<TickEvent>, DbError> {
+        let mut events = Vec::new();
+        for command in self.scheduler.drain() {
+            if let Some(event) = self.apply(command).await? {
+                events.push(event);
+            }
+        }
+        Ok(events)
+    }
+
+    /// The current tick number (source for `mud.time.tick()`, §3.16.4).
+    #[must_use]
+    pub fn tick_number(&self) -> u64 {
+        self.scheduler.tick_number()
+    }
+
     /// The current `EntityId` mapped to `key`, if the entity is resident.
     #[must_use]
     pub fn entity_id(&self, key: EntityKey) -> Option<EntityId> {
@@ -228,6 +262,56 @@ impl PersistentWorld {
     /// The in-memory world, for read predicates against re-minted handles.
     pub fn world(&self) -> &World {
         &self.world
+    }
+
+    /// Makes a persisted entity resident in the live world (M1-22 design §7):
+    /// mints an arena handle for `key`, replays its persisted location, and
+    /// records the key↔id mapping. Called for entities created after the boot
+    /// load — e.g. a puppet minted mid-session by the login flow (§3.19).
+    /// Idempotent: an already-resident key returns its existing handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DbError`] if `key` has no `entities` row, on a query failure,
+    /// on a persisted slug naming no loaded room, or on arena exhaustion.
+    pub async fn hydrate(&mut self, key: EntityKey) -> Result<EntityId, DbError> {
+        if let Some(id) = self.by_key.get(&key) {
+            return Ok(*id);
+        }
+        let key_db = entity_key_to_db(key)?;
+        let exists = sqlx::query!(
+            r#"SELECT entity_key AS "entity_key!" FROM entities WHERE entity_key = ?"#,
+            key_db
+        )
+        .fetch_optional(self.db.pool())
+        .await?;
+        if exists.is_none() {
+            return Err(DbError::DanglingReference(key_db));
+        }
+
+        let id = self
+            .world
+            .create()
+            .map_err(|source| DbError::LoadArenaExhausted {
+                entity_key: key,
+                source,
+            })?;
+        self.by_key.insert(key, id);
+        self.by_id.insert(id, key);
+
+        let location = sqlx::query!(
+            r#"SELECT place_key AS "place_key!" FROM location WHERE entity_key = ?"#,
+            key_db
+        )
+        .fetch_optional(self.db.pool())
+        .await?;
+        if let Some(row) = location {
+            let place = place_id_for_slug(&self.places, &row.place_key)?;
+            self.world
+                .move_to(id, place)
+                .map_err(|_| DbError::DanglingReference(key_db))?;
+        }
+        Ok(id)
     }
 
     /// `Create` is database-first: the row's `AUTOINCREMENT` key is the durable
@@ -400,6 +484,65 @@ mod tests {
         assert!(
             matches!(error, DbError::InvalidId(-1)),
             "a non-positive persisted key must fail boot load with InvalidId, got {error:?}"
+        );
+    }
+
+    // Needs raw SQL against the crate-private pool and `entity_key_from_db`, so
+    // it lives here rather than in the integration test file (as
+    // `boot_load_rejects_a_corrupt_entity_key` above).
+    #[tokio::test]
+    async fn hydrate_makes_a_persisted_entity_resident_in_its_persisted_location() {
+        let dir = TempDir::new().expect("temp dir");
+        let db = TenantDb::open(dir.path()).await.expect("open tenant db");
+
+        let row = sqlx::query!(
+            r#"INSERT INTO entities DEFAULT VALUES RETURNING entity_key AS "entity_key!""#
+        )
+        .fetch_one(db.pool())
+        .await
+        .expect("insert entity row");
+        let key = entity_key_from_db(row.entity_key).expect("valid persisted key");
+        let key_db = row.entity_key;
+
+        sqlx::query!(
+            "INSERT INTO location (entity_key, place_key) VALUES (?, 'town_square')",
+            key_db
+        )
+        .execute(db.pool())
+        .await
+        .expect("insert location row");
+
+        let place =
+            mud_core::PlaceId::new(std::num::NonZeroU64::new(7).expect("non-zero place id"));
+        let places = PlaceMap::from_pairs([(
+            place,
+            mud_core::PlaceKey::parse("town_square").expect("valid slug"),
+        )]);
+        let mut world = PersistentWorld::load(db, tenant(), places)
+            .await
+            .expect("load");
+
+        let id = world.hydrate(key).await.expect("hydrate");
+
+        assert_eq!(world.entity_id(key), Some(id));
+        assert_eq!(world.world().location_of(id), Some(place));
+
+        let again = world.hydrate(key).await.expect("hydrate is idempotent");
+        assert_eq!(again, id);
+    }
+
+    #[tokio::test]
+    async fn hydrating_an_unknown_key_is_an_error() {
+        let dir = TempDir::new().expect("temp dir");
+        let db = TenantDb::open(dir.path()).await.expect("open tenant db");
+        let mut world = PersistentWorld::load(db, tenant(), PlaceMap::default())
+            .await
+            .expect("load");
+
+        let missing = entity_key_from_db(42).expect("valid key");
+        assert!(
+            world.hydrate(missing).await.is_err(),
+            "no entities row → error"
         );
     }
 }

@@ -176,15 +176,22 @@ impl Harness {
         self.world.name_entity(item, keywords).expect("name item");
     }
 
+    /// Dispatches `line`, then applies the returned effects to `self.world` —
+    /// standing in for the scheduler driver (a later task), which submits a
+    /// dispatch's effects for the next tick (§2.5.3.5).
     fn run(&mut self, line: &str) -> Vec<SessionOutput> {
         let input = SessionInput {
             session_id: session(),
             line: InputLine::new(line),
         };
-        self.pipeline
-            .dispatch(&mut self.world, &self.places, &self.resolver, &input)
-            .expect("dispatch succeeds")
-            .outputs
+        let outcome = self
+            .pipeline
+            .dispatch(&self.world, &self.places, &self.resolver, &input)
+            .expect("dispatch succeeds");
+        for effect in outcome.effects {
+            let _ = self.world.apply_effect(effect);
+        }
+        outcome.outputs
     }
 
     /// The single text line of a one-element output.

@@ -1343,3 +1343,58 @@ truth when this log drifts.
   draining outbound (buffer outbound in a `VecDeque` / `try_send` + pending
   queue). Flagged by the M1-21 whole-branch review; address when split mode
   lands.
+
+## 2026-07-04 — M1-22: `mudd` single-process wiring (multi-tenant server)
+
+- **Spec:** §2.1.3.3, §5.2, §3.19, and §2.5.3.3 (**amended** this PR — the
+  write-through layer is now specified as arena-cache + durable-write-per-command
+  + fail-stop, since the old "same transaction" framing cannot hold for an
+  in-memory arena). Design doc:
+  `docs/superpowers/specs/2026-07-03-m1-22-mudd-wiring-design.md`;
+  plan: `docs/superpowers/plans/2026-07-04-m1-22-mudd-wiring.md`.
+- **Done (single write path):** `Scheduler::drain` (queue handoff seam);
+  `PersistentWorld` now owns the `Scheduler` and exposes `submit`/`tick`
+  (arena-first, durable-write-second, **fail-stop on `DbError` via `?`** —
+  prefix-consistent) / `tick_number`. The command pipeline is now **read-only**:
+  `dispatch`/`run_matched` take `&World` and return effects in
+  `DispatchOutcome.effects`; the driver submits them to the scheduler so they
+  apply on the next tick (no synchronous arena mutation in dispatch).
+- **Done (identity & residency):** persisted `world_id` (new `server` table,
+  migration `0001_initial.sql` extended in place; `TenantDb` gained `Clone`);
+  `PersistentWorld::hydrate` makes a mid-session-created puppet resident before
+  the login FSM's `Enter` resolves it — **closes the M1-19 create→enter gap**.
+  `LoginBackend::resolve_puppet` became async (implementors reach shared world
+  state behind an async lock).
+- **Done (per-tenant config):** `TenantConfig` gained `tenant_tag` (default 0,
+  validated ≤ 4095 at load) and `locale` (default `en`) keys; `SessionService`
+  renders in the tenant locale; `Pipeline::with_locale` sources it.
+  `impl Default for TenantTag` (= 0).
+- **Done (the `mudd` binary):** server-wide config at
+  `$XDG_CONFIG_HOME/ferrodun/config.toml` (precedence defaults < file <
+  `MUDD_*` env < CLI flags; `--tenant-dir` replaces the registry). Each
+  `[[tenants]]` entry boots an **isolated stack** (own DB, arena, scheduler,
+  session registry, TCP listener) as two tokio tasks — embedded
+  `mud_gateway::serve` + a per-tenant World loop — bridged by
+  `mud_ipc::in_memory_pair`; **multiple tenants run concurrently**. Cross-tenant
+  `tenant_tag` uniqueness enforced at boot. `DbBackend` (login port: maps every
+  `DbError`→`BackendError`, hashes via `spawn_blocking`, hydrates on
+  `create_puppet`) + `WorldPlaces` (`Places` over `Rooms`). `main` is
+  **fail-stop**: a tenant task fault ends the process (non-zero exit) so a
+  supervisor restarts it and the arena rebuilds from the DB (PLAN M7-E notes the
+  Postgres retry tier to add in front of fail-stop). `mudd` gained a `lib.rs`
+  (exposes `boot`/`Cli`/`ServerConfig`/`TenantEntry`) as the integration-test
+  seam; the binary is otherwise thin (parse → resolve → boot → `ctrl_c`/join
+  select).
+- **Verify:** `cargo test --workspace` green incl.
+  `crates/mudd/tests/telnet_login.rs` — a real-`TcpStream` DoD e2e
+  (register → Password → Confirm → no-puppets → `new Hero` → "Created Hero." →
+  "Welcome. You are now in the world." → `look` → "Town Square"), two tenants
+  serving independent `alice` logins concurrently (per-tenant DB isolation), and
+  duplicate `tenant_tag` failing `boot`. `cargo clippy --workspace --all-targets
+  -- -D warnings` + `cargo fmt --all --check` + `uv run mkdocs build --strict`
+  all clean. Docs: new `docs/docs/running-a-server.md` (server config, tenant
+  registry, systemd/supervisor deployment — Linux only).
+- **Next:** M1-23 acceptance test (restart-persistence over telnet, cross-tenant
+  handle isolation, NAWS/ANSI assertions). **Deferred/known:** split-mode IPC
+  backpressure (M1-21 note); per-tenant supervision (M1 fail-stop is
+  process-wide); Postgres retry tier (M7-E).

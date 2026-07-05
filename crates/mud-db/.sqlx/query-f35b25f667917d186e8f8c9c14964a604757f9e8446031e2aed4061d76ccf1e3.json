@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO location (entity_key, place_key) VALUES (?, 'town_square')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "f35b25f667917d186e8f8c9c14964a604757f9e8446031e2aed4061d76ccf1e3"
+}

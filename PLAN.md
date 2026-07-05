@@ -597,22 +597,26 @@ spine.
   transport); M1-22 adds the scheduler **timer / driver loop** on top of it.
   M1-06 ships only the logical `tick()` and the cadence constants.
   - *Spec:* §2.1.3.3, §5.2. *Verify:* `cargo run -p mudd` serves a telnet
-    login locally.
+    login locally; a registry with two tenants serves both concurrently.
   - **CLI (moved here from M1-12):** `mudd` parses arguments with **`clap`**;
-    flags MUST override the `figment`-loaded tenant config (layer a clap-derived
-    provider on top of TOML + env). At minimum a `--tenant-dir` flag selects which
-    tenant folder to boot.
+    flags MUST override the `figment`-loaded server config (layer a clap-derived
+    provider on top of TOML + env). `--tenant-dir` boots a single tenant,
+    replacing the configured registry.
   - **Deferred identity decisions (resolve here):**
     - **`world_id`** — must be stable across restarts (the resume handshake
       §2.1.3.2 re-presents it). Decide its source: recommended is generate-once-
       and-persist in the tenant DB, or derive deterministically from tenant
       identity — not a hand-authored magic number.
     - **`tenant_tag`** — the 12-bit isolation handle (§2.3.1.1) the `World` is
-      constructed with. Read it from `config.toml` (`0` for the single M1 tenant)
-      or assign at load; it needs no cross-restart stability.
-    - **Tenant selection / server config** — M1 boots a single tenant dir; a
-      server-wide config (tenant registry, public listener, routing) is a later
-      multi-tenant milestone.
+      constructed with. Read it from the tenant's `config.toml` (default `0`);
+      it needs no cross-restart stability, but must be unique across the
+      tenants configured in one process (validated at boot).
+    - **Tenant selection / server config** — server-wide config lives at
+      `$XDG_CONFIG_HOME/ferrodun/config.toml` (`--config` overrides) and
+      carries the tenant registry (`[[tenants]]`: `dir` + `listen`); M1-22
+      boots every registered tenant concurrently, each an isolated
+      world+gateway stack on its own listen address. Shared-listener /
+      host-based routing stays a later milestone.
     - Wiring `mud-world`'s `LoadedWorld` into boot: open the DB (M1-08), build a
       `PlaceMap` from `LoadedWorld::rooms().place_keys()`, and `PersistentWorld::
       load(db, tenant, place_map)` (§2.5.1.5).
@@ -909,6 +913,10 @@ Epics:
   endpoint, retention windows (§3.17); invite-only registration + recovery
   tokens (§3.15.1.3); full linkdead reattach + idle/liveness (§3.15.2–3.15.3);
   background snapshot (§2.5.3.4); Postgres backend + per-DB roles (§2.5.1.4).
+  The Postgres backend PR must also replace M1-22's fail-stop-on-`DbError`
+  policy with a retry tier (transient network/connection errors retried with
+  backoff in front of fail-stop): fail-stop is the right response to a broken
+  local SQLite file, but not to a blip on a networked database.
 - **M7-F — Hardening.** Synthetic load test proving 10k entities / sub-50 ms
   tick p99 with command-path script p99 reported separately (§2.3.4.3);
   security pass (Lua sandbox fuzzing, §10); performance pass.

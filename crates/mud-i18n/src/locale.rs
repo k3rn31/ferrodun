@@ -24,6 +24,11 @@ impl Locale {
         Self(Cow::Borrowed(tag))
     }
 
+    /// A locale from a runtime-resolved tag (per-tenant configuration, §3.14.6).
+    pub fn new(tag: impl Into<String>) -> Self {
+        Self(Cow::Owned(tag.into()))
+    }
+
     /// The locale tag text.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -44,5 +49,10 @@ mod tests {
     #[test]
     fn en_is_the_reference_locale() {
         assert_eq!(Locale::EN.as_str(), "en");
+    }
+
+    #[test]
+    fn new_wraps_an_owned_tag() {
+        assert_eq!(Locale::new("fr").as_str(), "fr");
     }
 }

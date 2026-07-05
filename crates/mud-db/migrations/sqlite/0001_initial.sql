@@ -59,3 +59,11 @@ CREATE TABLE inventory (
         entity_key
     ) ON DELETE CASCADE
 );
+
+-- Server-scoped identity for this tenant's World. Single row (id fixed to 1):
+-- `world_id` is generated once at first boot and re-presented by the IPC
+-- resume handshake (§2.1.3.2), so it must survive restarts.
+CREATE TABLE server (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    world_id INTEGER NOT NULL
+);

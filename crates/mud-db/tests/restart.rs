@@ -7,7 +7,7 @@
 use std::num::NonZeroU64;
 
 use mud_core::{
-    Effect, EntityId, MutationCommand, PlaceId, PlaceKey, Precondition, TenantTag, TickEvent,
+    Effect, EntityId, MutationCommand, PlaceId, PlaceKey, Precondition, TenantTag, TickEvent, World,
 };
 use mud_db::{DbError, PersistentWorld, PlaceMap, TenantDb};
 use tempfile::TempDir;
@@ -445,4 +445,59 @@ async fn boot_load_rejects_a_location_in_a_removed_room() {
         matches!(error, DbError::UnknownPlaceKey(ref s) if s == "hall"),
         "a removed room's slug must surface as UnknownPlaceKey, got {error:?}"
     );
+}
+
+// §2.5.3.3, M1-22 design: commands submitted to the scheduler apply to arena
+// AND database on tick; rejected commands never reach the database.
+
+#[tokio::test]
+async fn submitted_create_applies_to_arena_and_database_on_tick() {
+    let dir = TempDir::new().expect("temp dir");
+    let mut world = open_world(&dir).await;
+
+    world.submit(MutationCommand::new(Effect::Create));
+    let events = world.tick().await.expect("tick applies the queue");
+
+    let minted = match events.as_slice() {
+        [TickEvent::Created { entity }] => *entity,
+        other => panic!("expected exactly one Created, got {other:?}"),
+    };
+    assert!(
+        world.entity_key(minted).is_some(),
+        "the minted entity maps to a durable key (row persisted)"
+    );
+    assert_eq!(world.tick_number(), 1);
+}
+
+#[tokio::test]
+async fn a_rejected_command_persists_nothing() {
+    let dir = TempDir::new().expect("temp dir");
+    let mut world = open_world(&dir).await;
+
+    // A teardown of a handle from a foreign arena is rejected by the arena.
+    let foreign = {
+        let mut other = World::new(TenantTag::new(2).expect("tag 2 in range"));
+        other.create().expect("foreign create")
+    };
+    world.submit(MutationCommand::new(Effect::Teardown { entity: foreign }));
+    let events = world
+        .tick()
+        .await
+        .expect("tick returns the rejection as an event");
+
+    assert!(
+        matches!(events.as_slice(), [TickEvent::Rejected { .. }]),
+        "the arena rejection surfaces as an event, got {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn commands_apply_in_submission_order() {
+    let dir = TempDir::new().expect("temp dir");
+    let mut world = open_world(&dir).await;
+
+    world.submit(MutationCommand::new(Effect::Create));
+    world.submit(MutationCommand::new(Effect::Create));
+    let events = world.tick().await.expect("tick");
+    assert_eq!(events.len(), 2, "both creates reported, in order");
 }

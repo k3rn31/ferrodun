@@ -55,6 +55,8 @@ nav:
       - Rooms: building/rooms.md
       - Regions: building/regions.md
       - Color & styling: building/styling.md
+  - Operating:
+      - Running a server: running-a-server.md
 
 plugins:
   - search
