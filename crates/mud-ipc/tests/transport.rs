@@ -202,6 +202,21 @@ async fn socket_recv_rejects_an_oversized_inbound_frame() {
 }
 
 #[tokio::test]
+async fn connect_reports_io_when_the_socket_path_does_not_exist() {
+    // No listener is ever bound at this path, so the `connect` syscall itself
+    // fails (ENOENT) and surfaces as `IpcError::Io` via `UnixStream::connect`'s
+    // `?` conversion — distinct from the framing-level `Io`/`FrameTooLarge`
+    // arms exercised by the other socket tests in this file.
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let missing_path = dir.path().join("no-such.sock");
+
+    assert!(matches!(
+        connect(&missing_path).await,
+        Err(IpcError::Io(_))
+    ));
+}
+
+#[tokio::test]
 async fn accept_resume_rejects_a_non_handshake_frame() {
     let (mut gateway, mut world) = in_memory_pair();
     let stray = GatewayFrame::Input(SessionInput {
