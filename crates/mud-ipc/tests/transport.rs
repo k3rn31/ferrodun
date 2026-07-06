@@ -253,3 +253,34 @@ async fn announce_sessions_reports_peer_closed_when_the_world_drops() {
     });
     assert!(matches!(announced, Err(IpcError::PeerClosed)));
 }
+
+#[tokio::test]
+async fn socket_recv_rejects_a_well_framed_but_undecodable_body() {
+    use tokio::io::AsyncWriteExt;
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let path = dir.path().join("world.sock");
+    let listener = UnixListener::bind(&path).expect("bind unix socket");
+    let accept_task = tokio::spawn(async move { accept(&listener).await });
+    let mut raw = tokio::net::UnixStream::connect(&path)
+        .await
+        .expect("raw gateway connects");
+    let mut world = accept_task
+        .await
+        .expect("accept task joins")
+        .expect("world accepts");
+
+    // A valid length prefix (1 byte) framing a truncated GatewayFrame: variant 1
+    // (`Input`) with no `SessionInput` payload. The codec hands a complete frame
+    // to `decode`, which then fails for want of the session id — exercising the
+    // `Codec` arm, distinct from the framing-level `FrameTooLarge`/`Io` arms.
+    let body = [0x01u8];
+    let len = u32::try_from(body.len()).expect("len fits in u32");
+    raw.write_all(&len.to_be_bytes())
+        .await
+        .expect("write length prefix");
+    raw.write_all(&body).await.expect("write truncated body");
+    raw.flush().await.expect("flush frame");
+
+    assert!(matches!(world.recv().await, Err(IpcError::Codec(_))));
+}
