@@ -228,3 +228,28 @@ async fn announce_sessions_rejects_a_non_ack_reply() {
     replied.expect("world sends a stray reply");
     assert!(matches!(announced, Err(IpcError::UnexpectedFrame)));
 }
+
+#[tokio::test]
+async fn accept_resume_reports_peer_closed_when_the_gateway_drops() {
+    // World is waiting for the resume announcement; the Gateway disappears
+    // instead of sending it (handshake.rs: `None => Err(PeerClosed)`).
+    let (gateway, mut world) = in_memory_pair();
+    drop(gateway);
+    assert!(matches!(
+        accept_resume(&mut world, world_id(1)).await,
+        Err(IpcError::PeerClosed)
+    ));
+}
+
+#[tokio::test]
+async fn announce_sessions_reports_peer_closed_when_the_world_drops() {
+    // Gateway announces, the World consumes the resume and then vanishes without
+    // acknowledging (announce_sessions: `None => Err(PeerClosed)`).
+    let (mut gateway, world) = in_memory_pair();
+    let (announced, _) = tokio::join!(announce_sessions(&mut gateway, world_id(1), vec![]), async {
+        let mut world = world;
+        world.recv().await.expect("world receives the resume");
+        drop(world);
+    });
+    assert!(matches!(announced, Err(IpcError::PeerClosed)));
+}
