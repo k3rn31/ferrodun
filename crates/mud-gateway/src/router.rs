@@ -347,4 +347,48 @@ mod tests {
             .expect("router task must not panic")
             .expect("closed peer is a clean shutdown");
     }
+
+    #[tokio::test]
+    async fn output_reaches_only_the_addressed_session() {
+        let (gateway_end, mut world_end) = in_memory_pair();
+        let (commands_tx, commands_rx) = mpsc::channel(8);
+        let router = tokio::spawn(run_router(gateway_end, commands_rx));
+
+        let (tx_a, mut rx_a) = mpsc::channel(OUTPUT_CAPACITY);
+        let (tx_b, mut rx_b) = mpsc::channel(OUTPUT_CAPACITY);
+        let a = session(1);
+        let b = session(2);
+        commands_tx
+            .send(ToRouter::Register { session_id: a, tx: tx_a })
+            .await
+            .expect("router must accept A's registration");
+        commands_tx
+            .send(ToRouter::Register { session_id: b, tx: tx_b })
+            .await
+            .expect("router must accept B's registration");
+        drain_barrier(&commands_tx, &mut world_end, session(9)).await;
+
+        world_end
+            .send(WorldFrame::Output(SessionOutput {
+                session_id: a,
+                text: OutputText::new("for-a"),
+            }))
+            .await
+            .expect("world endpoint must send");
+
+        let got = rx_a.recv().await.expect("A receives its output");
+        assert!(matches!(got, ToConnection::Output(t) if t.as_str() == "for-a"));
+        // Blocking on A's receiver means the frame is fully routed; B, never
+        // addressed, has nothing waiting.
+        assert!(
+            rx_b.try_recv().is_err(),
+            "output addressed to A must not reach B"
+        );
+
+        drop(world_end);
+        router
+            .await
+            .expect("router task must not panic")
+            .expect("closed peer is a clean shutdown");
+    }
 }
