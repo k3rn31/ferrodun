@@ -30,7 +30,8 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use crate::{ArenaError, EntityId, PlaceId, World};
+use crate::World;
+use crate::write_model::{MutationCommand, TickEvent};
 
 /// Scheduler tick rate in hertz — fixed at 20 Hz and not tenant-configurable
 /// (§3.16.2).
@@ -40,144 +41,6 @@ pub const TICK_HZ: u32 = 20;
 /// [`Scheduler::tick`] at (§3.16.2). Pinned here; the loop that consumes it
 /// lives outside this module.
 pub const TICK_PERIOD: Duration = Duration::from_millis(1000 / TICK_HZ as u64);
-
-/// A primitive world mutation. Each variant maps to one [`World`] operation.
-///
-/// Effects are deliberately primitive (no compound "pick up" / "drop");
-/// higher-level operations compose them. Atomicity of a read-then-write is
-/// provided orthogonally by a [`Precondition`] on the [`MutationCommand`], not
-/// by a compound effect.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Effect {
-    /// Create a new entity; the minted handle is reported via
-    /// [`TickEvent::Created`].
-    Create,
-    /// Tear an entity down (free its handle, clear its location).
-    Teardown {
-        /// The entity to tear down.
-        entity: EntityId,
-    },
-    /// Move an entity to a Place, replacing its previous location.
-    MoveTo {
-        /// The entity being moved.
-        entity: EntityId,
-        /// The destination Place.
-        place: PlaceId,
-    },
-    /// Clear an entity's location, so it is located nowhere (e.g. an item lifted
-    /// off the ground into an inventory).
-    ClearLocation {
-        /// The entity whose location is cleared.
-        entity: EntityId,
-    },
-    /// Add an item to a container's inventory.
-    InventoryAdd {
-        /// The container receiving the item.
-        container: EntityId,
-        /// The item being added.
-        item: EntityId,
-    },
-    /// Remove an item from a container's inventory.
-    InventoryRemove {
-        /// The container losing the item.
-        container: EntityId,
-        /// The item being removed.
-        item: EntityId,
-    },
-}
-
-/// A condition evaluated against the [`World`] at apply time. When a
-/// [`MutationCommand`] carries one and it does not hold, the effect is skipped
-/// and a [`TickEvent::PreconditionFailed`] is emitted (§2.5.3.5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Precondition {
-    /// Holds when `entity` is currently located at `place`.
-    LocatedIn {
-        /// The entity whose location is checked.
-        entity: EntityId,
-        /// The Place it must currently occupy.
-        place: PlaceId,
-    },
-    /// Holds when `container` currently holds `item`.
-    Contains {
-        /// The container whose contents are checked.
-        container: EntityId,
-        /// The item it must currently hold.
-        item: EntityId,
-    },
-}
-
-/// A single unit of work for the scheduler: an [`Effect`] with an optional
-/// [`Precondition`] guard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[must_use]
-pub struct MutationCommand {
-    precondition: Option<Precondition>,
-    effect: Effect,
-}
-
-impl MutationCommand {
-    /// Creates an unconditional command carrying `effect`.
-    pub fn new(effect: Effect) -> Self {
-        Self {
-            precondition: None,
-            effect,
-        }
-    }
-
-    /// Attaches a precondition, making this a guarded read-then-write
-    /// (§2.5.3.5). The effect applies only if `precondition` holds at apply
-    /// time.
-    pub fn with_precondition(mut self, precondition: Precondition) -> Self {
-        self.precondition = Some(precondition);
-        self
-    }
-
-    /// The effect this command applies.
-    #[must_use]
-    pub fn effect(&self) -> Effect {
-        self.effect
-    }
-
-    /// The precondition guarding this command, if any.
-    #[must_use]
-    pub fn precondition(&self) -> Option<Precondition> {
-        self.precondition
-    }
-}
-
-/// The outcome of applying one [`MutationCommand`] during a tick.
-///
-/// Successful primitive effects other than [`Effect::Create`] produce no event;
-/// only outcomes a caller must observe are reported.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum TickEvent {
-    /// An [`Effect::Create`] minted this entity. The only way a submitter learns
-    /// the new handle, since commands apply asynchronously to submission.
-    Created {
-        /// The freshly minted entity handle.
-        entity: EntityId,
-    },
-    /// A command's precondition did not hold; its effect was not applied
-    /// (§2.5.3.5).
-    PreconditionFailed {
-        /// The precondition that failed.
-        precondition: Precondition,
-        /// The effect that was therefore skipped.
-        effect: Effect,
-    },
-    /// An effect was rejected by the arena (a stale or foreign handle, or slot
-    /// exhaustion) and was not applied.
-    Rejected {
-        /// The effect that was rejected.
-        effect: Effect,
-        /// Why the arena rejected it.
-        error: ArenaError,
-    },
-}
 
 /// Serializes [`MutationCommand`]s and applies them to a [`World`] on each tick.
 ///
@@ -222,16 +85,16 @@ impl Scheduler {
     pub fn tick(&mut self, world: &mut World) -> Vec<TickEvent> {
         let mut events = Vec::new();
         for command in self.drain() {
-            if let Some(precondition) = command.precondition
+            if let Some(precondition) = command.precondition()
                 && !world.satisfies(precondition)
             {
                 events.push(TickEvent::PreconditionFailed {
                     precondition,
-                    effect: command.effect,
+                    effect: command.effect(),
                 });
                 continue;
             }
-            if let Some(event) = world.apply_effect(command.effect) {
+            if let Some(event) = world.apply_effect(command.effect()) {
                 events.push(event);
             }
         }
@@ -253,7 +116,7 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TenantTag;
+    use crate::{ArenaError, EntityId, Effect, PlaceId, Precondition, TenantTag};
     use std::num::NonZeroU64;
 
     fn world() -> World {
