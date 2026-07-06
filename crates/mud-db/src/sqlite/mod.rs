@@ -265,4 +265,26 @@ mod tests {
         let b = open_in(&dir_b).await.world_id().await.expect("world_id b");
         assert_ne!(a, b, "random world ids must not collide across tenants");
     }
+
+    #[tokio::test]
+    async fn a_negative_persisted_world_id_is_reported_as_invalid() {
+        let dir = TempDir::new().expect("tempdir");
+        let db = open_in(&dir).await;
+
+        // First call generates and persists a valid id.
+        let _ = db.world_id().await.expect("world id generated");
+
+        // Corrupt it to a value outside the NonZeroU64 range, standing in for a
+        // manual edit or a row from a newer schema.
+        sqlx::query("UPDATE server SET world_id = -1 WHERE id = 1")
+            .execute(db.pool())
+            .await
+            .expect("force corrupt world id");
+
+        let err = db
+            .world_id()
+            .await
+            .expect_err("a negative persisted world id is corruption");
+        assert!(matches!(err, DbError::InvalidId(-1)), "got {err:?}");
+    }
 }
