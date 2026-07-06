@@ -36,10 +36,14 @@ pub enum IpcError {
     },
 
     /// A frame exceeded the maximum on-wire size (§3.6.4-adjacent untrusted-input bound).
-    #[error("ipc frame of {size} bytes exceeds the maximum of {max} bytes")]
+    ///
+    /// `size` is the encoded byte count when known (the send path); it is `None`
+    /// when a peer announced an over-cap length that the length-delimited codec
+    /// rejected from its header, before the body was read (the recv path).
+    #[error("ipc frame exceeds the maximum of {max} bytes")]
     FrameTooLarge {
-        /// The encoded size of the offending frame.
-        size: usize,
+        /// The encoded size of the offending frame, when known.
+        size: Option<usize>,
         /// The configured maximum, [`MAX_FRAME_BYTES`](crate::MAX_FRAME_BYTES).
         max: usize,
     },

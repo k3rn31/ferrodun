@@ -186,15 +186,19 @@ async fn socket_recv_rejects_an_oversized_inbound_frame() {
         .expect("world accepts");
 
     // A peer-supplied length prefix one byte past the cap. The codec must reject
-    // it on the header alone, before allocating the body — this is the
-    // untrusted-input bound `MAX_FRAME_BYTES` exists to enforce.
+    // it on the header alone, before allocating the body — this is
+    // the untrusted-input bound MAX_FRAME_BYTES enforces, reported symmetrically
+    // with the send path as FrameTooLarge.
     let oversized_len = u32::try_from(MAX_FRAME_BYTES + 1).expect("cap fits in u32");
     raw.write_all(&oversized_len.to_be_bytes())
         .await
         .expect("write oversized length prefix");
     raw.flush().await.expect("flush length prefix");
 
-    assert!(matches!(world.recv().await, Err(IpcError::Io(_))));
+    assert!(matches!(
+        world.recv().await,
+        Err(IpcError::FrameTooLarge { size: None, max: MAX_FRAME_BYTES })
+    ));
 }
 
 #[tokio::test]
