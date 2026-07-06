@@ -16,6 +16,7 @@ mod archetype;
 mod banner;
 mod config;
 mod error;
+mod kdl;
 mod palette;
 mod regions;
 mod rooms;

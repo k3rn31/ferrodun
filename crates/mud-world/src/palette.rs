@@ -21,7 +21,7 @@ use kdl::{KdlDocument, KdlNode, KdlValue};
 use mud_core::{Attributes, Color, Palette, RoleName, Style};
 
 use crate::error::WorldError;
-use crate::rooms::arg;
+use crate::kdl::arg;
 
 /// Loads a tenant palette, layering `path` (if given) over the engine baseline.
 ///
