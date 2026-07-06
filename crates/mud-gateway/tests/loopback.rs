@@ -6,7 +6,7 @@
 use std::num::NonZeroU64;
 use std::time::Duration;
 
-use mud_gateway::{GatewayConfig, serve};
+use mud_gateway::{GatewayConfig, GatewayError, serve};
 use mud_ipc::{Endpoint, InMemoryEndpoint, accept_resume, in_memory_pair};
 use mud_net::{Burst, SustainedRate};
 use mud_schema::{
@@ -224,4 +224,21 @@ async fn throttled_commands_never_reach_the_world() {
         vec!["one".to_owned()],
         "throttled lines must be dropped"
     );
+}
+
+#[tokio::test]
+async fn serve_fails_when_the_ipc_peer_is_gone_before_the_handshake() {
+    // No World on the other end: the resume announcement cannot be delivered, so
+    // `serve` must terminate with a fatal IPC error rather than accept clients.
+    let (gateway_end, world_end) = in_memory_pair();
+    drop(world_end);
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("ephemeral bind must succeed");
+
+    let result = timeout(TICK, serve(listener, gateway_end, config()))
+        .await
+        .expect("serve returns promptly once the handshake peer is gone");
+
+    assert!(matches!(result, Err(GatewayError::Ipc(_))));
 }
