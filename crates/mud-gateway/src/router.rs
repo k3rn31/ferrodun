@@ -281,4 +281,70 @@ mod tests {
             "deregistered session must see its channel close, not receive output"
         );
     }
+
+    #[tokio::test]
+    async fn a_slow_session_drops_overflow_without_stalling_its_neighbor() {
+        let (gateway_end, mut world_end) = in_memory_pair();
+        let (commands_tx, commands_rx) = mpsc::channel(8);
+        let router = tokio::spawn(run_router(gateway_end, commands_rx));
+
+        // Session A never drains its receiver (a stuck-socket client); session B
+        // drains normally.
+        let (tx_a, mut rx_a) = mpsc::channel(OUTPUT_CAPACITY);
+        let (tx_b, mut rx_b) = mpsc::channel(OUTPUT_CAPACITY);
+        let a = session(1);
+        let b = session(2);
+        commands_tx
+            .send(ToRouter::Register { session_id: a, tx: tx_a })
+            .await
+            .expect("router must accept A's registration");
+        commands_tx
+            .send(ToRouter::Register { session_id: b, tx: tx_b })
+            .await
+            .expect("router must accept B's registration");
+        drain_barrier(&commands_tx, &mut world_end, session(9)).await;
+
+        // Flood A past its buffer; the endpoint channel is FIFO, so all of these
+        // are routed before B's marker below.
+        let flood = OUTPUT_CAPACITY + 8;
+        for _ in 0..flood {
+            world_end
+                .send(WorldFrame::Output(SessionOutput {
+                    session_id: a,
+                    text: OutputText::new("flood"),
+                }))
+                .await
+                .expect("world endpoint must send A's flood");
+        }
+        world_end
+            .send(WorldFrame::Output(SessionOutput {
+                session_id: b,
+                text: OutputText::new("b-marker"),
+            }))
+            .await
+            .expect("world endpoint must send B's marker");
+
+        // B receives despite A being wedged: one slow client does not stall the
+        // router (proves isolation). Its arrival also means every A-frame ahead
+        // of it in the FIFO has already been routed.
+        let marker = rx_b.recv().await.expect("B receives its output while A is flooded");
+        assert!(matches!(marker, ToConnection::Output(t) if t.as_str() == "b-marker"));
+
+        // A buffered exactly its capacity; the overflow hit the drop branch.
+        let mut delivered = 0usize;
+        while rx_a.try_recv().is_ok() {
+            delivered += 1;
+        }
+        assert_eq!(
+            delivered, OUTPUT_CAPACITY,
+            "A buffers its capacity; the excess was dropped, not stalled"
+        );
+        assert!(delivered < flood, "the slow session's overflow was dropped");
+
+        drop(world_end); // clean shutdown
+        router
+            .await
+            .expect("router task must not panic")
+            .expect("closed peer is a clean shutdown");
+    }
 }
