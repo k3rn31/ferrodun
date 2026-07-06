@@ -370,4 +370,40 @@ mod tests {
             "deleting an account with puppets must be refused by the FK"
         );
     }
+
+    #[tokio::test]
+    async fn a_corrupt_puppet_name_surfaces_as_a_db_error() {
+        let dir = TempDir::new().expect("tempdir");
+        let db = open(&dir).await;
+        let accounts = Accounts::new(&db);
+        let name = user("aldous");
+        let account = accounts
+            .register(name.clone(), &credential())
+            .await
+            .expect("no db fault")
+            .expect("registration succeeds");
+        let start = PlaceKey::parse("town_square").expect("valid slug");
+        accounts
+            .create_puppet(
+                account.id,
+                PuppetName::parse("hero").expect("valid name"),
+                &start,
+            )
+            .await
+            .expect("puppet created");
+
+        // Force a persisted name that PuppetName::parse rejects, standing in for
+        // a manual edit or a row from a newer schema.
+        sqlx::query("UPDATE puppets SET name = ?")
+            .bind("not a valid name!")
+            .execute(db.pool())
+            .await
+            .expect("force corrupt name");
+
+        let err = accounts
+            .puppets_of(account.id)
+            .await
+            .expect_err("a corrupt puppet name is corruption");
+        assert!(matches!(err, DbError::CorruptValue(_)), "got {err:?}");
+    }
 }
