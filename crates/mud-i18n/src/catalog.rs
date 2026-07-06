@@ -52,80 +52,85 @@ impl Catalog {
     }
 }
 
+/// The `(key, en-template)` rows backing the built-in catalog (§3.14.6.2).
+///
+/// Module-level so the duplicate-key guard test can inspect it: the built-in
+/// catalog folds these into a `HashMap`, which would silently keep the last of
+/// any duplicated key — the guard turns that into a test failure instead.
+const ENTRIES: &[(&str, &str)] = &[
+    // look (§3.2)
+    ("look.exits", "Exits: { $exits }"),
+    ("look.also-here", "Also here: { $names }"),
+    ("look.void", "You are nowhere in particular."),
+    // movement (§3.2.2)
+    ("move.no-exit", "You can't go that way."),
+    ("move.depart", "{ $name } leaves { $direction }."),
+    ("move.arrive-from", "{ $name } arrives from { $direction }."),
+    ("move.arrive", "{ $name } arrives."),
+    // say (§3.6.3)
+    ("say.speech", "You say, \"{ $message }\""),
+    ("say.broadcast", "{ $name } says, \"{ $message }\""),
+    ("say.nothing", "Say what?"),
+    // inventory
+    ("inventory.header", "You are carrying:"),
+    ("inventory.empty", "You are carrying nothing."),
+    // who (§3.19)
+    ("who.online", "Players online: { $names }"),
+    // get / drop and shared object-resolution outcomes (§2.7 step 5)
+    ("get.taken", "You take { $item }."),
+    ("drop.dropped", "You drop { $item }."),
+    ("object.not-here", "You don't see that here."),
+    ("object.not-carried", "You aren't carrying that."),
+    ("object.ambiguous", "Which do you mean? { $options }"),
+    // content cap (§3.6.4)
+    ("content.too-long", "Your message is too long."),
+    // session FSM (§3.19.1)
+    (
+        "session.prompt",
+        "Type 'login <name>' or 'register <name>'. 'help' lists commands.",
+    ),
+    (
+        "session.help",
+        "Commands: login <name>, register <name>, who, help, quit.",
+    ),
+    ("session.who-stub", "Nobody is listed yet."),
+    ("session.unknown", "Unrecognized command. Type 'help'."),
+    ("session.password", "Password:"),
+    ("session.confirm", "Confirm password:"),
+    ("session.login-failed", "Login failed."),
+    ("session.suspended", "This account is suspended."),
+    ("session.banned", "This account is banned."),
+    (
+        "session.server-error",
+        "Something went wrong. Please try again.",
+    ),
+    (
+        "session.no-puppets",
+        "You have no characters yet. Type 'new <name>' to create one.",
+    ),
+    ("session.mismatch", "The passwords did not match."),
+    (
+        "session.name-invalid",
+        "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars).",
+    ),
+    ("session.username-taken", "That username is already taken."),
+    ("session.entered", "Welcome. You are now in the world."),
+    ("session.goodbye", "Goodbye."),
+    (
+        "session.puppet-list",
+        "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
+    ),
+    ("session.puppet-created", "Created { $name }."),
+    // quit (§3.19)
+    ("quit.goodbye", "Goodbye!"),
+];
+
 /// Builds the `en` catalog for the M1-17 built-in commands.
 ///
 /// Templates use the `{ $name }` placeholder form (see
 /// [`translate`](crate::translate)). One source of truth: the built-in command
 /// handlers in `mud-engine` reference exactly these keys.
 fn builtin_en() -> Catalog {
-    const ENTRIES: &[(&str, &str)] = &[
-        // look (§3.2)
-        ("look.exits", "Exits: { $exits }"),
-        ("look.also-here", "Also here: { $names }"),
-        ("look.void", "You are nowhere in particular."),
-        // movement (§3.2.2)
-        ("move.no-exit", "You can't go that way."),
-        ("move.depart", "{ $name } leaves { $direction }."),
-        ("move.arrive-from", "{ $name } arrives from { $direction }."),
-        ("move.arrive", "{ $name } arrives."),
-        // say (§3.6.3)
-        ("say.speech", "You say, \"{ $message }\""),
-        ("say.broadcast", "{ $name } says, \"{ $message }\""),
-        ("say.nothing", "Say what?"),
-        // inventory
-        ("inventory.header", "You are carrying:"),
-        ("inventory.empty", "You are carrying nothing."),
-        // who (§3.19)
-        ("who.online", "Players online: { $names }"),
-        // get / drop and shared object-resolution outcomes (§2.7 step 5)
-        ("get.taken", "You take { $item }."),
-        ("drop.dropped", "You drop { $item }."),
-        ("object.not-here", "You don't see that here."),
-        ("object.not-carried", "You aren't carrying that."),
-        ("object.ambiguous", "Which do you mean? { $options }"),
-        // content cap (§3.6.4)
-        ("content.too-long", "Your message is too long."),
-        // session FSM (§3.19.1)
-        (
-            "session.prompt",
-            "Type 'login <name>' or 'register <name>'. 'help' lists commands.",
-        ),
-        (
-            "session.help",
-            "Commands: login <name>, register <name>, who, help, quit.",
-        ),
-        ("session.who-stub", "Nobody is listed yet."),
-        ("session.unknown", "Unrecognized command. Type 'help'."),
-        ("session.password", "Password:"),
-        ("session.confirm", "Confirm password:"),
-        ("session.login-failed", "Login failed."),
-        ("session.suspended", "This account is suspended."),
-        ("session.banned", "This account is banned."),
-        (
-            "session.server-error",
-            "Something went wrong. Please try again.",
-        ),
-        (
-            "session.no-puppets",
-            "You have no characters yet. Type 'new <name>' to create one.",
-        ),
-        ("session.mismatch", "The passwords did not match."),
-        (
-            "session.name-invalid",
-            "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars).",
-        ),
-        ("session.username-taken", "That username is already taken."),
-        ("session.entered", "Welcome. You are now in the world."),
-        ("session.goodbye", "Goodbye."),
-        (
-            "session.puppet-list",
-            "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
-        ),
-        ("session.puppet-created", "Created { $name }."),
-        // quit (§3.19)
-        ("quit.goodbye", "Goodbye!"),
-    ];
-
     let mut catalog = Catalog::new();
     for (key, template) in ENTRIES {
         catalog.insert(Locale::EN, MessageKey::from_static(key), *template);
@@ -239,5 +244,19 @@ mod tests {
             catalog.lookup(&Locale::EN, &MessageKey::from_static("bye")),
             None
         );
+    }
+
+    #[test]
+    fn the_builtin_entries_have_no_duplicate_keys() {
+        // ENTRIES folds into a HashMap, which would silently keep the last of any
+        // duplicated key. This guard makes an accidental duplicate a test failure
+        // rather than a hard-to-spot lost template (§3.14.6.2).
+        let mut seen = std::collections::HashSet::new();
+        for (key, _) in ENTRIES {
+            assert!(
+                seen.insert(*key),
+                "duplicate built-in key in ENTRIES: {key}"
+            );
+        }
     }
 }
