@@ -15,20 +15,20 @@ use std::sync::Arc;
 
 use mud_cmd::{Command, CommandName};
 use mud_core::{Direction, EntityId, RoleName, StyledText, World};
-use mud_i18n::t;
 
-use crate::dispatch::{
-    Broadcast, CommandBinding, CommandContext, CommandHandler, CommandReply, Dispatcher,
-};
-use crate::text::sanitize;
+use crate::dispatch::{CommandBinding, CommandHandler, Dispatcher};
 
 mod items;
 mod look;
 mod movement;
+mod say;
+mod session;
 
 use items::{Drop, Get, ShowInventory};
 use look::Look;
 use movement::Move;
+use say::Say;
+use session::{Quit, Who};
 
 /// Binds every built-in command into `dispatcher` and returns the command
 /// metadata for the session's built-in layer (§2.7 step 4).
@@ -85,72 +85,8 @@ fn table() -> Vec<(
     ]
 }
 
-/// `say`: speak to the room, echoing to the caller and broadcasting to every
-/// other co-located session (§3.6.3, M1-19a).
-struct Say;
-
-impl CommandHandler for Say {
-    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
-        let locale = ctx.locale().clone();
-        let message = match sanitize(ctx.args()) {
-            Ok(message) => message,
-            Err(_) => return CommandReply::to_caller(system(t!(locale, "content.too-long"))),
-        };
-        if message.trim().is_empty() {
-            return CommandReply::to_caller(system(t!(locale, "say.nothing")));
-        }
-        let name = ctx.caller_name().as_str().to_owned();
-        // The caller hears "You say, …"; everyone else in the room hears
-        // "<name> says, …". Sanitized player text is plain, so any markup renders
-        // literally (§3.20.7).
-        let heard = StyledText::new().role(
-            t!(
-                locale,
-                "say.broadcast",
-                name = name,
-                message = message.clone()
-            ),
-            RoleName::SAY,
-        );
-        CommandReply::to_caller(
-            StyledText::new().role(t!(locale, "say.speech", message = message), RoleName::SAY),
-        )
-        .with_broadcast(Broadcast::to_place(ctx.location(), ctx.caller(), heard))
-    }
-}
-
-/// `who`: list the players currently connected and in-world (§3.19).
-struct Who;
-
-impl CommandHandler for Who {
-    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
-        let locale = ctx.locale().clone();
-        // Sort by name so the listing is stable regardless of registry iteration
-        // order (the roster is backed by a HashMap).
-        let mut names: Vec<String> = ctx
-            .roster()
-            .connected()
-            .into_iter()
-            .map(|presence| presence.name.as_str().to_owned())
-            .collect();
-        names.sort();
-        CommandReply::to_caller(system(t!(locale, "who.online", names = names.join(", "))))
-    }
-}
-
-/// `quit`: leave the game. Signals the driver to close the session (§3.19); the
-/// socket teardown is the gateway's job (M1-21/22).
-struct Quit;
-
-impl CommandHandler for Quit {
-    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
-        let locale = ctx.locale().clone();
-        CommandReply::to_caller(system(t!(locale, "quit.goodbye"))).closing()
-    }
-}
-
 /// An entity's display name: its first keyword, or `None` if it has none.
-fn display_name(world: &World, entity: EntityId) -> Option<String> {
+pub(super) fn display_name(world: &World, entity: EntityId) -> Option<String> {
     world
         .keywords_of(entity)
         .first()
@@ -158,6 +94,6 @@ fn display_name(world: &World, entity: EntityId) -> Option<String> {
 }
 
 /// Wraps engine-authored text as a single `system`-role line.
-fn system(text: String) -> StyledText {
+pub(super) fn system(text: String) -> StyledText {
     StyledText::new().role(text, RoleName::SYSTEM)
 }
