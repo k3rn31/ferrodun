@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use mud_cmd::{Command, CommandName};
-use mud_core::{Direction, Effect, EntityId, Place, PlaceId, RoleName, Span, StyledText, World};
+use mud_core::{Direction, Effect, EntityId, PlaceId, RoleName, StyledText, World};
 use mud_i18n::{Locale, t};
 
 use crate::dispatch::{
@@ -23,9 +23,11 @@ use crate::dispatch::{
 use crate::objects::{Resolution, resolve_among};
 use crate::text::sanitize;
 
+mod look;
 mod movement;
 
-use movement::{DIRECTIONS, Move, direction_name};
+use look::Look;
+use movement::Move;
 
 /// Binds every built-in command into `dispatcher` and returns the command
 /// metadata for the session's built-in layer (§2.7 step 4).
@@ -80,21 +82,6 @@ fn table() -> Vec<(
         ("down", &["d"], Arc::new(Move(Direction::Down))),
         ("quit", &[], Arc::new(Quit)),
     ]
-}
-
-/// `look`: render the caller's current room (§3.2).
-struct Look;
-
-impl CommandHandler for Look {
-    fn run(&self, ctx: &CommandContext<'_>) -> CommandReply {
-        let locale = ctx.locale().clone();
-        match ctx.places().get(ctx.location()) {
-            Some(place) => {
-                CommandReply::to_caller(render_room(place, ctx.world(), ctx.caller(), &locale))
-            }
-            None => CommandReply::to_caller(system(t!(locale, "look.void"))),
-        }
-    }
 }
 
 /// `say`: speak to the room, echoing to the caller and broadcasting to every
@@ -300,63 +287,6 @@ fn drop_line(world: &World, item: EntityId, locale: &Locale) -> String {
         "drop.dropped",
         item = display_name(world, item).unwrap_or_default()
     )
-}
-
-/// Renders a room as the caller sees it: title, description, exits, and the
-/// other entities present (§3.2).
-fn render_room(place: &Place, world: &World, viewer: EntityId, locale: &Locale) -> StyledText {
-    let mut out = StyledText::new();
-    if let Some(title) = place.title() {
-        append(&mut out, title.styled());
-        out.push(Span::plain("\n"));
-    }
-    append(&mut out, place.describe(viewer).styled());
-
-    let exits = exit_names(place);
-    if !exits.is_empty() {
-        out.push(Span::role(
-            format!("\n{}", t!(locale, "look.exits", exits = exits.join(", "))),
-            RoleName::SYSTEM,
-        ));
-    }
-
-    let others = occupant_names(world, place.id(), viewer);
-    if !others.is_empty() {
-        out.push(Span::role(
-            format!(
-                "\n{}",
-                t!(locale, "look.also-here", names = others.join(", "))
-            ),
-            RoleName::SYSTEM,
-        ));
-    }
-    out
-}
-
-/// Appends every span of `text` onto `out`.
-fn append(out: &mut StyledText, text: &StyledText) {
-    for span in text.spans() {
-        out.push(span.clone());
-    }
-}
-
-/// The names of the wired exits of `place`, in N/E/S/W/U/D order.
-fn exit_names(place: &Place) -> Vec<&'static str> {
-    DIRECTIONS
-        .iter()
-        .filter(|&&dir| place.neighbor(dir).is_some())
-        .map(|&dir| direction_name(dir))
-        .collect()
-}
-
-/// The display names of the entities in `place` other than `viewer`, skipping
-/// any without a keyword to show.
-fn occupant_names(world: &World, place: PlaceId, viewer: EntityId) -> Vec<String> {
-    world
-        .occupants_of(place)
-        .filter(|&entity| entity != viewer)
-        .filter_map(|entity| display_name(world, entity))
-        .collect()
 }
 
 /// A numbered candidate list for a disambiguation prompt: `1: sword, 2: shield`.

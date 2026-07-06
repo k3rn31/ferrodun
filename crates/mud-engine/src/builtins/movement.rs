@@ -4,7 +4,7 @@
 use mud_core::{Direction, Effect, RoleName, StyledText};
 use mud_i18n::t;
 
-use super::render_room;
+use super::look::render_room;
 use super::system;
 use crate::dispatch::{Broadcast, CommandContext, CommandHandler, CommandReply};
 
