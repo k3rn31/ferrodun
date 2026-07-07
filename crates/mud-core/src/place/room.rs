@@ -8,6 +8,8 @@
 //! [`Room`](Place::Room); a `PlaceView` trait would have a single implementor and
 //! buy nothing, so the surface stays inherent until a second variant earns it.
 
+use std::str::FromStr;
+
 use super::id::PlaceId;
 use crate::{EntityId, LocationOf, RegionId, StyledText};
 
@@ -40,6 +42,69 @@ impl Direction {
             Self::Up => Self::Down,
             Self::Down => Self::Up,
         }
+    }
+
+    /// The six directions in canonical display/iteration order
+    /// (N, E, S, W, U, D — §3.2.2).
+    pub const ALL: [Direction; 6] = [
+        Self::North,
+        Self::East,
+        Self::South,
+        Self::West,
+        Self::Up,
+        Self::Down,
+    ];
+
+    /// The canonical English word for this direction. Invariant across
+    /// locales (§3.14.5.1): it is the authored/wire token, not display text.
+    ///
+    /// This is the single authoritative forward map; [`FromStr`] derives the
+    /// inverse from it, so their word content cannot disagree.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        // INVARIANT: a variant added here MUST also be added to `ALL`. This
+        // match forces a compile error for the new variant, but `ALL` is a
+        // hand-maintained literal that `FromStr` and every iterator consumer
+        // rely on — a variant missing from it would be silently unparseable.
+        match self {
+            Self::North => "north",
+            Self::East => "east",
+            Self::South => "south",
+            Self::West => "west",
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
+}
+
+/// A string did not name any [`Direction`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+#[error("unknown direction: {value:?}")]
+pub struct ParseDirectionError {
+    value: String,
+}
+
+impl ParseDirectionError {
+    /// The offending input that failed to parse.
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl FromStr for Direction {
+    type Err = ParseDirectionError;
+
+    /// Inverse of [`Direction::name`], derived by searching [`Direction::ALL`]
+    /// so it can never drift from the forward map.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|dir| dir.name() == s)
+            .ok_or_else(|| ParseDirectionError {
+                value: s.to_owned(),
+            })
     }
 }
 
@@ -450,5 +515,43 @@ mod tests {
             room.title().map(Title::to_plain_string).as_deref(),
             Some("New Name")
         );
+    }
+
+    #[test]
+    fn every_direction_round_trips_through_its_name() {
+        for dir in Direction::ALL {
+            assert_eq!(
+                dir.name()
+                    .parse::<Direction>()
+                    .expect("name must parse back"),
+                dir,
+            );
+        }
+    }
+
+    #[test]
+    fn direction_names_are_all_distinct() {
+        let mut names: Vec<&str> = Direction::ALL.iter().map(|d| d.name()).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            Direction::ALL.len(),
+            "two directions share a word"
+        );
+    }
+
+    #[test]
+    fn all_lists_the_six_directions_in_canonical_order() {
+        use Direction::{Down, East, North, South, Up, West};
+        assert_eq!(Direction::ALL, [North, East, South, West, Up, Down]);
+    }
+
+    #[test]
+    fn unknown_word_fails_to_parse_and_preserves_the_input() {
+        let error = "sideways"
+            .parse::<Direction>()
+            .expect_err("not a direction");
+        assert_eq!(error.value(), "sideways");
     }
 }

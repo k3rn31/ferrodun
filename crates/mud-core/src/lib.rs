@@ -18,7 +18,10 @@ pub use locks::{
     AccessType, Lock, LockArg, LockContext, LockFn, ParseError, ParsedLock, ResolveError,
     ResolvedExpr, SyntaxExpr, parse, resolve,
 };
-pub use place::{Description, Direction, Place, PlaceId, PlaceKey, PlaceKeyError, RoomData, Title};
+pub use place::{
+    Description, Direction, ParseDirectionError, Place, PlaceId, PlaceKey, PlaceKeyError, RoomData,
+    Title,
+};
 pub use region::{RegionId, RegionKey, RegionKeyError};
 pub use scheduler::{Scheduler, TICK_HZ, TICK_PERIOD};
 pub use side_tables::{Inventory, Keyword, LocationOf, Naming};
