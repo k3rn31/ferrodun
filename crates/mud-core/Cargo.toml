@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 chumsky = "0.13.0"
+strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
 
 [lints]

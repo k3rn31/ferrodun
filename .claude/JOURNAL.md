@@ -1440,9 +1440,10 @@ truth when this log drifts.
   shared authoring/wire token.
 - **Done:** Added `Direction::name`, `Direction::ALL`, `ParseDirectionError`,
   and `impl FromStr for Direction` in `mud-core` (the inverse map is derived by
-  searching `ALL`, so its word content cannot drift from `name`; an
-  `// INVARIANT:` comment guards the one remaining seam — a new variant must be
-  added to `ALL`). Deleted the duplicate
+  searching `ALL`, so its word content cannot drift from `name`). `ALL` is sized
+  `[Self; Self::COUNT]` via `strum::EnumCount`, so adding a variant without
+  listing it in `ALL` is an array-length compile error — the last hand-maintained
+  seam is now compiler-enforced, not comment-guarded. Deleted the duplicate
   `direction_name`/`DIRECTIONS`/`parse_direction` helpers from `mud-engine` and
   `mud-world`; `mud-world` maps the core error into its retained
   `WorldError::UnknownDirection` rather than leaking the core error type.

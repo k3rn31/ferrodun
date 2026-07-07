@@ -10,6 +10,8 @@
 
 use std::str::FromStr;
 
+use strum::EnumCount;
+
 use super::id::PlaceId;
 use crate::{EntityId, LocationOf, RegionId, StyledText};
 
@@ -18,7 +20,7 @@ use crate::{EntityId, LocationOf, RegionId, StyledText};
 /// The cardinal four follow the §3.2.2.0 fixed map (`x` increases east, `y`
 /// increases north). `Up`/`Down` are vertical exits — stairs, ladders, shafts —
 /// modeled as explicit exits rather than a `z` coordinate (§3.2.2.0).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumCount)]
 pub enum Direction {
     North,
     East,
@@ -46,7 +48,11 @@ impl Direction {
 
     /// The six directions in canonical display/iteration order
     /// (N, E, S, W, U, D — §3.2.2).
-    pub const ALL: [Direction; 6] = [
+    ///
+    /// Sized by `Self::COUNT` (from `strum::EnumCount`): adding a `Direction`
+    /// variant without listing it here is an array-length mismatch — a compile
+    /// error, not a silently unparseable direction.
+    pub const ALL: [Direction; Self::COUNT] = [
         Self::North,
         Self::East,
         Self::South,
@@ -62,10 +68,6 @@ impl Direction {
     /// inverse from it, so their word content cannot disagree.
     #[must_use]
     pub const fn name(self) -> &'static str {
-        // INVARIANT: a variant added here MUST also be added to `ALL`. This
-        // match forces a compile error for the new variant, but `ALL` is a
-        // hand-maintained literal that `FromStr` and every iterator consumer
-        // rely on — a variant missing from it would be silently unparseable.
         match self {
             Self::North => "north",
             Self::East => "east",
