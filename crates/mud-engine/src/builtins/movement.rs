@@ -69,4 +69,3 @@ impl CommandHandler for Move {
             })
     }
 }
-

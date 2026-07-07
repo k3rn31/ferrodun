@@ -235,10 +235,15 @@ fn parse_room(
 
 /// Parses an `exit "<direction>" "<target-slug>"` child node.
 fn parse_exit(node: &KdlNode) -> Result<(Direction, String), WorldError> {
-    let direction = parse_direction(arg(node, 0).ok_or(WorldError::MissingField {
+    let word = arg(node, 0).ok_or(WorldError::MissingField {
         node: "exit".to_owned(),
         field: "direction",
-    })?)?;
+    })?;
+    let direction = word
+        .parse::<Direction>()
+        .map_err(|error| WorldError::UnknownDirection {
+            value: error.value().to_owned(),
+        })?;
     let target = arg(node, 1)
         .ok_or(WorldError::MissingField {
             node: "exit".to_owned(),
@@ -284,7 +289,7 @@ fn resolve_exit_target(
         .copied()
         .ok_or_else(|| WorldError::DanglingExit {
             from: from.to_string(),
-            direction: direction_name(direction).to_owned(),
+            direction: direction.name().to_owned(),
             to: target_slug.to_owned(),
         })
 }
@@ -304,33 +309,6 @@ fn compile_field(
         tracing::warn!(room, field = field_name, %diagnostic, "markup diagnostic");
     }
     compiled.text
-}
-
-/// Maps an authored direction word to a [`Direction`].
-fn parse_direction(value: &str) -> Result<Direction, WorldError> {
-    match value {
-        "north" => Ok(Direction::North),
-        "east" => Ok(Direction::East),
-        "south" => Ok(Direction::South),
-        "west" => Ok(Direction::West),
-        "up" => Ok(Direction::Up),
-        "down" => Ok(Direction::Down),
-        other => Err(WorldError::UnknownDirection {
-            value: other.to_owned(),
-        }),
-    }
-}
-
-/// The authored word for a direction (for error messages).
-fn direction_name(direction: Direction) -> &'static str {
-    match direction {
-        Direction::North => "north",
-        Direction::East => "east",
-        Direction::South => "south",
-        Direction::West => "west",
-        Direction::Up => "up",
-        Direction::Down => "down",
-    }
 }
 
 /// Advances the monotonic id counter.
@@ -391,41 +369,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_direction_maps_every_authored_word() {
-        assert_eq!(parse_direction("north").expect("north"), Direction::North);
-        assert_eq!(parse_direction("east").expect("east"), Direction::East);
-        assert_eq!(parse_direction("south").expect("south"), Direction::South);
-        assert_eq!(parse_direction("west").expect("west"), Direction::West);
-        assert_eq!(parse_direction("up").expect("up"), Direction::Up);
-        assert_eq!(parse_direction("down").expect("down"), Direction::Down);
-    }
+    fn parse_exit_maps_an_unknown_direction_to_a_world_error() {
+        // The per-word round-trip lives in mud-core; here we only verify that a
+        // core parse failure surfaces as WorldError::UnknownDirection carrying
+        // the offending word.
+        let document =
+            KdlDocument::parse("exit \"sideways\" \"target\"").expect("valid kdl for test");
+        let node = document.nodes().first().expect("one exit node");
 
-    #[test]
-    fn parse_direction_rejects_an_unknown_word() {
-        let error = parse_direction("sideways").expect_err("unknown direction");
+        let error = parse_exit(node).expect_err("sideways is not a direction");
+
         assert!(
             matches!(error, WorldError::UnknownDirection { ref value } if value == "sideways"),
             "got {error:?}"
         );
-    }
-
-    #[test]
-    fn direction_name_round_trips_through_parse_direction() {
-        for direction in [
-            Direction::North,
-            Direction::East,
-            Direction::South,
-            Direction::West,
-            Direction::Up,
-            Direction::Down,
-        ] {
-            let name = direction_name(direction);
-            assert_eq!(
-                parse_direction(name).expect("round-trips"),
-                direction,
-                "{name} must parse back to its direction"
-            );
-        }
     }
 
     #[test]
