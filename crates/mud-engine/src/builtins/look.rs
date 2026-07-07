@@ -1,9 +1,8 @@
 //! `look` and the room-rendering helpers that show a place to a viewer (§3.2).
 
-use mud_core::{EntityId, Place, PlaceId, RoleName, Span, StyledText, World};
+use mud_core::{Direction, EntityId, Place, PlaceId, RoleName, Span, StyledText, World};
 use mud_i18n::{Locale, t};
 
-use super::movement::{DIRECTIONS, direction_name};
 use super::{display_name, system};
 use crate::dispatch::{CommandContext, CommandHandler, CommandReply};
 
@@ -67,10 +66,10 @@ fn append(out: &mut StyledText, text: &StyledText) {
 
 /// The names of the wired exits of `place`, in N/E/S/W/U/D order.
 fn exit_names(place: &Place) -> Vec<&'static str> {
-    DIRECTIONS
-        .iter()
-        .filter(|&&dir| place.neighbor(dir).is_some())
-        .map(|&dir| direction_name(dir))
+    Direction::ALL
+        .into_iter()
+        .filter(|&dir| place.neighbor(dir).is_some())
+        .map(Direction::name)
         .collect()
 }
 

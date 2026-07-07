@@ -47,7 +47,7 @@ impl CommandHandler for Move {
                 locale,
                 "move.depart",
                 name = name.clone(),
-                direction = direction_name(self.0)
+                direction = self.0.name()
             ),
             RoleName::SYSTEM,
         );
@@ -56,7 +56,7 @@ impl CommandHandler for Move {
                 locale,
                 "move.arrive-from",
                 name = name,
-                direction = direction_name(self.0.opposite())
+                direction = self.0.opposite().name()
             ),
             RoleName::SYSTEM,
         );
@@ -69,26 +69,3 @@ impl CommandHandler for Move {
             })
     }
 }
-
-/// The canonical English name of a direction (§3.14.5.1: built-in command names
-/// are invariant across locales).
-pub(super) fn direction_name(dir: Direction) -> &'static str {
-    match dir {
-        Direction::North => "north",
-        Direction::East => "east",
-        Direction::South => "south",
-        Direction::West => "west",
-        Direction::Up => "up",
-        Direction::Down => "down",
-    }
-}
-
-/// The six directions in display order.
-pub(super) const DIRECTIONS: [Direction; 6] = [
-    Direction::North,
-    Direction::East,
-    Direction::South,
-    Direction::West,
-    Direction::Up,
-    Direction::Down,
-];

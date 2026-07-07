@@ -1433,3 +1433,22 @@ truth when this log drifts.
   Deferred/known carried forward unchanged (split-mode IPC backpressure,
   per-tenant supervision, Postgres retry tier). Process note: per-plan
   verification must include `cargo fmt --check`, not just test + clippy.
+
+## 2026-07-07 — Consolidate Direction↔word contract (issue #37)
+
+- **Spec:** §2.2.2, §3.2.2, §3.14.5.1 — one canonical word per direction,
+  shared authoring/wire token.
+- **Done:** Added `Direction::name`, `Direction::ALL`, `ParseDirectionError`,
+  and `impl FromStr for Direction` in `mud-core` (the inverse map is derived by
+  searching `ALL`, so its word content cannot drift from `name`). `ALL` is sized
+  `[Self; Self::COUNT]` via `strum::EnumCount`, so adding a variant without
+  listing it in `ALL` is an array-length compile error — the last hand-maintained
+  seam is now compiler-enforced, not comment-guarded. Deleted the duplicate
+  `direction_name`/`DIRECTIONS`/`parse_direction` helpers from `mud-engine` and
+  `mud-world`; `mud-world` maps the core error into its retained
+  `WorldError::UnknownDirection` rather than leaking the core error type.
+- **Verify:** Round-trip + name-uniqueness tests in `mud-core`; a `parse_exit`
+  end-to-end mapping test in `mud-world`. `cargo test --workspace` 611 passed /
+  1 ignored; `cargo clippy --workspace --all-targets` clean; `cargo fmt --all
+  --check` clean. Each task independently reviewed (spec + quality).
+- **Next:** None — pure consolidation, no behavior change, no docs impact.

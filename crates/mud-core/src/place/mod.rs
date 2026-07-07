@@ -18,4 +18,4 @@ mod room;
 
 pub use id::PlaceId;
 pub use key::{PlaceKey, PlaceKeyError};
-pub use room::{Description, Direction, Place, RoomData, Title};
+pub use room::{Description, Direction, ParseDirectionError, Place, RoomData, Title};
