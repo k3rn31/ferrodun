@@ -186,15 +186,34 @@ async fn socket_recv_rejects_an_oversized_inbound_frame() {
         .expect("world accepts");
 
     // A peer-supplied length prefix one byte past the cap. The codec must reject
-    // it on the header alone, before allocating the body — this is the
-    // untrusted-input bound `MAX_FRAME_BYTES` exists to enforce.
+    // it on the header alone, before allocating the body — this is
+    // the untrusted-input bound MAX_FRAME_BYTES enforces, reported symmetrically
+    // with the send path as FrameTooLarge.
     let oversized_len = u32::try_from(MAX_FRAME_BYTES + 1).expect("cap fits in u32");
     raw.write_all(&oversized_len.to_be_bytes())
         .await
         .expect("write oversized length prefix");
     raw.flush().await.expect("flush length prefix");
 
-    assert!(matches!(world.recv().await, Err(IpcError::Io(_))));
+    assert!(matches!(
+        world.recv().await,
+        Err(IpcError::FrameTooLarge {
+            size: None,
+            max: MAX_FRAME_BYTES
+        })
+    ));
+}
+
+#[tokio::test]
+async fn connect_reports_io_when_the_socket_path_does_not_exist() {
+    // No listener is ever bound at this path, so the `connect` syscall itself
+    // fails (ENOENT) and surfaces as `IpcError::Io` via `UnixStream::connect`'s
+    // `?` conversion — distinct from the framing-level `Io`/`FrameTooLarge`
+    // arms exercised by the other socket tests in this file.
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let missing_path = dir.path().join("no-such.sock");
+
+    assert!(matches!(connect(&missing_path).await, Err(IpcError::Io(_))));
 }
 
 #[tokio::test]
@@ -227,4 +246,63 @@ async fn announce_sessions_rejects_a_non_ack_reply() {
     );
     replied.expect("world sends a stray reply");
     assert!(matches!(announced, Err(IpcError::UnexpectedFrame)));
+}
+
+#[tokio::test]
+async fn accept_resume_reports_peer_closed_when_the_gateway_drops() {
+    // World is waiting for the resume announcement; the Gateway disappears
+    // instead of sending it (handshake.rs: `None => Err(PeerClosed)`).
+    let (gateway, mut world) = in_memory_pair();
+    drop(gateway);
+    assert!(matches!(
+        accept_resume(&mut world, world_id(1)).await,
+        Err(IpcError::PeerClosed)
+    ));
+}
+
+#[tokio::test]
+async fn announce_sessions_reports_peer_closed_when_the_world_drops() {
+    // Gateway announces, the World consumes the resume and then vanishes without
+    // acknowledging (announce_sessions: `None => Err(PeerClosed)`).
+    let (mut gateway, world) = in_memory_pair();
+    let (announced, _) = tokio::join!(
+        announce_sessions(&mut gateway, world_id(1), vec![]),
+        async {
+            let mut world = world;
+            world.recv().await.expect("world receives the resume");
+            drop(world);
+        }
+    );
+    assert!(matches!(announced, Err(IpcError::PeerClosed)));
+}
+
+#[tokio::test]
+async fn socket_recv_rejects_a_well_framed_but_undecodable_body() {
+    use tokio::io::AsyncWriteExt;
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let path = dir.path().join("world.sock");
+    let listener = UnixListener::bind(&path).expect("bind unix socket");
+    let accept_task = tokio::spawn(async move { accept(&listener).await });
+    let mut raw = tokio::net::UnixStream::connect(&path)
+        .await
+        .expect("raw gateway connects");
+    let mut world = accept_task
+        .await
+        .expect("accept task joins")
+        .expect("world accepts");
+
+    // A valid length prefix (1 byte) framing a truncated GatewayFrame: variant 1
+    // (`Input`) with no `SessionInput` payload. The codec hands a complete frame
+    // to `decode`, which then fails for want of the session id — exercising the
+    // `Codec` arm, distinct from the framing-level `FrameTooLarge`/`Io` arms.
+    let body = [0x01u8];
+    let len = u32::try_from(body.len()).expect("len fits in u32");
+    raw.write_all(&len.to_be_bytes())
+        .await
+        .expect("write length prefix");
+    raw.write_all(&body).await.expect("write truncated body");
+    raw.flush().await.expect("flush frame");
+
+    assert!(matches!(world.recv().await, Err(IpcError::Codec(_))));
 }

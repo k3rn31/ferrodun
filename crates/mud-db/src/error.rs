@@ -2,13 +2,23 @@
 
 use mud_core::{ArenaError, EntityKey};
 
-/// Errors raised by the persistence layer.
+/// Errors raised by the persistence layer, backend-agnostic across the SQLite
+/// backend and any future PostgreSQL one.
 ///
-/// Backend-agnostic: both the SQLite backend and the future PostgreSQL backend
-/// surface failures through this single type.
+/// Two failure axes share this type. **Infrastructure faults** — the driver, a
+/// migration, or an offloaded blocking task failed (`Sqlx`, `Migrate`,
+/// `BlockingTask`) — are transient/operational. **Consistency violations** —
+/// a persisted value is out of range, unparseable, dangling, or otherwise
+/// impossible in a well-formed database (`InvalidId`, `CorruptValue`,
+/// `KeyOutOfRange`, `EntityNotMapped`, `UnknownPlaceKey`, `PlaceNotMapped`,
+/// `DanglingReference`, `LoadArenaExhausted`, `UnsupportedEffect`) — are
+/// surfaced rather than panicked on, so a corrupt or newer-schema row fails
+/// loudly instead of silently. Callers propagate both; no caller branches on
+/// the axis today, so the two live in one enum.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DbError {
+    // --- Infrastructure faults ---
     /// A query or connection failure from the underlying driver.
     ///
     /// The driver error is boxed so the `sqlx` dependency does not leak into the
@@ -20,6 +30,15 @@ pub enum DbError {
     #[error("migration error: {0}")]
     Migrate(#[source] Box<dyn std::error::Error + Send + Sync>),
 
+    /// A blocking task offloaded with `spawn_blocking` (e.g. argon2 password
+    /// verification, kept off the async runtime) failed to complete — it
+    /// panicked or was cancelled. An internal fault, surfaced rather than
+    /// unwrapped. The `tokio` join error is boxed so it does not leak into the
+    /// public API.
+    #[error("background task failed: {0}")]
+    BlockingTask(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    // --- Consistency violations ---
     /// A persisted integer id read from the database was not a valid id —
     /// negative or zero where a positive `AUTOINCREMENT` key was expected.
     /// Defensive: signals DB corruption rather than a normal outcome.
@@ -82,14 +101,6 @@ pub enum DbError {
     /// variant surfaces here at runtime rather than as a compile error.
     #[error("unsupported effect variant")]
     UnsupportedEffect,
-
-    /// A blocking task offloaded with `spawn_blocking` (e.g. argon2 password
-    /// verification, kept off the async runtime) failed to complete — it
-    /// panicked or was cancelled. An internal fault, surfaced rather than
-    /// unwrapped. The `tokio` join error is boxed so it does not leak into the
-    /// public API.
-    #[error("background task failed: {0}")]
-    BlockingTask(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<sqlx::Error> for DbError {

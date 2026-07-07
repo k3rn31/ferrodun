@@ -17,11 +17,13 @@
 //! [`Priority`] values by the World pipeline (M1-16). This crate only knows
 //! "higher priority wins".
 
-use std::collections::BTreeSet;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::command::{Command, CommandName};
 use crate::parser::CommandTable;
 use crate::token::first_invalid_token_char;
+use crate::trie::PrefixTrie;
 
 /// A merge priority. Higher beats lower when two [`Union`](MergeType::Union)
 /// sets contribute the same command name (§2.7 step 4).
@@ -43,6 +45,16 @@ impl Default for Priority {
     fn default() -> Self {
         Self::DEFAULT
     }
+}
+
+/// Whether a token claim is a command's canonical name or one of its aliases.
+///
+/// Ordered so a canonical name outranks an alias at equal [`Priority`] when the
+/// same token is claimed by two commands (§2.7 step 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TokenKind {
+    Alias,
+    Canonical,
 }
 
 /// How a [`CmdSet`] merges onto the others (§2.7 step 4).
@@ -168,14 +180,54 @@ impl CmdSet {
             }
         }
 
-        let resolved = names
+        let resolved: Vec<(Priority, Command)> = names
             .into_iter()
             .filter_map(|name| resolve_name(sets, name))
             .map(|(priority, command)| (priority, command.clone()))
             .collect();
 
-        CommandTable::from_resolved(resolved)
+        // Settle token ownership before consuming `resolved` for the command list.
+        let trie = settle_token_ownership(&resolved);
+        let commands = resolved.into_iter().map(|(_, command)| command).collect();
+        CommandTable::new(commands, trie)
     }
+}
+
+/// Settles which resolved command owns each token and returns the prefix trie
+/// mapping every surviving token to its owning command's index (§2.7 step 4).
+///
+/// For a token claimed by several commands the strongest claim wins: higher
+/// [`Priority`], then a canonical name over an alias ([`TokenKind`]), then the
+/// earlier command in canonical-name order. A losing command keeps every token
+/// it still owns.
+fn settle_token_ownership(resolved: &[(Priority, Command)]) -> PrefixTrie {
+    // `Reverse(index)` makes the lower index outrank at equal precedence.
+    let mut owner: BTreeMap<&str, (Priority, TokenKind, Reverse<usize>)> = BTreeMap::new();
+    for (index, (priority, command)) in resolved.iter().enumerate() {
+        let claims = std::iter::once((command.name().as_str(), TokenKind::Canonical)).chain(
+            command
+                .aliases()
+                .iter()
+                .map(|alias| (alias.as_str(), TokenKind::Alias)),
+        );
+        for (token, kind) in claims {
+            let rank = (*priority, kind, Reverse(index));
+            owner
+                .entry(token)
+                .and_modify(|current| {
+                    if rank > *current {
+                        *current = rank;
+                    }
+                })
+                .or_insert(rank);
+        }
+    }
+
+    let mut trie = PrefixTrie::default();
+    for (token, &(_, _, Reverse(index))) in &owner {
+        trie.insert(token, index);
+    }
+    trie
 }
 
 /// Resolves the winning command for `name`, paired with the [`Priority`] of the

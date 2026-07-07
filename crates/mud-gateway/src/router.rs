@@ -119,6 +119,33 @@ mod tests {
         SessionId::new(NonZeroU64::new(value).expect("test session id must be non-zero"))
     }
 
+    /// Round-trips a probe `Connect` through the FIFO command channel and the
+    /// endpoint. Because an mpsc preserves per-sender order, the router has
+    /// processed every command enqueued before this probe (a `Register` or
+    /// `Deregister`) by the time the probe surfaces World-side — without it, an
+    /// `Output` on the endpoint channel can race ahead of a `Register` on the
+    /// command channel in the router's `select!` and be dropped as unknown.
+    async fn drain_barrier<E>(
+        commands_tx: &mpsc::Sender<ToRouter>,
+        world_end: &mut E,
+        probe: SessionId,
+    ) where
+        E: Endpoint<Outbound = WorldFrame, Inbound = GatewayFrame>,
+    {
+        commands_tx
+            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
+                session_id: probe,
+            })))
+            .await
+            .expect("router must accept the barrier frame");
+        match world_end.recv().await {
+            Ok(Some(GatewayFrame::Connect(connect))) => {
+                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
+            }
+            other => panic!("expected the barrier Connect frame, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn routes_output_to_the_registered_session() {
         let (gateway_end, mut world_end) = in_memory_pair();
@@ -132,26 +159,7 @@ mod tests {
             .await
             .expect("router must accept registration");
 
-        // Barrier: a Frame rides the same FIFO command channel as the
-        // Register, so the router processes the Register before it forwards
-        // this frame. Receiving it on the world side proves the registration
-        // is complete before we send the Output. Without this barrier the
-        // Output (on the endpoint channel) can race ahead of the Register
-        // (on the command channel) in the router's select! and be dropped as
-        // addressed to an unknown session, hanging output_rx.recv() forever.
-        let probe = session(2);
-        commands_tx
-            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
-                session_id: probe,
-            })))
-            .await
-            .expect("router must accept the barrier frame");
-        match world_end.recv().await {
-            Ok(Some(GatewayFrame::Connect(connect))) => {
-                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
-            }
-            other => panic!("expected the barrier Connect frame, got {other:?}"),
-        }
+        drain_barrier(&commands_tx, &mut world_end, session(2)).await;
 
         world_end
             .send(WorldFrame::Output(SessionOutput {
@@ -193,24 +201,7 @@ mod tests {
             .await
             .expect("router must accept registration");
 
-        // Barrier: forward a Frame on the same FIFO command channel and await
-        // it on the world side, proving the Register was processed before we
-        // send the Close. Without it the Close (endpoint channel) can race
-        // ahead of the Register (command channel) in the router's select!,
-        // be dropped as unknown, and hang output_rx.recv().
-        let probe = session(3);
-        commands_tx
-            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
-                session_id: probe,
-            })))
-            .await
-            .expect("router must accept the barrier frame");
-        match world_end.recv().await {
-            Ok(Some(GatewayFrame::Connect(connect))) => {
-                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
-            }
-            other => panic!("expected the barrier Connect frame, got {other:?}"),
-        }
+        drain_barrier(&commands_tx, &mut world_end, session(3)).await;
 
         world_end
             .send(WorldFrame::Close(SessionClose { session_id: id }))
@@ -269,26 +260,7 @@ mod tests {
             .await
             .expect("router must accept deregistration");
 
-        // Barrier: a Frame rides the same FIFO command channel as the
-        // Deregister, so the router processes the Deregister before it forwards
-        // this frame. Receiving it on the world side proves the deregistration
-        // is complete before we send any Output. Without this barrier the
-        // Output (on the endpoint channel) can race ahead of the Deregister
-        // (on the command channel) in the router's select! and be delivered
-        // while the session is still registered.
-        let probe = session(5);
-        commands_tx
-            .send(ToRouter::Frame(GatewayFrame::Connect(SessionConnect {
-                session_id: probe,
-            })))
-            .await
-            .expect("router must accept the barrier frame");
-        match world_end.recv().await {
-            Ok(Some(GatewayFrame::Connect(connect))) => {
-                assert_eq!(connect.session_id, probe, "barrier frame must arrive");
-            }
-            other => panic!("expected the barrier Connect frame, got {other:?}"),
-        }
+        drain_barrier(&commands_tx, &mut world_end, session(5)).await;
 
         // Now enqueue Output for the deregistered session; it must be dropped.
         world_end
@@ -308,5 +280,130 @@ mod tests {
             output_rx.recv().await.is_none(),
             "deregistered session must see its channel close, not receive output"
         );
+    }
+
+    #[tokio::test]
+    async fn a_slow_session_drops_overflow_without_stalling_its_neighbor() {
+        let (gateway_end, mut world_end) = in_memory_pair();
+        let (commands_tx, commands_rx) = mpsc::channel(8);
+        let router = tokio::spawn(run_router(gateway_end, commands_rx));
+
+        // Session A never drains its receiver (a stuck-socket client); session B
+        // drains normally.
+        let (tx_a, mut rx_a) = mpsc::channel(OUTPUT_CAPACITY);
+        let (tx_b, mut rx_b) = mpsc::channel(OUTPUT_CAPACITY);
+        let a = session(1);
+        let b = session(2);
+        commands_tx
+            .send(ToRouter::Register {
+                session_id: a,
+                tx: tx_a,
+            })
+            .await
+            .expect("router must accept A's registration");
+        commands_tx
+            .send(ToRouter::Register {
+                session_id: b,
+                tx: tx_b,
+            })
+            .await
+            .expect("router must accept B's registration");
+        drain_barrier(&commands_tx, &mut world_end, session(9)).await;
+
+        // Flood A past its buffer; the endpoint channel is FIFO, so all of these
+        // are routed before B's marker below.
+        let flood = OUTPUT_CAPACITY + 8;
+        for _ in 0..flood {
+            world_end
+                .send(WorldFrame::Output(SessionOutput {
+                    session_id: a,
+                    text: OutputText::new("flood"),
+                }))
+                .await
+                .expect("world endpoint must send A's flood");
+        }
+        world_end
+            .send(WorldFrame::Output(SessionOutput {
+                session_id: b,
+                text: OutputText::new("b-marker"),
+            }))
+            .await
+            .expect("world endpoint must send B's marker");
+
+        // B receives despite A being wedged: one slow client does not stall the
+        // router (proves isolation). Its arrival also means every A-frame ahead
+        // of it in the FIFO has already been routed.
+        let marker = rx_b
+            .recv()
+            .await
+            .expect("B receives its output while A is flooded");
+        assert!(matches!(marker, ToConnection::Output(t) if t.as_str() == "b-marker"));
+
+        // A buffered exactly its capacity; the overflow hit the drop branch.
+        let mut delivered = 0usize;
+        while rx_a.try_recv().is_ok() {
+            delivered += 1;
+        }
+        assert_eq!(
+            delivered, OUTPUT_CAPACITY,
+            "A buffers its capacity; the excess was dropped, not stalled"
+        );
+        assert!(delivered < flood, "the slow session's overflow was dropped");
+
+        drop(world_end); // clean shutdown
+        router
+            .await
+            .expect("router task must not panic")
+            .expect("closed peer is a clean shutdown");
+    }
+
+    #[tokio::test]
+    async fn output_reaches_only_the_addressed_session() {
+        let (gateway_end, mut world_end) = in_memory_pair();
+        let (commands_tx, commands_rx) = mpsc::channel(8);
+        let router = tokio::spawn(run_router(gateway_end, commands_rx));
+
+        let (tx_a, mut rx_a) = mpsc::channel(OUTPUT_CAPACITY);
+        let (tx_b, mut rx_b) = mpsc::channel(OUTPUT_CAPACITY);
+        let a = session(1);
+        let b = session(2);
+        commands_tx
+            .send(ToRouter::Register {
+                session_id: a,
+                tx: tx_a,
+            })
+            .await
+            .expect("router must accept A's registration");
+        commands_tx
+            .send(ToRouter::Register {
+                session_id: b,
+                tx: tx_b,
+            })
+            .await
+            .expect("router must accept B's registration");
+        drain_barrier(&commands_tx, &mut world_end, session(9)).await;
+
+        world_end
+            .send(WorldFrame::Output(SessionOutput {
+                session_id: a,
+                text: OutputText::new("for-a"),
+            }))
+            .await
+            .expect("world endpoint must send");
+
+        let got = rx_a.recv().await.expect("A receives its output");
+        assert!(matches!(got, ToConnection::Output(t) if t.as_str() == "for-a"));
+        // Blocking on A's receiver means the frame is fully routed; B, never
+        // addressed, has nothing waiting.
+        assert!(
+            rx_b.try_recv().is_err(),
+            "output addressed to A must not reach B"
+        );
+
+        drop(world_end);
+        router
+            .await
+            .expect("router task must not panic")
+            .expect("closed peer is a clean shutdown");
     }
 }

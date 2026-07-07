@@ -15,6 +15,10 @@ CREATE TABLE accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    -- No CHECK on `state`: mud_account::AccountState is the single source of
+    -- truth for the token set, and an unknown token is caught at load time as
+    -- DbError::CorruptValue. A CHECK here would duplicate the enum and could
+    -- drift from it.
     state TEXT NOT NULL DEFAULT 'active'
 );
 
@@ -31,7 +35,11 @@ CREATE TABLE puppets (
     entity_key INTEGER PRIMARY KEY REFERENCES entities (
         entity_key
     ) ON DELETE CASCADE,
-    account_id INTEGER NOT NULL REFERENCES accounts (id),
+    -- RESTRICT (not CASCADE): a puppet is an entity; deleting an account must
+    -- not orphan its puppets' `entities` rows, whose teardown goes through the
+    -- entity destroy path (§2.5.3.1).
+    -- Account removal must delete puppets first.
+    account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
     name TEXT NOT NULL
 );
 

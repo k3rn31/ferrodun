@@ -20,6 +20,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
+use tokio_util::codec::length_delimited::LengthDelimitedCodecError;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::error::IpcError;
@@ -131,7 +132,7 @@ where
         let bytes = encode(&frame).map_err(|e| IpcError::Codec(Box::new(e)))?;
         if bytes.len() > MAX_FRAME_BYTES {
             return Err(IpcError::FrameTooLarge {
-                size: bytes.len(),
+                size: Some(bytes.len()),
                 max: MAX_FRAME_BYTES,
             });
         }
@@ -145,9 +146,26 @@ where
             Some(Ok(bytes)) => decode(&bytes)
                 .map(Some)
                 .map_err(|e| IpcError::Codec(Box::new(e))),
-            Some(Err(err)) => Err(IpcError::Io(err)),
+            Some(Err(err)) => Err(map_inbound_framing_error(err)),
         }
     }
+}
+
+/// Remaps a length-delimited framing error: the codec's max-frame-length
+/// rejection becomes the typed [`IpcError::FrameTooLarge`], matching the send
+/// path; any other transport failure stays [`IpcError::Io`]. The codec rejects
+/// on the length header, so the exact frame size is unknown here (`size: None`).
+fn map_inbound_framing_error(err: std::io::Error) -> IpcError {
+    if err
+        .get_ref()
+        .is_some_and(|inner| inner.downcast_ref::<LengthDelimitedCodecError>().is_some())
+    {
+        return IpcError::FrameTooLarge {
+            size: None,
+            max: MAX_FRAME_BYTES,
+        };
+    }
+    IpcError::Io(err)
 }
 
 /// Connects to a World listening on `path`, yielding the Gateway-side endpoint

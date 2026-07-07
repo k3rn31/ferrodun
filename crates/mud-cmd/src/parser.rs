@@ -1,9 +1,5 @@
 //! The post-merge command table and the §2.7-step-5 line parser.
 
-use std::cmp::Reverse;
-use std::collections::BTreeMap;
-
-use crate::cmdset::Priority;
 use crate::command::{Command, CommandName, Switch, SwitchError};
 use crate::trie::{PrefixTrie, TrieMatch};
 
@@ -47,48 +43,14 @@ pub struct CommandTable {
 }
 
 impl CommandTable {
-    /// Builds a table from the merge's resolved commands, each tagged with the
-    /// [`Priority`] of the source that won its canonical name.
+    /// Builds a table from the merge's already-resolved commands (canonical-name
+    /// order) and the prefix trie that maps every settled token to its owning
+    /// command's index.
     ///
-    /// Token ownership is settled here so the trie never indexes a colliding
-    /// key: when several commands claim the same name or alias, the higher
-    /// [`Priority`] wins; at equal precedence a canonical name beats another
-    /// command's alias; remaining ties go to the earlier command in
-    /// canonical-name order. A losing command keeps every token it still owns.
-    pub(crate) fn from_resolved(resolved: Vec<(Priority, Command)>) -> Self {
-        let trie = {
-            // For each token, the strongest claim wins: higher `Priority`, then a
-            // canonical name over an alias, then the earlier command (`Reverse`
-            // makes the lower index outrank).
-            let mut owner: BTreeMap<&str, (Priority, bool, Reverse<usize>)> = BTreeMap::new();
-            for (index, (priority, command)) in resolved.iter().enumerate() {
-                let claims = std::iter::once((command.name().as_str(), true)).chain(
-                    command
-                        .aliases()
-                        .iter()
-                        .map(|alias| (alias.as_str(), false)),
-                );
-                for (token, is_canonical) in claims {
-                    let rank = (*priority, is_canonical, Reverse(index));
-                    owner
-                        .entry(token)
-                        .and_modify(|current| {
-                            if rank > *current {
-                                *current = rank;
-                            }
-                        })
-                        .or_insert(rank);
-                }
-            }
-
-            let mut trie = PrefixTrie::default();
-            for (token, &(_, _, Reverse(index))) in &owner {
-                trie.insert(token, index);
-            }
-            trie
-        };
-
-        let commands = resolved.into_iter().map(|(_, command)| command).collect();
+    /// Token ownership is settled by the caller — [`CmdSet::merge`](crate::CmdSet::merge),
+    /// the last step of the §2.7 merge — so the trie never indexes a colliding
+    /// key. This constructor only stores the two halves.
+    pub(crate) fn new(commands: Vec<Command>, trie: PrefixTrie) -> Self {
         Self { commands, trie }
     }
 
@@ -176,8 +138,9 @@ impl CommandTable {
                 switches,
                 args,
             },
-            // INVARIANT: trie indices are produced from `self.commands` in
-            // `from_commands`, so the lookup always points at a live command.
+            // INVARIANT: trie indices are produced alongside `self.commands` when
+            // the table is built in `CmdSet::merge`, so a lookup always points at
+            // a live command.
             None => ParseOutcome::NotFound,
         }
     }

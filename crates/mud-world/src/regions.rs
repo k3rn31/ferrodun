@@ -24,7 +24,7 @@ use kdl::{KdlDocument, KdlNode};
 use mud_core::{RegionId, RegionKey};
 
 use crate::error::WorldError;
-use crate::rooms::arg;
+use crate::kdl::arg;
 
 /// The file name that marks a folder as a region root (§2.2.7.3).
 pub(crate) const REGION_MANIFEST: &str = "region.kdl";

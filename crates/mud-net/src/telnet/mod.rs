@@ -12,6 +12,11 @@ use negotiation::{CharsetMode, Negotiator, OPT_CHARSET, OPT_NAWS, OPT_TTYPE, TTY
 use parser::{EOR_CMD, GA, IAC, IacParser, ParsedItem};
 
 /// A validated, decoded event from the client.
+///
+/// A transport DTO: fields stay raw (`String`, `u16`) because parsing them into
+/// domain values (`InputLine`, tier from terminal type, render width) belongs to
+/// the gateway above, which owns those types. `mud-net` sits below the domain
+/// crates, so wrapping here would invert the dependency or add empty newtypes.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq)]
 pub enum TelnetEvent {

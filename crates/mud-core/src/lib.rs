@@ -9,6 +9,7 @@ mod side_tables;
 mod slug;
 mod text;
 mod world;
+mod write_model;
 
 pub use entity::{
     ArenaError, EntityArena, EntityId, EntityIdError, EntityKey, Generation, SlotIndex, TenantTag,
@@ -19,12 +20,11 @@ pub use locks::{
 };
 pub use place::{Description, Direction, Place, PlaceId, PlaceKey, PlaceKeyError, RoomData, Title};
 pub use region::{RegionId, RegionKey, RegionKeyError};
-pub use scheduler::{
-    Effect, MutationCommand, Precondition, Scheduler, TICK_HZ, TICK_PERIOD, TickEvent,
-};
+pub use scheduler::{Scheduler, TICK_HZ, TICK_PERIOD};
 pub use side_tables::{Inventory, Keyword, LocationOf, Naming};
 pub use text::{
     Attributes, Color, ColorParseError, CompiledMarkup, FieldStyle, MarkupDiagnostic, Palette,
     RoleName, Span, SpanStyle, Style, StyledText, compile_markup,
 };
 pub use world::World;
+pub use write_model::{Effect, MutationCommand, Precondition, TickEvent};

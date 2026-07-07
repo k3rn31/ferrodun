@@ -24,3 +24,18 @@ impl Puppet {
         Self { key, name }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::num::NonZeroU64;
+
+    #[test]
+    fn new_pairs_a_key_with_a_name() {
+        let key = EntityKey::new(NonZeroU64::new(7).expect("non-zero key"));
+        let name = PuppetName::parse("hero").expect("valid name");
+        let puppet = Puppet::new(key, name.clone());
+        assert_eq!(puppet.key, key);
+        assert_eq!(puppet.name, name);
+    }
+}

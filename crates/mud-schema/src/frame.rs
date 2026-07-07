@@ -266,6 +266,71 @@ mod tests {
         assert_eq!(bytes, vec![0x01, 0x02, 0x02, 0x68, 0x69]);
     }
 
+    // Connect = variant 0; session_id = 1.
+    #[test]
+    fn connect_frame_has_a_stable_encoding() {
+        let frame = GatewayFrame::Connect(SessionConnect {
+            session_id: session(1),
+        });
+        assert_eq!(encode(&frame).expect("encode"), vec![0x00, 0x01]);
+    }
+
+    // Disconnect = variant 2; session_id = 3.
+    #[test]
+    fn disconnect_frame_has_a_stable_encoding() {
+        let frame = GatewayFrame::Disconnect(SessionDisconnect {
+            session_id: session(3),
+        });
+        assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x03]);
+    }
+
+    // Resume = variant 3; world_id = 7; schema_version = 1; live_sessions =
+    // [1, 2] (len 2 then the two ids). Pins the multi-field, vec-bearing frame.
+    #[test]
+    fn resume_frame_has_a_stable_encoding() {
+        let frame = GatewayFrame::Resume(ResumeHandshake {
+            world_id: world(7),
+            schema_version: crate::SCHEMA_VERSION,
+            live_sessions: vec![session(1), session(2)],
+        });
+        assert_eq!(
+            encode(&frame).expect("encode"),
+            vec![0x03, 0x07, 0x01, 0x02, 0x01, 0x02]
+        );
+    }
+
+    // Output = variant 0; session_id = 4; text = "hi" (len 2, 0x68 0x69).
+    #[test]
+    fn output_frame_has_a_stable_encoding() {
+        let frame = WorldFrame::Output(SessionOutput {
+            session_id: session(4),
+            text: OutputText::new("hi"),
+        });
+        assert_eq!(
+            encode(&frame).expect("encode"),
+            vec![0x00, 0x04, 0x02, 0x68, 0x69]
+        );
+    }
+
+    // Close = variant 1; session_id = 5.
+    #[test]
+    fn close_frame_has_a_stable_encoding() {
+        let frame = WorldFrame::Close(SessionClose {
+            session_id: session(5),
+        });
+        assert_eq!(encode(&frame).expect("encode"), vec![0x01, 0x05]);
+    }
+
+    // ResumeAck = variant 2; world_id = 7; schema_version = 1.
+    #[test]
+    fn resume_ack_frame_has_a_stable_encoding() {
+        let frame = WorldFrame::ResumeAck(HandshakeAck {
+            world_id: world(7),
+            schema_version: crate::SCHEMA_VERSION,
+        });
+        assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x07, 0x01]);
+    }
+
     #[test]
     fn resume_handshake_round_trips_with_no_live_sessions() {
         let frame = GatewayFrame::Resume(ResumeHandshake {

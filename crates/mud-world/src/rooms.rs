@@ -19,13 +19,14 @@ use std::fs;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 
-use kdl::{KdlDocument, KdlNode, KdlValue};
+use kdl::{KdlDocument, KdlNode};
 use mud_core::{
     Description, Direction, FieldStyle, Palette, Place, PlaceId, PlaceKey, RegionId, RoomData,
     StyledText, Title, compile_markup,
 };
 
 use crate::error::WorldError;
+use crate::kdl::arg;
 use crate::regions::{REGION_MANIFEST, RegionBinder, Regions};
 
 /// The registry of rooms loaded from a tenant's world files.
@@ -305,11 +306,6 @@ fn compile_field(
     compiled.text
 }
 
-/// The first positional string argument of `node` at `index`, if present.
-pub(crate) fn arg(node: &KdlNode, index: usize) -> Option<&str> {
-    node.get(index).and_then(KdlValue::as_string)
-}
-
 /// Maps an authored direction word to a [`Direction`].
 fn parse_direction(value: &str) -> Result<Direction, WorldError> {
     match value {
@@ -394,11 +390,6 @@ mod tests {
         PlaceKey::parse(value).expect("valid test slug")
     }
 
-    fn first_node(text: &str) -> KdlNode {
-        let document = KdlDocument::parse(text).expect("valid kdl");
-        document.nodes().first().expect("at least one node").clone()
-    }
-
     #[test]
     fn parse_direction_maps_every_authored_word() {
         assert_eq!(parse_direction("north").expect("north"), Direction::North);
@@ -446,25 +437,6 @@ mod tests {
     fn advance_saturates_at_max_rather_than_wrapping() {
         // The overflow branch is unreachable in practice; assert it stays valid.
         assert_eq!(advance(NonZeroU64::MAX), NonZeroU64::MAX);
-    }
-
-    #[test]
-    fn arg_reads_a_positional_string() {
-        let node = first_node("room \"town\" \"extra\"");
-        assert_eq!(arg(&node, 0), Some("town"));
-        assert_eq!(arg(&node, 1), Some("extra"));
-    }
-
-    #[test]
-    fn arg_is_none_past_the_last_argument() {
-        let node = first_node("room \"town\"");
-        assert_eq!(arg(&node, 5), None);
-    }
-
-    #[test]
-    fn arg_is_none_for_a_non_string_value() {
-        let node = first_node("room 42");
-        assert_eq!(arg(&node, 0), None);
     }
 
     #[test]
