@@ -116,7 +116,7 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ArenaError, EntityId, Effect, PlaceId, Precondition, TenantTag};
+    use crate::{ArenaError, Effect, EntityId, PlaceId, Precondition, TenantTag};
     use std::num::NonZeroU64;
 
     fn world() -> World {

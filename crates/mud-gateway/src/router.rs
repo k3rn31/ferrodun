@@ -295,11 +295,17 @@ mod tests {
         let a = session(1);
         let b = session(2);
         commands_tx
-            .send(ToRouter::Register { session_id: a, tx: tx_a })
+            .send(ToRouter::Register {
+                session_id: a,
+                tx: tx_a,
+            })
             .await
             .expect("router must accept A's registration");
         commands_tx
-            .send(ToRouter::Register { session_id: b, tx: tx_b })
+            .send(ToRouter::Register {
+                session_id: b,
+                tx: tx_b,
+            })
             .await
             .expect("router must accept B's registration");
         drain_barrier(&commands_tx, &mut world_end, session(9)).await;
@@ -327,7 +333,10 @@ mod tests {
         // B receives despite A being wedged: one slow client does not stall the
         // router (proves isolation). Its arrival also means every A-frame ahead
         // of it in the FIFO has already been routed.
-        let marker = rx_b.recv().await.expect("B receives its output while A is flooded");
+        let marker = rx_b
+            .recv()
+            .await
+            .expect("B receives its output while A is flooded");
         assert!(matches!(marker, ToConnection::Output(t) if t.as_str() == "b-marker"));
 
         // A buffered exactly its capacity; the overflow hit the drop branch.
@@ -359,11 +368,17 @@ mod tests {
         let a = session(1);
         let b = session(2);
         commands_tx
-            .send(ToRouter::Register { session_id: a, tx: tx_a })
+            .send(ToRouter::Register {
+                session_id: a,
+                tx: tx_a,
+            })
             .await
             .expect("router must accept A's registration");
         commands_tx
-            .send(ToRouter::Register { session_id: b, tx: tx_b })
+            .send(ToRouter::Register {
+                session_id: b,
+                tx: tx_b,
+            })
             .await
             .expect("router must accept B's registration");
         drain_barrier(&commands_tx, &mut world_end, session(9)).await;

@@ -4,7 +4,7 @@
 //! macro reaches the built-in catalog).
 #![allow(clippy::expect_used)] // test file; mirrors `allow-expect-in-tests`
 
-use mud_i18n::{t, translate, Catalog, Locale, MessageKey};
+use mud_i18n::{Catalog, Locale, MessageKey, t, translate};
 
 #[test]
 fn the_public_translate_path_composes_over_a_caller_built_catalog() {
@@ -19,7 +19,12 @@ fn the_public_translate_path_composes_over_a_caller_built_catalog() {
     );
 
     assert_eq!(
-        translate(&catalog, &de, &MessageKey::from_static("greet"), &[("who", "Sam")]),
+        translate(
+            &catalog,
+            &de,
+            &MessageKey::from_static("greet"),
+            &[("who", "Sam")]
+        ),
         "Hallo Sam"
     );
     // Absent everywhere -> literal key falls through (the public miss contract).

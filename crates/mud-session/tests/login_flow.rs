@@ -29,7 +29,10 @@ fn logged_in_with_one_puppet() -> SessionFsm {
     let mut fsm = SessionFsm::new();
     let _ = fsm.on_input("login alice");
     let t = fsm.on_input("hunter2");
-    assert!(matches!(t.effect, Some(Effect::Authenticate { .. })), "login emits Authenticate");
+    assert!(
+        matches!(t.effect, Some(Effect::Authenticate { .. })),
+        "login emits Authenticate"
+    );
     let t = fsm.on_effect(EffectResult::Authenticated {
         account: account(),
         puppets: vec![puppet(10, "hero")],
@@ -47,7 +50,11 @@ fn a_full_login_journey_binds_the_session_in_world() {
     let mut fsm = logged_in_with_one_puppet();
 
     let t = fsm.on_input("play 1");
-    assert!(matches!(t.effect, Some(Effect::Enter { .. })), "play emits Enter: {:?}", t.effect);
+    assert!(
+        matches!(t.effect, Some(Effect::Enter { .. })),
+        "play emits Enter: {:?}",
+        t.effect
+    );
 
     let t = fsm.on_effect(EffectResult::Entered);
     assert_eq!(t.messages, vec![SessionMessage::EnteredWorld]);
@@ -63,20 +70,30 @@ fn a_full_register_journey_creates_a_puppet_and_binds() {
     let _ = fsm.on_input("register alice");
     let _ = fsm.on_input("hunter2"); // password
     let t = fsm.on_input("hunter2"); // confirm
-    assert!(matches!(t.effect, Some(Effect::Register { .. })), "confirm emits Register");
+    assert!(
+        matches!(t.effect, Some(Effect::Register { .. })),
+        "confirm emits Register"
+    );
 
     let t = fsm.on_effect(EffectResult::Registered { account: account() });
     assert_eq!(t.messages, vec![SessionMessage::NoPuppetsYet]);
 
     let t = fsm.on_input("new hero");
-    assert!(matches!(t.effect, Some(Effect::CreatePuppet { .. })), "new emits CreatePuppet");
+    assert!(
+        matches!(t.effect, Some(Effect::CreatePuppet { .. })),
+        "new emits CreatePuppet"
+    );
 
     let t = fsm.on_effect(EffectResult::PuppetCreated(puppet(10, "hero")));
     // Creation both announces the puppet and emits the Enter effect for it.
     assert!(t.messages.contains(&SessionMessage::PuppetCreated(
         PuppetName::parse("hero").expect("name")
     )));
-    assert!(matches!(t.effect, Some(Effect::Enter { .. })), "creation auto-enters: {:?}", t.effect);
+    assert!(
+        matches!(t.effect, Some(Effect::Enter { .. })),
+        "creation auto-enters: {:?}",
+        t.effect
+    );
 
     let t = fsm.on_effect(EffectResult::Entered);
     assert!(matches!(t.terminal, Some(Terminal::Bound { .. })));
@@ -102,7 +119,11 @@ fn a_backend_error_creating_a_puppet_returns_to_select() {
     assert_eq!(t.messages, vec![SessionMessage::ServerError]);
     // Recovered to puppet-select: a `play` is accepted again.
     let t = fsm.on_input("play 1");
-    assert!(matches!(t.effect, Some(Effect::Enter { .. })), "back in select: {:?}", t.effect);
+    assert!(
+        matches!(t.effect, Some(Effect::Enter { .. })),
+        "back in select: {:?}",
+        t.effect
+    );
 }
 
 #[test]
@@ -114,7 +135,11 @@ fn a_backend_error_entering_returns_to_select() {
     assert_eq!(t.messages, vec![SessionMessage::ServerError]);
     // Recovered to puppet-select: another `play` is accepted.
     let t = fsm.on_input("play 1");
-    assert!(matches!(t.effect, Some(Effect::Enter { .. })), "back in select: {:?}", t.effect);
+    assert!(
+        matches!(t.effect, Some(Effect::Enter { .. })),
+        "back in select: {:?}",
+        t.effect
+    );
 }
 
 #[test]
@@ -122,7 +147,11 @@ fn an_effect_result_with_no_effect_outstanding_is_ignored() {
     let mut fsm = SessionFsm::new(); // Anon: nothing in flight
 
     let t = fsm.on_effect(EffectResult::Entered);
-    assert!(t.messages.is_empty(), "stray result is dropped: {:?}", t.messages);
+    assert!(
+        t.messages.is_empty(),
+        "stray result is dropped: {:?}",
+        t.messages
+    );
     assert!(t.terminal.is_none());
 
     // State was preserved: the machine still handles anon input.
@@ -137,7 +166,11 @@ fn input_is_dropped_while_an_effect_is_in_flight() {
     let _ = fsm.on_input("hunter2"); // -> AwaitingAuth (Authenticate in flight)
 
     let t = fsm.on_input("play 1");
-    assert!(t.messages.is_empty(), "input during an effect is dropped: {:?}", t.messages);
+    assert!(
+        t.messages.is_empty(),
+        "input during an effect is dropped: {:?}",
+        t.messages
+    );
     assert!(t.effect.is_none());
 
     // The pending effect still resolves normally afterward.
@@ -145,14 +178,23 @@ fn input_is_dropped_while_an_effect_is_in_flight() {
         account: account(),
         puppets: vec![puppet(10, "hero")],
     });
-    assert!(matches!(t.messages.as_slice(), [SessionMessage::PuppetList(_)]));
+    assert!(matches!(
+        t.messages.as_slice(),
+        [SessionMessage::PuppetList(_)]
+    ));
 }
 
 #[test]
 fn play_with_a_zero_or_out_of_range_ordinal_is_rejected() {
     let mut fsm = logged_in_with_one_puppet();
-    assert_eq!(fsm.on_input("play 0").messages, vec![SessionMessage::UnknownCommand]);
+    assert_eq!(
+        fsm.on_input("play 0").messages,
+        vec![SessionMessage::UnknownCommand]
+    );
 
     let mut fsm = logged_in_with_one_puppet();
-    assert_eq!(fsm.on_input("play 99").messages, vec![SessionMessage::UnknownCommand]);
+    assert_eq!(
+        fsm.on_input("play 99").messages,
+        vec![SessionMessage::UnknownCommand]
+    );
 }

@@ -9,7 +9,10 @@ use mud_account::{AccountState, Credential, LoginError};
 fn a_credential_round_trips_through_its_phc_string() {
     let cred = Credential::hash("correct-horse").expect("hashing succeeds");
     let restored = Credential::from_phc(cred.as_phc()).expect("its own PHC parses");
-    assert!(restored.verify("correct-horse"), "the right password verifies");
+    assert!(
+        restored.verify("correct-horse"),
+        "the right password verifies"
+    );
     assert!(!restored.verify("wrong"), "the wrong password is refused");
     assert!(
         Credential::verify_phc(cred.as_phc(), "correct-horse"),

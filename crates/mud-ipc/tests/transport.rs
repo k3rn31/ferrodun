@@ -197,7 +197,10 @@ async fn socket_recv_rejects_an_oversized_inbound_frame() {
 
     assert!(matches!(
         world.recv().await,
-        Err(IpcError::FrameTooLarge { size: None, max: MAX_FRAME_BYTES })
+        Err(IpcError::FrameTooLarge {
+            size: None,
+            max: MAX_FRAME_BYTES
+        })
     ));
 }
 
@@ -210,10 +213,7 @@ async fn connect_reports_io_when_the_socket_path_does_not_exist() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let missing_path = dir.path().join("no-such.sock");
 
-    assert!(matches!(
-        connect(&missing_path).await,
-        Err(IpcError::Io(_))
-    ));
+    assert!(matches!(connect(&missing_path).await, Err(IpcError::Io(_))));
 }
 
 #[tokio::test]
@@ -265,11 +265,14 @@ async fn announce_sessions_reports_peer_closed_when_the_world_drops() {
     // Gateway announces, the World consumes the resume and then vanishes without
     // acknowledging (announce_sessions: `None => Err(PeerClosed)`).
     let (mut gateway, world) = in_memory_pair();
-    let (announced, _) = tokio::join!(announce_sessions(&mut gateway, world_id(1), vec![]), async {
-        let mut world = world;
-        world.recv().await.expect("world receives the resume");
-        drop(world);
-    });
+    let (announced, _) = tokio::join!(
+        announce_sessions(&mut gateway, world_id(1), vec![]),
+        async {
+            let mut world = world;
+            world.recv().await.expect("world receives the resume");
+            drop(world);
+        }
+    );
     assert!(matches!(announced, Err(IpcError::PeerClosed)));
 }
 

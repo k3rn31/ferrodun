@@ -157,9 +157,8 @@ mod tests {
         // PlaceId, which has a public constructor.
         let place = PlaceId::new(NonZeroU64::new(10).expect("non-zero place id"));
         // A dummy entity id via the arena keeps this independent of scheduler.
-        let mut arena = crate::EntityArena::new(
-            crate::TenantTag::new(1).expect("tenant tag in range"),
-        );
+        let mut arena =
+            crate::EntityArena::new(crate::TenantTag::new(1).expect("tenant tag in range"));
         let entity = arena.alloc().expect("arena must mint an entity");
         (entity, place)
     }
