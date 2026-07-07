@@ -30,6 +30,14 @@ pub enum DbError {
     #[error("migration error: {0}")]
     Migrate(#[source] Box<dyn std::error::Error + Send + Sync>),
 
+    /// A blocking task offloaded with `spawn_blocking` (e.g. argon2 password
+    /// verification, kept off the async runtime) failed to complete — it
+    /// panicked or was cancelled. An internal fault, surfaced rather than
+    /// unwrapped. The `tokio` join error is boxed so it does not leak into the
+    /// public API.
+    #[error("background task failed: {0}")]
+    BlockingTask(#[source] Box<dyn std::error::Error + Send + Sync>),
+
     // --- Consistency violations ---
     /// A persisted integer id read from the database was not a valid id —
     /// negative or zero where a positive `AUTOINCREMENT` key was expected.
@@ -93,14 +101,6 @@ pub enum DbError {
     /// variant surfaces here at runtime rather than as a compile error.
     #[error("unsupported effect variant")]
     UnsupportedEffect,
-
-    /// A blocking task offloaded with `spawn_blocking` (e.g. argon2 password
-    /// verification, kept off the async runtime) failed to complete — it
-    /// panicked or was cancelled. An internal fault, surfaced rather than
-    /// unwrapped. The `tokio` join error is boxed so it does not leak into the
-    /// public API.
-    #[error("background task failed: {0}")]
-    BlockingTask(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<sqlx::Error> for DbError {

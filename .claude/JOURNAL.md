@@ -1398,3 +1398,38 @@ truth when this log drifts.
   handle isolation, NAWS/ANSI assertions). **Deferred/known:** split-mode IPC
   backpressure (M1-21 note); per-tenant supervision (M1 fail-stop is
   process-wide); Postgres retry tier (M7-E).
+
+## 2026-07-07 — Crate-audit hardening batch (12 SDD plans)
+
+- **Spec:** Multiple — §2.1.3 (untrusted-input bound, mud-ipc), §2.8.5.7
+  (build-time wire version lock, mud-schema), §1.7 (Type-Driven Design /
+  newtype / no-cycle mandates driving the mud-core, mud-cmd, mud-engine,
+  mud-world refactors), §3.2/§3.14/§3.15/§3.19 (command, i18n, account, session
+  surfaces). A cross-crate audit surfaced coverage gaps and minor issues across
+  five tiers; this batch closes them without changing observable behavior.
+- **Done:** Executed 12 self-contained plans (`docs/superpowers/plans/2026-07-05-*`)
+  via subagent-driven-development, one implementer + task review per plan.
+  Production refactors (behavior-preserving): mud-core split the world↔scheduler
+  cycle by extracting a write-model seam (P1); mud-cmd merged parser/cmdset to
+  break a cycle, `bool` → `TokenKind{Alias,Canonical}` with identical `Ord` (P2);
+  mud-engine split `builtins.rs` into a `builtins/` module (P3); mud-world
+  extracted a `kdl.rs` helper (P4). Typed-error hardening: mud-ipc made the
+  oversized-inbound-frame path a typed `FrameTooLarge` symmetric with send, and
+  widened `FrameTooLarge.size` to `Option<usize>` (honest "size unknown" on
+  recv) (P6); mud-db documented `DbError`'s two failure axes and set
+  `puppets.account_id` FK to `ON DELETE RESTRICT` (P7). Coverage-only additions:
+  mud-net boundary-type docs (P5, no newtypes — DECISION), mud-schema golden-byte
+  pins for every frame variant (P8), mud-account public-API + error-path tests
+  (P9), mud-i18n duplicate-key guard + `ENTRIES` lifted to a module const + t!
+  public-surface guard (P10), mud-session login-FSM branch tests (P11),
+  mud-gateway router backpressure + addressing tests with a `drain_barrier`
+  helper (P12). A branch-wide `cargo fmt` pass (b64c4ebc) swept a systemic
+  fmt-dirty carry-over in verbatim-transcribed test code across six crates.
+- **Verify:** `cargo test --workspace` 609 passed / 1 ignored; `cargo clippy
+  --workspace --all-targets` clean; `cargo fmt --all --check` clean. Each plan
+  independently task-reviewed (spec compliance + code quality); final
+  whole-branch review (opus) returned merge-ready.
+- **Next:** None blocking — this is audit cleanup, not a PLAN milestone.
+  Deferred/known carried forward unchanged (split-mode IPC backpressure,
+  per-tenant supervision, Postgres retry tier). Process note: per-plan
+  verification must include `cargo fmt --check`, not just test + clippy.

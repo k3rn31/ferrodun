@@ -37,7 +37,8 @@ CREATE TABLE puppets (
     ) ON DELETE CASCADE,
     -- RESTRICT (not CASCADE): a puppet is an entity; deleting an account must
     -- not orphan its puppets' `entities` rows, whose teardown goes through the
-    -- entity destroy path (§2.5.3.1). Account removal must delete puppets first.
+    -- entity destroy path (§2.5.3.1).
+    -- Account removal must delete puppets first.
     account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE RESTRICT,
     name TEXT NOT NULL
 );
