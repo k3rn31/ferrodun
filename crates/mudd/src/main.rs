@@ -77,8 +77,16 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         }
         joined = tasks.join_next() => match joined {
             Some(Ok(Ok(()))) | None => Ok(()),
-            Some(Ok(Err(error))) => Err(error),
-            Some(Err(join_error)) => Err(anyhow::anyhow!(join_error)).context("tenant task panicked"),
+            Some(Ok(Err(error))) => {
+                // `?error`: anyhow's Debug prints the whole context chain;
+                // Display would keep only the outermost message.
+                tracing::error!(error = ?error, "tenant task failed");
+                Err(error)
+            }
+            Some(Err(join_error)) => {
+                tracing::error!(error = %join_error, "tenant task panicked");
+                Err(anyhow::anyhow!(join_error)).context("tenant task panicked")
+            }
         }
     }
 }

@@ -15,6 +15,7 @@ use mud_world::{TenantConfig, load_world};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
+use tracing::Instrument;
 
 use crate::backend::DbBackend;
 use crate::config::ServerConfig;
@@ -79,10 +80,22 @@ pub async fn boot(
             rate: config.rate,
             burst: config.burst,
         };
-        tasks.spawn(async move {
-            mud_gateway::serve(listener, gateway_end, gateway_config)
-                .await
-                .map_err(anyhow::Error::from)
+        // One span per tenant wraps both tasks: every event below — tick
+        // events, dispatch warnings, i18n misses — inherits tenant identity
+        // ambiently (design §4; SPEC §3.11.2).
+        let tenant_span = tracing::info_span!(
+            "tenant",
+            tenant = tenant_config.tenant_tag().get(),
+            world_id = %world_id,
+        );
+        tasks.spawn({
+            let span = tenant_span.clone();
+            async move {
+                mud_gateway::serve(listener, gateway_end, gateway_config)
+                    .await
+                    .map_err(anyhow::Error::from)
+            }
+            .instrument(span)
         });
 
         let places = WorldPlaces::new(loaded.rooms().clone());
@@ -94,7 +107,7 @@ pub async fn boot(
             builtins,
             places,
         };
-        tasks.spawn(world_loop::run(world_end, world_id, runtime));
+        tasks.spawn(world_loop::run(world_end, world_id, runtime).instrument(tenant_span));
 
         addrs.push(bound_addr);
         tenant_tags.push((entry.dir.clone(), tenant_config.tenant_tag()));

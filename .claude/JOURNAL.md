@@ -1481,3 +1481,10 @@ truth when this log drifts.
 - **Done:** `FERRODUN_LOG_FORMAT=text|json` env knob in mudd; json mode emits current-span + span-list; operator Logging section in running-a-server.md.
 - **Verify:** `cargo test -p mudd` (parse tests), mkdocs --strict, clippy clean.
 - **Next:** L1 tenant/session spans.
+
+## 2026-07-08 — L1: tenant/session spans + level reclassification
+
+- **Spec:** design §3–§4 (2026-07-08-logging-strategy) — `info` boot/shutdown only, `warn` builder-content only, tick-hot-path never `warn`; ambient tenant/session context via spans.
+- **Done:** `tenant{tenant, world_id}` span in `boot.rs` wraps both per-tenant tasks (gateway serve + world loop); `session{session_id}` span on `mud-gateway`'s per-connection spawn and on `world_loop::handle_input`. `log_tick_event` reclassified: `Created` → debug, `PreconditionFailed`/`Rejected` → trace (effect/precondition payloads omitted, non-exhaustive fallback → error). Demoted three routine-drop warns (mid-stream resume, unknown-session dispatch, unknown-session input) to debug and unified their field name to `session_id`. Added `error!` on both fatal `join_next` arms in `main.rs` (`?error` for the anyhow chain, `%join_error` for panics).
+- **Verify:** `cargo test -p mudd entity_creation_logs_at_debug_not_info` RED→GREEN (TDD); `cargo test -p mudd && cargo test -p mud-gateway` green incl. `telnet_login`; `cargo test --workspace` 615 passed/1 ignored; `cargo clippy --workspace --all-targets` clean.
+- **Next:** L2 — command-level spans/fields (Task 3).
