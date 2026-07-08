@@ -1452,3 +1452,25 @@ truth when this log drifts.
   1 ignored; `cargo clippy --workspace --all-targets` clean; `cargo fmt --all
   --check` clean. Each task independently reviewed (spec + quality).
 - **Next:** None — pure consolidation, no behavior change, no docs impact.
+
+## 2026-07-08 — Audit and eliminate clippy lint suppressions
+
+- **Spec:** §1.7 / CLAUDE.md "Never suppress lints" — suppressions must be a
+  last resort, in the smallest scope, with a `// LINT:` comment; production code
+  must be clippy-clean without allows.
+- **Done:** Audited every `#[allow]`/`#[expect]` in the tree. (1) Refactored
+  `mudd::world_loop` to remove both production `#[allow(clippy::too_many_arguments)]`:
+  bundled the tenant service stack into a new `TenantRuntime` struct threaded
+  through `run`/`handle_input` (updated the `boot.rs` call site). (2) Deleted 5
+  redundant `#![allow(clippy::expect_used)]` from in-`src` `#[cfg(test)]` modules —
+  `clippy.toml`'s `allow-expect-in-tests` already covers `cfg(test)` code
+  (verified empirically). (3) Rewrote the misleading "mirrors allow-expect-in-tests"
+  comment on 17 integration-test suppressions to state the real reason they are
+  load-bearing (integration-test crates aren't compiled with `cfg(test)`, so the
+  config doesn't reach their helpers). Two test-only `result_large_err`
+  suppressions (figment `Jail` error type) kept as legitimate + commented.
+  Zero production-code suppressions remain.
+- **Verify:** `cargo clippy --workspace --all-targets` clean;
+  `cargo test --workspace` 611 passed / 1 ignored (mudd's `telnet_login`
+  integration test exercises the refactored loop).
+- **Next:** None — no external surface changed, no docs impact.

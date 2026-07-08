@@ -3,7 +3,7 @@
 //! Each test drives a command through the public [`Pipeline`] against a real
 //! `mud-core` World and a small two-room map, asserting the rendered reply and
 //! any world mutation the command's effects produced.
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;

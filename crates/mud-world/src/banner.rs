@@ -39,7 +39,6 @@ pub fn load_banner(path: &Path) -> Result<String, WorldError> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
 
     use std::fs;
 

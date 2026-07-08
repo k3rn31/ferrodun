@@ -1,6 +1,6 @@
 //! Transport + resume-handshake behavior, exercised over both the in-memory and
 //! unix-socket endpoints so the two are held to one frame contract (§2.1.3).
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 

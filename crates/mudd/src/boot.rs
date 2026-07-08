@@ -86,9 +86,15 @@ pub async fn boot(
         });
 
         let places = WorldPlaces::new(loaded.rooms().clone());
-        tasks.spawn(world_loop::run(
-            world_end, world_id, world, backend, sessions, pipeline, builtins, places,
-        ));
+        let runtime = world_loop::TenantRuntime {
+            world,
+            backend,
+            sessions,
+            pipeline,
+            builtins,
+            places,
+        };
+        tasks.spawn(world_loop::run(world_end, world_id, runtime));
 
         addrs.push(bound_addr);
         tenant_tags.push((entry.dir.clone(), tenant_config.tenant_tag()));

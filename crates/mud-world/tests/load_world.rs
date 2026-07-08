@@ -1,6 +1,6 @@
 //! End-to-end loading of a tenant's authored world: the checked-in fixture loads
 //! cleanly, and each malformed input surfaces a typed [`WorldError`].
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -149,7 +149,6 @@ fn property<'a>(node: &'a KdlNode, key: &str) -> Option<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
 
     use std::fs;
 

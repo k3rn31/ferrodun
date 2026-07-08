@@ -1,6 +1,6 @@
 //! Cross-player broadcast (§3.6.3): `say` and movement reach other co-located
 //! players' sessions via the pipeline's `Roster` fan-out.
-#![allow(clippy::expect_used)] // integration test
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;

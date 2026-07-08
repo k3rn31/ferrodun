@@ -1,6 +1,6 @@
 //! End-to-end login-flow journeys and recovery paths driven through the public
 //! `SessionFsm` API (§3.19.1).
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 

@@ -115,7 +115,6 @@ fn split_ordinal(arg: &str) -> (&str, Option<usize>) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
 
     use std::num::NonZeroU64;
 

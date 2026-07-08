@@ -3,7 +3,7 @@
 //! spatial surface, and the `LocationOf` side-table. This is the composition the
 //! `World` aggregate does not cover — it neither exposes `LocationOf` nor uses
 //! `Place`.
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 
