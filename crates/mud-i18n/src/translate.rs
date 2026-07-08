@@ -1,8 +1,33 @@
 //! The lookup boundary: resolve a key to player-facing text (§3.14.4).
 
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+
 use crate::catalog::Catalog;
 use crate::key::MessageKey;
 use crate::locale::Locale;
+
+/// Misses already warned about. A missing key sits on the hot render path
+/// (every emitted line, every session): one warning per (locale, key) per
+/// process, or a single misspelled key floods the log (design §3).
+fn warned_misses() -> &'static Mutex<HashSet<(String, String)>> {
+    static WARNED: OnceLock<Mutex<HashSet<(String, String)>>> = OnceLock::new();
+    WARNED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Emits the §3.14.4.3 structured warning, deduplicated per (locale, key).
+/// `tenant` is inherited from the ambient tenant span (design §4), not passed.
+fn warn_missing_once(locale: &Locale, key: &MessageKey) {
+    let newly_seen = warned_misses()
+        .lock()
+        .map(|mut seen| seen.insert((locale.as_str().to_owned(), key.as_str().to_owned())))
+        // A poisoned lock only ever costs a duplicate warning; prefer that
+        // over silencing a mandated signal.
+        .unwrap_or(true);
+    if newly_seen {
+        tracing::warn!(key = %key, locale = %locale, "missing i18n key; falling back to literal key");
+    }
+}
 
 /// Resolves `key` to a player-facing string in `locale`, interpolating `args`.
 ///
@@ -26,7 +51,7 @@ pub fn translate(
         .unwrap_or_else(|| {
             // A miss is operator-facing telemetry, never shown to the player; the
             // literal key still renders so the message is legible (§3.14.4.3).
-            tracing::warn!(key = %key, locale = %locale, "missing i18n key; falling back to literal key");
+            warn_missing_once(locale, key);
             key.as_str()
         });
 
@@ -59,6 +84,11 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
 mod tests {
     use super::*;
     use tracing_test::traced_test;
+
+    // The missing-key dedup guard (`warned_misses`) is process-global and
+    // shared across every test in this binary: each test below MUST use a
+    // MessageKey unique to that test, or one test's warning satisfies
+    // another's dedup guard and the assertion never fires.
 
     fn catalog_with(locale: Locale, key: &'static str, template: &str) -> Catalog {
         let mut catalog = Catalog::new();
@@ -209,5 +239,53 @@ mod tests {
             ),
             "Alice"
         );
+    }
+
+    #[test]
+    #[traced_test]
+    fn a_missing_key_warning_carries_the_ambient_tenant() {
+        let catalog = Catalog::new();
+
+        // In production the tenant span is opened at boot (mudd); §3.14.4.3
+        // requires the miss to record key, locale, AND tenant — inherited
+        // here, not passed as an argument.
+        let span = tracing::info_span!("tenant", tenant = 7u16);
+        let _guard = span.enter();
+        let _ = translate(
+            &catalog,
+            &Locale::EN,
+            &MessageKey::from_static("inherit.tenant"),
+            &[],
+        );
+
+        assert!(logs_contain("missing i18n key"));
+        assert!(logs_contain("tenant"));
+        assert!(logs_contain("7"));
+    }
+
+    #[test]
+    #[traced_test]
+    fn a_repeated_missing_key_warns_only_once() {
+        let catalog = Catalog::new();
+
+        for _ in 0..3 {
+            let _ = translate(
+                &catalog,
+                &Locale::EN,
+                &MessageKey::from_static("dedup.key"),
+                &[],
+            );
+        }
+
+        logs_assert(|lines: &[&str]| {
+            match lines
+                .iter()
+                .filter(|line| line.contains("dedup.key"))
+                .count()
+            {
+                1 => Ok(()),
+                n => Err(format!("expected exactly one warning, saw {n}")),
+            }
+        });
     }
 }

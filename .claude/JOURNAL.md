@@ -1488,3 +1488,10 @@ truth when this log drifts.
 - **Done:** `tenant{tenant, world_id}` span in `boot.rs` wraps both per-tenant tasks (gateway serve + world loop); `session{session_id}` span on `mud-gateway`'s per-connection spawn and on `world_loop::handle_input`. `log_tick_event` reclassified: `Created` → debug, `PreconditionFailed`/`Rejected` → trace (effect/precondition payloads omitted, non-exhaustive fallback → error). Demoted three routine-drop warns (mid-stream resume, unknown-session dispatch, unknown-session input) to debug and unified their field name to `session_id`. Added `error!` on both fatal `join_next` arms in `main.rs` (`?error` for the anyhow chain, `%join_error` for panics).
 - **Verify:** `cargo test -p mudd entity_creation_logs_at_debug_not_info` RED→GREEN (TDD); `cargo test -p mudd && cargo test -p mud-gateway` green incl. `telnet_login`; `cargo test --workspace` 615 passed/1 ignored; `cargo clippy --workspace --all-targets` clean.
 - **Next:** L2 — command-level spans/fields (Task 3).
+
+## 2026-07-08 — L2: i18n missing-key tenant inheritance + dedup
+
+- **Spec:** §3.14.4.3 — a missing-key fallback MUST emit a structured warning that is never silently swallowed; the ambient `tenant` span (L1) MUST be inherited on that warning.
+- **Done:** `translate::warn_missing_once` deduplicates the `mud-i18n` missing-key warning to once per `(locale, key)` per process via a process-global `Mutex<HashSet<(String, String)>>`, guarding the hot render path from a single misspelled key flooding the log. `translate`'s signature is unchanged. Added `a_missing_key_warning_carries_the_ambient_tenant` (pins that the warning inherits `tenant` from an ambient span rather than taking it as an argument) and `a_repeated_missing_key_warns_only_once` (pins the dedup).
+- **Verify:** TDD — `a_repeated_missing_key_warns_only_once` RED (3 warnings) before the guard, GREEN after; `cargo test -p mud-i18n` 25 passed/1 ignored; `cargo test --workspace` all green; `cargo clippy --workspace --all-targets` clean; `cargo fmt --check` clean.
+- **Next:** Task 4+ of the logging-instrumentation sequence.
