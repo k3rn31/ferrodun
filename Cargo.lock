@@ -1072,6 +1072,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-test",
 ]
 
 [[package]]
@@ -1095,6 +1096,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-test",
 ]
 
 [[package]]

@@ -75,8 +75,12 @@ where
                 return finished.map_err(|err| GatewayError::RouterTask(Box::new(err)))?;
             }
             accepted = listener.accept() => {
-                let (socket, _addr) = accepted.map_err(GatewayError::Accept)?;
+                let (socket, addr) = accepted.map_err(GatewayError::Accept)?;
                 let session_id = minter.next()?;
+                // The peer IP is PII: logged exactly once, at debug, keyed by
+                // session_id for on-demand abuse correlation — never at info
+                // and never repeated per-frame (design §6).
+                tracing::debug!(%session_id, peer = %addr, "connection accepted");
                 let limiter = RateLimiter::new(config.rate, config.burst, Instant::now());
                 let span = tracing::info_span!("session", %session_id);
                 tokio::spawn(run_connection(socket, session_id, to_router.clone(), limiter).instrument(span));
