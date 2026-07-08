@@ -1474,3 +1474,10 @@ truth when this log drifts.
   `cargo test --workspace` 611 passed / 1 ignored (mudd's `telnet_login`
   integration test exercises the refactored loop).
 - **Next:** None — no external surface changed, no docs impact.
+
+## 2026-07-08 — L0: log subscriber config (format + span fields)
+
+- **Spec:** design §7 (2026-07-08-logging-strategy) — JSON opt-in, span-field emission, RUST_LOG default info.
+- **Done:** `FERRODUN_LOG_FORMAT=text|json` env knob in mudd; json mode emits current-span + span-list; operator Logging section in running-a-server.md.
+- **Verify:** `cargo test -p mudd` (parse tests), mkdocs --strict, clippy clean.
+- **Next:** L1 tenant/session spans.
