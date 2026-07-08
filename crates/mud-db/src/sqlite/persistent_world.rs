@@ -102,6 +102,7 @@ impl PersistentWorld {
     /// entity — foreign keys make this unreachable in a consistent file), a
     /// persisted location slug that names no loaded room
     /// ([`DbError::UnknownPlaceKey`]), or arena exhaustion while minting handles.
+    #[tracing::instrument(level = "debug", skip_all, err)]
     pub async fn load(db: TenantDb, tenant: TenantTag, places: PlaceMap) -> Result<Self, DbError> {
         let mut world = World::new(tenant);
         let mut by_key = HashMap::new();
