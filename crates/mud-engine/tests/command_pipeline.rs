@@ -5,7 +5,7 @@
 //! The puppet and location command layers are exercised for real; the account
 //! and channel layers are empty, as in M1. The session→caller resolution that
 //! M1-18/19 will own is supplied here by a hand-built [`SessionResolver`].
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 use std::sync::Arc;

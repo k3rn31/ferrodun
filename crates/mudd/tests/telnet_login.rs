@@ -1,7 +1,7 @@
 //! The M1-22 Definition of Done: a real telnet client driven end-to-end
 //! through `mudd`'s boot → gateway → World loop → session FSM → command
 //! pipeline, plus a concurrent two-tenant boot proving per-tenant isolation.
-#![allow(clippy::expect_used, clippy::panic)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used, clippy::panic)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-{expect,panic}-in-tests do not cover their helpers; both are permitted in tests per policy
 
 use std::path::Path;
 use std::time::Duration;

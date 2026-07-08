@@ -338,7 +338,6 @@ fn collect_kdl_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), WorldErro
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
 
     use tempfile::TempDir;
 

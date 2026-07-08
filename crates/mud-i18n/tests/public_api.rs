@@ -2,7 +2,7 @@
 //! and interpolation are unit-tested in `translate.rs`; this only confirms the
 //! public API composes for an external consumer (no broken re-export, the `t!`
 //! macro reaches the built-in catalog).
-#![allow(clippy::expect_used)] // test file; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use mud_i18n::{Catalog, Locale, MessageKey, t, translate};
 

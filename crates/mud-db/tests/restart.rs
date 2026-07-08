@@ -2,7 +2,7 @@
 //! intact. A clean restart restores location and inventory, with the durable
 //! `EntityKey` stable across the restart while the ephemeral `EntityId` is
 //! re-minted (§2.3.1.6).
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 

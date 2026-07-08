@@ -1,7 +1,7 @@
 //! The M1-21 Definition of Done: a gateway↔World loopback test in
 //! single-process mode (design doc §Testing). A stub World sits on the
 //! world-side in-memory endpoint; a raw `TcpStream` plays the telnet client.
-#![allow(clippy::expect_used, clippy::panic)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used, clippy::panic)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-{expect,panic}-in-tests do not cover their helpers; both are permitted in tests per policy
 
 use std::num::NonZeroU64;
 use std::time::Duration;

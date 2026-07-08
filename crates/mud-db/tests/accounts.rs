@@ -1,7 +1,7 @@
 //! The M1-18 acceptance path (§3.15.1): register → login → wrong-password
 //! reject → restart → login again. Plus puppet ownership: a created puppet is
 //! listed, located, and survives a restart with its location intact.
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 

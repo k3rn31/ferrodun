@@ -2,7 +2,7 @@
 //! real `mud-db`-backed `LoginBackend`, and login → wrong password → retry.
 //! Create-then-enter of a *new* puppet is deferred to M1-22 (live hydration);
 //! it is unit-tested with a fake backend in the `mud-engine` `session` module.
-#![allow(clippy::expect_used)] // integration test; mirrors mud-db/tests/accounts.rs
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 

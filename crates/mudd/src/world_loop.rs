@@ -16,6 +16,18 @@ use tokio::time::MissedTickBehavior;
 use crate::backend::DbBackend;
 use crate::places::WorldPlaces;
 
+/// One tenant's assembled service stack (design §Boot): the durable world plus
+/// the session, command, and place machinery that [`run`] threads through the
+/// tick/route loop and into [`handle_input`].
+pub struct TenantRuntime {
+    pub world: Arc<Mutex<PersistentWorld>>,
+    pub backend: DbBackend,
+    pub sessions: SessionService,
+    pub pipeline: Pipeline,
+    pub builtins: Vec<Command>,
+    pub places: WorldPlaces,
+}
+
 /// Drives one tenant's World: ticks the durable scheduler and routes gateway
 /// frames arriving over `endpoint` to the session driver and command
 /// pipeline. Returns `Ok(())` when the gateway closes the channel cleanly;
@@ -25,19 +37,10 @@ use crate::places::WorldPlaces;
 ///
 /// Returns an error if the resume handshake fails, the durable tick fails, the
 /// IPC channel faults, or the per-run command-id space is exhausted.
-// LINT: each parameter is a distinct piece of one tenant's assembled stack
-// (design §Boot); bundling them into a struct would just move the same eight
-// fields without adding a meaningful abstraction (single call site).
-#[allow(clippy::too_many_arguments)]
 pub async fn run(
     mut endpoint: InMemoryEndpoint<WorldFrame, GatewayFrame>,
     world_id: WorldId,
-    world: Arc<Mutex<PersistentWorld>>,
-    backend: DbBackend,
-    mut sessions: SessionService,
-    mut pipeline: Pipeline,
-    builtins: Vec<Command>,
-    places: WorldPlaces,
+    mut rt: TenantRuntime,
 ) -> anyhow::Result<()> {
     let live = accept_resume(&mut endpoint, world_id)
         .await
@@ -54,7 +57,7 @@ pub async fn run(
             _ = ticker.tick() => {
                 // Fail-stop on DbError: `?` ends the loop, `run` returns Err,
                 // main exits non-zero, the supervisor restarts (design §8).
-                let events = world.lock().await.tick().await.context("durable tick")?;
+                let events = rt.world.lock().await.tick().await.context("durable tick")?;
                 for event in events {
                     log_tick_event(&event);
                 }
@@ -62,13 +65,13 @@ pub async fn run(
             frame = endpoint.recv() => match frame.context("ipc recv")? {
                 None => return Ok(()), // gateway closed cleanly
                 Some(GatewayFrame::Connect(connect)) => {
-                    for output in sessions.connect(connect.session_id) {
+                    for output in rt.sessions.connect(connect.session_id) {
                         endpoint.send(WorldFrame::Output(output)).await.context("send output")?;
                     }
                 }
-                Some(GatewayFrame::Disconnect(disconnect)) => sessions.disconnect(disconnect.session_id),
+                Some(GatewayFrame::Disconnect(disconnect)) => rt.sessions.disconnect(disconnect.session_id),
                 Some(GatewayFrame::Input(input)) => {
-                    handle_input(&mut endpoint, &world, &backend, &mut sessions, &mut pipeline, &builtins, &places, input).await?;
+                    handle_input(&mut endpoint, &mut rt, input).await?;
                 }
                 Some(GatewayFrame::Resume(_)) => {
                     tracing::warn!("unexpected mid-stream resume frame dropped");
@@ -108,22 +111,15 @@ fn log_tick_event(event: &TickEvent) {
 /// Routes one input line: pre-login input goes through the session FSM,
 /// in-world input through the command pipeline. Never holds the world lock
 /// across `sessions.on_input`; it is acquired only for the in-world dispatch.
-// LINT: mirrors `run`'s bundle of one tenant's assembled stack, plus the
-// frame being routed; a struct would just move these fields (single call site).
-#[allow(clippy::too_many_arguments)]
 async fn handle_input(
     endpoint: &mut InMemoryEndpoint<WorldFrame, GatewayFrame>,
-    world: &Arc<Mutex<PersistentWorld>>,
-    backend: &DbBackend,
-    sessions: &mut SessionService,
-    pipeline: &mut Pipeline,
-    builtins: &[Command],
-    places: &WorldPlaces,
+    rt: &mut TenantRuntime,
     input: SessionInput,
 ) -> anyhow::Result<()> {
     let session_id = input.session_id;
-    match sessions
-        .on_input(session_id, input.line.as_str(), backend)
+    match rt
+        .sessions
+        .on_input(session_id, input.line.as_str(), &rt.backend)
         .await
     {
         Routing::Login { outputs, close } => {
@@ -138,13 +134,17 @@ async fn handle_input(
                     .send(WorldFrame::Close(SessionClose { session_id }))
                     .await
                     .context("send close")?;
-                sessions.disconnect(session_id);
+                rt.sessions.disconnect(session_id);
             }
         }
         Routing::InWorld => {
-            let mut guard = world.lock().await;
-            let dispatched =
-                pipeline.dispatch(guard.world(), places, &sessions.resolver(builtins), &input);
+            let mut guard = rt.world.lock().await;
+            let dispatched = rt.pipeline.dispatch(
+                guard.world(),
+                &rt.places,
+                &rt.sessions.resolver(&rt.builtins),
+                &input,
+            );
             match dispatched {
                 Ok(outcome) => {
                     for effect in outcome.effects {
@@ -162,7 +162,7 @@ async fn handle_input(
                             .send(WorldFrame::Close(SessionClose { session_id }))
                             .await
                             .context("send close")?;
-                        sessions.disconnect(session_id);
+                        rt.sessions.disconnect(session_id);
                     }
                 }
                 Err(PipelineError::UnknownSession(session)) => {

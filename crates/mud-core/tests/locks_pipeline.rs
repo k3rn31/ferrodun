@@ -1,6 +1,6 @@
 //! The lock DSL end-to-end through the public surface: `parse` → `resolve` →
 //! `Lock::evaluate`, plus the error surfaces at each stage.
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use mud_core::{Lock, LockContext, ResolveError, parse, resolve};
 

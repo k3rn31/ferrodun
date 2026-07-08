@@ -1,7 +1,7 @@
 //! End-to-end mutation flow through the public write model: `Scheduler` drives
 //! a `World` over several ticks, crossing scheduler → world → arena →
 //! side-tables. Black-box: only the crate's public surface is used.
-#![allow(clippy::expect_used)] // test helpers; mirrors `allow-expect-in-tests`
+#![allow(clippy::expect_used)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-expect-in-tests does not cover their helpers; expect() is permitted in tests per policy
 
 use std::num::NonZeroU64;
 

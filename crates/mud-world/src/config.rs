@@ -142,7 +142,6 @@ impl TenantConfig {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
     // `figment::Jail` closures return `Result<(), figment::Error>`; that error is
     // large, but it is the test harness's type, not ours.
     #![allow(clippy::result_large_err)]
