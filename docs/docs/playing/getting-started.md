@@ -48,8 +48,9 @@ Password:
 Confirm password:
 ```
 
-If the two entries don't match, you're asked to start the password step
-again. If the name is already taken, you're told so and can pick another.
+If the two entries don't match, you're returned to the connection prompt —
+type `register <name>` again to retry. If the name is already taken, you're
+told so and can pick another the same way.
 
 ## Choosing your character
 

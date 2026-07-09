@@ -32,8 +32,9 @@ those in the room you enter see you arrive.
 | `say <message>` | Speak aloud. |
 
 Everyone else in your room hears what you say. Your message is capped at 4 KiB.
-Terminal control codes and color markup you type are shown **literally** — you
-cannot inject styling or escape sequences into what others see.
+Terminal control codes you type are stripped, and any color markup is shown
+**literally** — you cannot inject styling or escape sequences into what
+others see.
 
 ## Who's around and leaving
 
