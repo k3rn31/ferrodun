@@ -851,9 +851,11 @@ plain text — <a href="https://kdl.dev">KDL</a> for structure and a small TOML 
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">start_room</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;town_square&quot;</span><span class="w">  </span><span class="c1"># required: the slug of the room new players start in</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">banner</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;welcome.kdl&quot;</span><span class="w">  </span><span class="c1"># optional: banner file, relative to the tenant folder</span>
 </code></pre></div>
-<p>Any value may be overridden by an environment variable prefixed with
-<code>FERRODUN_</code>. For example, <code>FERRODUN_START_ROOM=secret_lair</code> overrides
-<code>start_room</code> without editing the file.</p>
+<p>This file is the whole story for a tenant's configuration: each tenant is
+described entirely by the <code>config.toml</code> in its own folder. There are no
+environment-variable overrides for tenant settings, so nothing outside the
+folder can quietly change one tenant — or, in a multi-tenant server, all of
+them at once.</p>
 <h2 id="welcome-banner-welcomekdl">Welcome banner (<code>welcome.kdl</code>)<a class="headerlink" href="#welcome-banner-welcomekdl" title="Permanent link">&para;</a></h2>
 <p>The banner is shown to a connection before login. It is a single KDL node with one
 string:</p>
