@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use mud_net::{Burst, SustainedRate};
-use mudd::{ServerConfig, TenantEntry};
+use mudd::{LogFormat, ServerConfig, TenantEntry};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -102,6 +102,7 @@ fn single_tenant_config(dir: &Path) -> ServerConfig {
             dir: dir.to_path_buf(),
             listen: "127.0.0.1:0".parse().expect("addr"),
         }],
+        log_format: LogFormat::default(),
     }
 }
 
@@ -165,6 +166,7 @@ async fn two_tenants_serve_independent_logins_at_once() {
                 listen: "127.0.0.1:0".parse().expect("addr"),
             },
         ],
+        log_format: LogFormat::default(),
     };
 
     let (addrs, _tasks) = mudd::boot(config).await.expect("boot must succeed");
@@ -205,6 +207,7 @@ async fn duplicate_tenant_tags_fail_boot() {
                 listen: "127.0.0.1:0".parse().expect("addr"),
             },
         ],
+        log_format: LogFormat::default(),
     };
 
     assert!(

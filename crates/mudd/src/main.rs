@@ -1,28 +1,8 @@
 use anyhow::Context;
 use clap::Parser;
 use mudd::boot::boot;
-use mudd::config::{Cli, ServerConfig};
+use mudd::config::{Cli, LogFormat, ServerConfig};
 use tracing_subscriber::EnvFilter;
-
-/// Wire format for the process log stream, selected by `FERRODUN_LOG_FORMAT`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LogFormat {
-    Text,
-    Json,
-}
-
-/// Parses `FERRODUN_LOG_FORMAT`. Absent means text; anything but
-/// `text`/`json` is a startup error — fail fast rather than silently
-/// mis-formatting the log stream an aggregator depends on.
-fn parse_log_format(raw: Option<&str>) -> anyhow::Result<LogFormat> {
-    match raw {
-        None | Some("text") => Ok(LogFormat::Text),
-        Some("json") => Ok(LogFormat::Json),
-        Some(other) => anyhow::bail!(
-            "unknown FERRODUN_LOG_FORMAT {other:?} (expected \"text\" or \"json\")"
-        ),
-    }
-}
 
 /// Installs the process-global subscriber. JSON mode emits current-span and
 /// span-list fields so the tenant/session/command span taxonomy (design §4)
@@ -46,25 +26,24 @@ fn init_tracing(format: LogFormat) {
 /// configured tenant (PLAN M1-22). Fail-stop: any tenant task fault or a
 /// panicked task ends the process (design §8).
 fn main() -> anyhow::Result<()> {
-    let format = {
-        let raw = std::env::var("FERRODUN_LOG_FORMAT").ok();
-        parse_log_format(raw.as_deref())?
-    };
-    init_tracing(format);
-
+    // Resolve config before installing the subscriber so the log format is
+    // itself a configured value (flag > MUDD_ env > config.toml > default).
+    // Nothing logs before `boot`, so a config error surfacing here without a
+    // tracing subscriber loses no diagnostics.
     let cli = Cli::parse();
+    let config = ServerConfig::resolve(&cli)?;
+    init_tracing(config.log_format);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("building tokio runtime")?;
-    runtime.block_on(async_main(cli))
+    runtime.block_on(async_main(config))
 }
 
 /// Boots every configured tenant and runs until shutdown is requested or a
 /// tenant task ends.
-async fn async_main(cli: Cli) -> anyhow::Result<()> {
-    let config = ServerConfig::resolve(&cli)?;
+async fn async_main(config: ServerConfig) -> anyhow::Result<()> {
     let (addrs, mut tasks) = boot(config).await?;
     for addr in &addrs {
         tracing::info!(%addr, "tenant listening");
@@ -88,35 +67,5 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
                 Err(anyhow::anyhow!(join_error)).context("tenant task panicked")
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn absent_format_defaults_to_text() {
-        let format = parse_log_format(None).expect("default log format must parse");
-        assert_eq!(format, LogFormat::Text);
-    }
-
-    #[test]
-    fn text_and_json_parse() {
-        assert_eq!(
-            parse_log_format(Some("text")).expect("text must parse"),
-            LogFormat::Text
-        );
-        assert_eq!(
-            parse_log_format(Some("json")).expect("json must parse"),
-            LogFormat::Json
-        );
-    }
-
-    #[test]
-    fn an_unknown_format_is_a_startup_error() {
-        let err = parse_log_format(Some("yaml"))
-            .expect_err("unknown log format must fail fast, not silently default");
-        assert!(err.to_string().contains("FERRODUN_LOG_FORMAT"));
     }
 }
