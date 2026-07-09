@@ -55,6 +55,7 @@ nav:
       - Rooms: building/rooms.md
       - Regions: building/regions.md
       - Color & styling: building/styling.md
+      - Localization: building/localization.md
   - Operating:
       - Running a server: operating/running-a-server.md
 
