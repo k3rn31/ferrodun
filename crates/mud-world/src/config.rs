@@ -1,14 +1,15 @@
 //! The per-tenant configuration loaded from `<tenant_dir>/config.toml` (§4.1).
 //!
 //! One folder per tenant (SPEC §5): the directory holds `config.toml`, the
-//! `world/` room files, and the welcome banner. Configuration is layered with
-//! `figment` — the TOML file is the base, then `FERRODUN_`-prefixed environment
-//! variables override it.
+//! `world/` room files, and the welcome banner. The file is the sole source of
+//! a tenant's configuration — there is deliberately no environment override, so
+//! that in a multi-tenant process no ambient variable can silently reshape one
+//! tenant (or, worse, all of them at once).
 
 use std::path::{Component, Path, PathBuf};
 
 use figment::Figment;
-use figment::providers::{Env, Format, Toml};
+use figment::providers::{Format, Toml};
 use mud_core::TenantTag;
 use mud_i18n::Locale;
 use serde::Deserialize;
@@ -77,8 +78,7 @@ fn ensure_contained(field: &'static str, path: &Path) -> Result<(), WorldError> 
 }
 
 impl TenantConfig {
-    /// Loads `<tenant_dir>/config.toml`, layering `FERRODUN_`-prefixed environment
-    /// overrides on top of the file.
+    /// Loads `<tenant_dir>/config.toml`.
     ///
     /// # Errors
     ///
@@ -91,7 +91,6 @@ impl TenantConfig {
         let tenant_dir = tenant_dir.as_ref();
         let mut config: TenantConfig = Figment::new()
             .merge(Toml::file(tenant_dir.join("config.toml")))
-            .merge(Env::prefixed("FERRODUN_"))
             .extract()
             .map_err(|error| WorldError::Config(Box::new(error)))?;
         ensure_contained("banner", &config.banner)?;
@@ -157,18 +156,6 @@ mod tests {
             assert_eq!(config.start_room(), "town_square");
             assert_eq!(config.banner_path(), jail.directory().join("welcome.kdl"));
             assert_eq!(config.world_dir(), jail.directory().join("world"));
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn environment_overrides_the_file() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file("config.toml", "start_room = \"town_square\"")?;
-            jail.set_env("FERRODUN_START_ROOM", "secret_lair");
-            let config = TenantConfig::load(jail.directory()).expect("config loads");
-
-            assert_eq!(config.start_room(), "secret_lair");
             Ok(())
         });
     }
