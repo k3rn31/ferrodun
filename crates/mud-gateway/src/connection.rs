@@ -73,7 +73,8 @@ pub(crate) async fn run_connection<S>(
         ExitCause::ClientGone => "client gone",
         ExitCause::WorldClosed => "world closed",
     };
-    tracing::debug!(%session_id, cause = cause_label, "connection closed");
+    // session_id comes from the ambient session span; don't repeat it here.
+    tracing::debug!(cause = cause_label, "connection closed");
 
     match cause {
         ExitCause::ClientGone => {

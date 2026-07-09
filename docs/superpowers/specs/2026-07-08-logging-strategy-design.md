@@ -50,16 +50,19 @@ The workspace sorts into two layers, and this is the governing rule:
 - **Domain / pure / sans-IO crates emit no logs.** They surface outcomes as
   typed values (`Result`, `TickEvent`, `EffectResult`, `ParseOutcome`) and
   take **no `tracing` dependency**. These are: `mud-core`, `mud-cmd`,
-  `mud-account`, `mud-session`, `mud-net`, `mud-schema`.
+  `mud-account`, `mud-session`, `mud-schema`.
 - **Boundary / orchestration crates instrument.** They own the task /
   session / request boundaries where context exists: `mudd`, `mud-gateway`,
   `mud-ipc`, `mud-db`, `mud-engine`, `mud-i18n`.
 
-`mud-world` is a special case: its only logging is the SPEC/PLAN-mandated
-builder warnings (degraded markup §3.20.2.2 — already present), which fit the
-`warn` category in §3. Its load *outcome* (the "world loaded, listening"
-readiness line) is emitted by `mudd`, which owns tenant boot, so `mud-world`
-needs no lifecycle instrumentation of its own and has no dedicated PR below.
+`mud-net` and `mud-world` are exceptions to the "no `tracing`" rule above:
+each already carries the SPEC-mandated builder `warn` for broken content
+(§3.20.2.2 — an unknown style role in `mud-net`'s renderer, degraded markup in
+`mud-world`), which fits the `warn` category in §3. That builder warning is
+their *only* log; operational outcomes still surface as typed values, and
+`mud-world`'s load *outcome* (the "world loaded, listening" readiness line) is
+emitted by `mudd`, which owns tenant boot. So neither gains lifecycle
+instrumentation of its own or a dedicated PR below.
 
 **No new `mud-obs` crate** (YAGNI). Conventions live in this doc and a
 `docs/` operator page; subscriber setup stays in `mudd`. Secrets are already

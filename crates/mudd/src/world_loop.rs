@@ -106,7 +106,7 @@ fn log_tick_event(event: &TickEvent) {
 /// Routes one input line: pre-login input goes through the session FSM,
 /// in-world input through the command pipeline. Never holds the world lock
 /// across `sessions.on_input`; it is acquired only for the in-world dispatch.
-#[tracing::instrument(name = "session", level = "info", skip_all, fields(session_id = %input.session_id))]
+#[tracing::instrument(name = "world_input", level = "info", skip_all, fields(session_id = %input.session_id))]
 async fn handle_input(
     endpoint: &mut InMemoryEndpoint<WorldFrame, GatewayFrame>,
     rt: &mut TenantRuntime,
