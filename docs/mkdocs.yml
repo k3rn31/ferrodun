@@ -56,7 +56,7 @@ nav:
       - Regions: building/regions.md
       - Color & styling: building/styling.md
   - Operating:
-      - Running a server: running-a-server.md
+      - Running a server: operating/running-a-server.md
 
 plugins:
   - search

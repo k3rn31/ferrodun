@@ -17,7 +17,7 @@ mudd --tenant-dir /path/to/tenant
 
 This serves that tenant over telnet on `127.0.0.1:4000`. The tenant directory
 holds the world's `config.toml`, its `world/` room files, and its welcome
-banner — see [World files](building/world-files.md).
+banner — see [World files](../building/world-files.md).
 
 ## Server configuration
 
