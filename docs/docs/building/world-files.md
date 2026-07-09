@@ -31,9 +31,11 @@ start_room = "town_square"  # required: the slug of the room new players start i
 banner     = "welcome.kdl"  # optional: banner file, relative to the tenant folder
 ```
 
-Any value may be overridden by an environment variable prefixed with
-`FERRODUN_`. For example, `FERRODUN_START_ROOM=secret_lair` overrides
-`start_room` without editing the file.
+This file is the whole story for a tenant's configuration: each tenant is
+described entirely by the `config.toml` in its own folder. There are no
+environment-variable overrides for tenant settings, so nothing outside the
+folder can quietly change one tenant — or, in a multi-tenant server, all of
+them at once.
 
 ## Welcome banner (`welcome.kdl`)
 
