@@ -78,3 +78,12 @@ These are hard constraints, not preferences (cf. SPEC §1.7):
 - Code and comments in English. Comment *why*, not *how*.
 - Follow TDD: failing test → minimal code → refactor.
 - Must compile clean under `cargo clippy` (workspace denies `unwrap_used`, `expect_used`, `print_stdout`, `print_stderr`).
+
+## Logging
+
+Instrumentation follows `docs/superpowers/specs/2026-07-08-logging-strategy-design.md`; consult it before adding logs. The essentials:
+
+- **Log at boundaries, stay silent in the core.** Pure/domain crates (`mud-core`, `mud-cmd`, `mud-account`, `mud-session`, `mud-schema`) take no `tracing` dependency and emit nothing — they return typed outcomes. Only boundary crates instrument. (`mud-net`/`mud-world` are the sole exception: one builder `warn` each for broken content.)
+- **Two level razors.** `info` = boot/shutdown heartbeat only (a healthy server is near-silent at `info`); `warn` = broken *builder content* only; otherwise `error` if an operator must act, `debug` for per-session diagnostics, `trace` for the per-tick firehose. Never `warn` on the 20 Hz tick hot path.
+- **Never-log discipline.** No passwords, hashes, email, tokens, usernames, raw player input, or payload bytes. Log `account_id` not username; frame diagnostics are length-only; the peer IP is logged once at `debug`. Enforce it with a negative test (`!logs_contain(secret)`).
+- **Context comes from ambient spans** (`tenant`, `session`), not per-call plumbing — open the span at the boundary and downstream events inherit it.

@@ -20,6 +20,18 @@ use serde::{Deserialize, Serialize};
 const DEFAULT_LISTEN: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 4000);
 
+/// Wire format for the process log stream. Server-wide: the subscriber is
+/// process-global, so this cannot vary per tenant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    /// Human-readable text with a span prefix.
+    #[default]
+    Text,
+    /// One JSON object per line, for log aggregators.
+    Json,
+}
+
 /// Command-line arguments; every flag overrides the server config (PLAN M1-22).
 #[derive(Debug, clap::Parser)]
 pub struct Cli {
@@ -38,6 +50,9 @@ pub struct Cli {
     /// Per-session command burst allowance.
     #[arg(long)]
     pub burst: Option<NonZeroU32>,
+    /// Log wire format: `text` (default) or `json`.
+    #[arg(long, value_enum)]
+    pub log_format: Option<LogFormat>,
 }
 
 /// One registered tenant: its folder and its telnet listen address.
@@ -53,6 +68,7 @@ pub struct ServerConfig {
     pub rate: SustainedRate,
     pub burst: Burst,
     pub tenants: Vec<TenantEntry>,
+    pub log_format: LogFormat,
 }
 
 /// Untyped shape extracted from figment before conversion to typed values.
@@ -64,6 +80,8 @@ struct RawServerConfig {
     burst: NonZeroU32,
     #[serde(default)]
     tenants: Vec<TenantEntry>,
+    #[serde(default)]
+    log_format: LogFormat,
 }
 
 impl Default for RawServerConfig {
@@ -72,6 +90,7 @@ impl Default for RawServerConfig {
             rate: default_rate(),
             burst: default_burst(),
             tenants: Vec::new(),
+            log_format: LogFormat::default(),
         }
     }
 }
@@ -111,6 +130,7 @@ impl ServerConfig {
 
         let rate = cli.rate.unwrap_or(raw.rate);
         let burst = cli.burst.unwrap_or(raw.burst);
+        let log_format = cli.log_format.unwrap_or(raw.log_format);
 
         let tenants = match &cli.tenant_dir {
             Some(dir) => vec![TenantEntry {
@@ -137,6 +157,7 @@ impl ServerConfig {
             rate: SustainedRate::new(rate),
             burst: Burst::new(burst),
             tenants,
+            log_format,
         })
     }
 }
@@ -177,6 +198,7 @@ mod tests {
             listen: None,
             rate: None,
             burst: None,
+            log_format: None,
         }
     }
 
@@ -224,6 +246,7 @@ listen = "127.0.0.1:4002"
                 listen: None,
                 rate: None,
                 burst: None,
+                log_format: None,
             };
             let config = ServerConfig::resolve(&cli).expect("config resolves");
 
@@ -285,6 +308,7 @@ listen = "127.0.0.1:4001"
                 listen: None,
                 rate: None,
                 burst: None,
+                log_format: None,
             };
             let env_config = ServerConfig::resolve(&cli_env_only).expect("config resolves");
             assert_eq!(
@@ -306,6 +330,112 @@ listen = "127.0.0.1:4001"
     }
 
     #[test]
+    fn log_format_defaults_to_text() {
+        figment::Jail::expect_with(|jail| {
+            let config_home = jail.directory().to_path_buf();
+            jail.set_env("XDG_CONFIG_HOME", config_home.display());
+            let cli = cli_with_tenant_dir("/t");
+            let config = ServerConfig::resolve(&cli).expect("config resolves");
+
+            assert_eq!(config.log_format, LogFormat::Text);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn log_format_reads_from_the_config_file() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "config.toml",
+                r#"
+log_format = "json"
+
+[[tenants]]
+dir = "/tenants/a"
+listen = "127.0.0.1:4001"
+"#,
+            )?;
+            let cli = Cli {
+                config: Some(jail.directory().join("config.toml")),
+                tenant_dir: None,
+                listen: None,
+                rate: None,
+                burst: None,
+                log_format: None,
+            };
+            let config = ServerConfig::resolve(&cli).expect("config resolves");
+
+            assert_eq!(config.log_format, LogFormat::Json);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn env_sets_log_format_and_the_flag_overrides_it() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "config.toml",
+                r#"
+[[tenants]]
+dir = "/tenants/a"
+listen = "127.0.0.1:4001"
+"#,
+            )?;
+            jail.set_env("MUDD_LOG_FORMAT", "json");
+
+            let cli_env_only = Cli {
+                config: Some(jail.directory().join("config.toml")),
+                tenant_dir: None,
+                listen: None,
+                rate: None,
+                burst: None,
+                log_format: None,
+            };
+            let env_config = ServerConfig::resolve(&cli_env_only).expect("config resolves");
+            assert_eq!(env_config.log_format, LogFormat::Json);
+
+            let cli_with_flag = Cli {
+                log_format: Some(LogFormat::Text),
+                ..cli_env_only
+            };
+            let flag_config = ServerConfig::resolve(&cli_with_flag).expect("config resolves");
+            assert_eq!(flag_config.log_format, LogFormat::Text);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn an_unknown_log_format_is_a_startup_error() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "config.toml",
+                r#"
+log_format = "yaml"
+
+[[tenants]]
+dir = "/tenants/a"
+listen = "127.0.0.1:4001"
+"#,
+            )?;
+            let cli = Cli {
+                config: Some(jail.directory().join("config.toml")),
+                tenant_dir: None,
+                listen: None,
+                rate: None,
+                burst: None,
+                log_format: None,
+            };
+
+            let result = ServerConfig::resolve(&cli);
+            assert!(
+                result.is_err(),
+                "unknown log format must fail fast, got {result:?}"
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
     fn an_empty_registry_without_tenant_dir_is_an_error() {
         figment::Jail::expect_with(|jail| {
             let config_home = jail.directory().to_path_buf();
@@ -316,6 +446,7 @@ listen = "127.0.0.1:4001"
                 listen: None,
                 rate: None,
                 burst: None,
+                log_format: None,
             };
 
             let result = ServerConfig::resolve(&cli);
@@ -345,6 +476,7 @@ listen = "127.0.0.1:4001"
                 listen: None,
                 rate: None,
                 burst: None,
+                log_format: None,
             };
 
             let result = ServerConfig::resolve(&cli);

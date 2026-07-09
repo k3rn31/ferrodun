@@ -1474,3 +1474,59 @@ truth when this log drifts.
   `cargo test --workspace` 611 passed / 1 ignored (mudd's `telnet_login`
   integration test exercises the refactored loop).
 - **Next:** None — no external surface changed, no docs impact.
+
+## 2026-07-08 — L0: log subscriber config (format + span fields)
+
+- **Spec:** design §7 (2026-07-08-logging-strategy) — JSON opt-in, span-field emission, RUST_LOG default info.
+- **Done:** `FERRODUN_LOG_FORMAT=text|json` env knob in mudd; json mode emits current-span + span-list; operator Logging section in running-a-server.md.
+- **Verify:** `cargo test -p mudd` (parse tests), mkdocs --strict, clippy clean.
+- **Next:** L1 tenant/session spans.
+
+## 2026-07-08 — L1: tenant/session spans + level reclassification
+
+- **Spec:** design §3–§4 (2026-07-08-logging-strategy) — `info` boot/shutdown only, `warn` builder-content only, tick-hot-path never `warn`; ambient tenant/session context via spans.
+- **Done:** `tenant{tenant, world_id}` span in `boot.rs` wraps both per-tenant tasks (gateway serve + world loop); `session{session_id}` span on `mud-gateway`'s per-connection spawn and on `world_loop::handle_input`. `log_tick_event` reclassified: `Created` → debug, `PreconditionFailed`/`Rejected` → trace (effect/precondition payloads omitted, non-exhaustive fallback → error). Demoted three routine-drop warns (mid-stream resume, unknown-session dispatch, unknown-session input) to debug and unified their field name to `session_id`. Added `error!` on both fatal `join_next` arms in `main.rs` (`?error` for the anyhow chain, `%join_error` for panics).
+- **Verify:** `cargo test -p mudd entity_creation_logs_at_debug_not_info` RED→GREEN (TDD); `cargo test -p mudd && cargo test -p mud-gateway` green incl. `telnet_login`; `cargo test --workspace` 615 passed/1 ignored; `cargo clippy --workspace --all-targets` clean.
+- **Next:** L2 — command-level spans/fields (Task 3).
+
+## 2026-07-08 — L2: i18n missing-key tenant inheritance + dedup
+
+- **Spec:** §3.14.4.3 — a missing-key fallback MUST emit a structured warning that is never silently swallowed; the ambient `tenant` span (L1) MUST be inherited on that warning.
+- **Done:** `translate::warn_missing_once` deduplicates the `mud-i18n` missing-key warning to once per `(locale, key)` per process via a process-global `Mutex<HashSet<(String, String)>>`, guarding the hot render path from a single misspelled key flooding the log. `translate`'s signature is unchanged. Added `a_missing_key_warning_carries_the_ambient_tenant` (pins that the warning inherits `tenant` from an ambient span rather than taking it as an argument) and `a_repeated_missing_key_warns_only_once` (pins the dedup).
+- **Verify:** TDD — `a_repeated_missing_key_warns_only_once` RED (3 warnings) before the guard, GREEN after; `cargo test -p mud-i18n` 25 passed/1 ignored; `cargo test --workspace` all green; `cargo clippy --workspace --all-targets` clean; `cargo fmt --check` clean.
+- **Next:** Task 4+ of the logging-instrumentation sequence.
+
+## 2026-07-08 — L3: mud-db lifecycle + err instrumentation
+
+- **Spec:** design §3/§8-L3 — one `info` "tenant database ready" line per tenant at open (boot heartbeat); query/lifecycle failures self-log at `error` named by operation via `#[instrument(err)]`.
+- **Done:** Added `tracing`/`tracing-test` deps to `mud-db`. `TenantDb::open` now emits `info!(db = %path.display(), "tenant database ready")` once per open and carries `#[tracing::instrument(level = "debug", skip_all, fields(dir = ..), err)]`; `TenantDb::world_id` and `PersistentWorld::load` got attribute-only `#[tracing::instrument(level = "debug", skip_all, err)]`. `tick()` and the per-account methods stay bare (tick's failure is already fatal-logged at the Task 2 main arm; `mudd::backend` already `error!`-logs each account fault, so instrumenting both layers would double-log). Audited `DbError`'s `#[error(...)]` messages: all variants are value-free except non-sensitive slugs/ids/tenant-tags (room slugs, account-state tokens, puppet names, entity keys) — no password/hash/email/token/username ever flows through Display.
+- **Verify:** TDD — `opening_a_tenant_db_logs_readiness_once` RED (nothing logged) before instrumenting `open`, GREEN after; `cargo test -p mud-db` 39 passed; `cargo test --workspace` 618 passed/1 ignored; `cargo clippy --workspace --all-targets` clean.
+- **Next:** Task 5+ of the logging-instrumentation sequence.
+
+## 2026-07-08 — L4: ipc handshake and gateway connection lifecycle
+
+- **Spec:** design §3/§6/§8-L4 — handshake accept/reject and frame diagnostics at debug, length-only frame logging (never payload bytes), peer IP logged exactly once at debug, mismatch warns demoted (fatal error surfaces at the Task 2 boundary).
+- **Done:** `mud-ipc::handshake` — `announce_sessions`/`accept_resume` log `"ipc resume handshake accepted"` at debug with `world_id`/`live_sessions` count on success, and a debug line on each silent rejection (unexpected frame, peer closed); `check_schema_version`/`check_world_id` demoted from `warn!` to `debug!` with a rationale comment (mismatch already propagates as a typed error → fatal `error` at the boundary). `mud-ipc::transport` — outbound oversize, inbound decode failure, and inbound oversize now emit a debug diagnostic carrying only `size`/`len`/`max`, never the bytes. `mud-gateway::lib` accept arm logs `"connection accepted"` at debug with `session_id` and `peer = %addr` — the one place the peer IP is ever logged. `mud-gateway::connection::run_connection` logs `"connection closed"` at debug with `session_id` and a `cause` label (`"client gone"`/`"world closed"`). Added `tracing-test` dev-dep to both crates.
+- **Verify:** TDD — `a_successful_handshake_logs_acceptance_at_debug` (mud-ipc) RED (silent success) before instrumenting, GREEN after; `a_client_hangup_logs_the_close_at_debug` (mud-gateway) RED before the close log, GREEN after; `cargo test -p mud-ipc && cargo test -p mud-gateway` all green; `cargo test --workspace` 620 passed/1 ignored; `cargo clippy --workspace --all-targets` clean.
+- **Next:** Task 6+ of the logging-instrumentation sequence.
+
+## 2026-07-08 — L5: auth outcome events in the session driver
+
+- **Spec:** design §3/§6/§8-L5 — login/register outcomes and the two `apply_terminal` transitions emit `debug` events keyed by `account_id`/`session_id`, never username or password.
+- **Done:** `mud-engine::session::perform` — the `Effect::Authenticate` and `Effect::Register` arms now log `"login authenticated"`/`"account registered"` (`account_id = %account.id`) on success and `"login rejected"`/`"registration rejected"` (`reason = ?reason`) on the domain-rejection branch; both `Err(BackendError)` arms stay silent since `mudd::backend` already `error!`-logs the underlying fault. `apply_terminal` logs `"session bound"` (`session_id`, `account_id`, `?entity`) on successful puppet resolution and `"session closed at login"` (`session_id`) on `Terminal::Closed`; `name` (a player-authored `PuppetName`) is never logged. Confirmed `LoginError`/`RegisterError` are data-free unit-variant enums (`UnknownUser`/`BadPassword`/`Suspended`/`Banned`, `UsernameTaken`) so `?reason` (Debug) carries no credential. No dependency change — `tracing`/`tracing-test` were already present in `mud-engine`.
+- **Verify:** TDD — `a_successful_login_logs_the_account_id_and_no_credentials` and `a_failed_login_logs_the_rejection_without_the_password` RED (no auth events existed) before instrumenting, GREEN after, both asserting the credential/username is absent from the logs; `cargo test -p mud-engine` 81 passed; `cargo test --workspace` 622 passed/1 ignored; `cargo clippy --workspace --all-targets` clean; `uv run mkdocs build --strict` clean (no doc change).
+- **Next:** none — L0–L5 complete; metrics/admin/journal/LLM spans deferred to M6/M7 per design §1.
+
+## 2026-07-09 — L0 follow-up: log format wired into server config
+
+- **Spec:** design §7 (subscriber config) + `mudd`'s config-precedence contract — the log wire format must be a first-class server-wide config value, not a raw `std::env::var` read bypassing figment/clap.
+- **Done:** moved `LogFormat` from `main.rs` into `mudd::config` (now `pub`, deriving `clap::ValueEnum` + serde `rename_all="lowercase"`), re-exported from the crate root. Added it to `Cli` as `--log-format`, to `RawServerConfig`/`ServerConfig`, and resolved it in `ServerConfig::resolve` with the standard precedence: default `text` < `log_format` in `config.toml` < `MUDD_LOG_FORMAT` env < `--log-format` flag. Renamed the knob from `FERRODUN_LOG_FORMAT` (the tenant-specific `mud-world` prefix) to `MUDD_LOG_FORMAT` (the server-wide prefix) since logging is process-global and cannot be tenant-specific. `main` now resolves config *before* `init_tracing` (nothing logs before `boot`, so a pre-logger config error loses no diagnostics); removed the hand-rolled `parse_log_format` — clap `ValueEnum` and serde now reject unknown values fail-fast. Updated `docs/docs/running-a-server.md` (config.toml example + Logging section: renamed var, documented flag/env/file precedence).
+- **Verify:** 4 new `config` tests — default is text, reads from `config.toml`, `MUDD_LOG_FORMAT` env with `--log-format` flag override, and an unknown value is a startup error; `mudd --help` lists `--log-format`, `--log-format yaml` rejected by clap with `[possible values: text, json]`; `cargo test --workspace` all suites green; `cargo clippy --workspace --all-targets` clean; `uv run mkdocs build --strict` clean.
+- **Next:** none — closes the L0 config-integration gap raised in review.
+
+## 2026-07-09 — L0–L5 review-nit cleanup
+
+- **Spec:** design §2/§6 — silent-core crate list must be accurate; boundary events should carry consistent ambient-span context.
+- **Done:** renamed the world-side `handle_input` span `session` → `world_input` so it no longer collides with `mud-gateway`'s per-connection `session` span (correlation stays via the `session_id` field). Moved `mud-gateway`'s `"connection accepted"` debug inside the session span (`span.in_scope`) so it carries the same context as `"connection closed"`; dropped the now-redundant explicit `session_id` field from both (the span supplies it). Corrected the design doc: `mud-net` is not in the "no `tracing`" list — it (like `mud-world`) already carries the §3.20.2.2 builder `warn` for broken content. Added a terse `## Logging` section to `CLAUDE.md` (boundaries-only, level razors, never-log, ambient spans).
+- **Verify:** `cargo test -p mud-gateway -p mudd` green (34 passed); `cargo clippy --workspace --all-targets` clean. Skipped: a unit test for `init_tracing`'s JSON arm — `.init()` is process-global-once and untestable without a subprocess harness; not worth the ceremony for a formatter-wiring nit.
+- **Next:** none.

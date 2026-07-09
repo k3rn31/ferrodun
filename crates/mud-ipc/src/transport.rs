@@ -131,6 +131,12 @@ where
     async fn send(&mut self, frame: S) -> Result<(), IpcError> {
         let bytes = encode(&frame).map_err(|e| IpcError::Codec(Box::new(e)))?;
         if bytes.len() > MAX_FRAME_BYTES {
+            // Length only — the payload may carry credentials (design §6).
+            tracing::debug!(
+                size = bytes.len(),
+                max = MAX_FRAME_BYTES,
+                "outbound ipc frame exceeds size cap"
+            );
             return Err(IpcError::FrameTooLarge {
                 size: Some(bytes.len()),
                 max: MAX_FRAME_BYTES,
@@ -143,9 +149,11 @@ where
     async fn recv(&mut self) -> Result<Option<R>, IpcError> {
         match self.framed.next().await {
             None => Ok(None),
-            Some(Ok(bytes)) => decode(&bytes)
-                .map(Some)
-                .map_err(|e| IpcError::Codec(Box::new(e))),
+            Some(Ok(bytes)) => decode(&bytes).map(Some).map_err(|e| {
+                // Length only — never the bytes (design §6).
+                tracing::debug!(len = bytes.len(), "inbound ipc frame failed to decode");
+                IpcError::Codec(Box::new(e))
+            }),
             Some(Err(err)) => Err(map_inbound_framing_error(err)),
         }
     }
@@ -160,6 +168,7 @@ fn map_inbound_framing_error(err: std::io::Error) -> IpcError {
         .get_ref()
         .is_some_and(|inner| inner.downcast_ref::<LengthDelimitedCodecError>().is_some())
     {
+        tracing::debug!(max = MAX_FRAME_BYTES, "inbound ipc frame exceeds size cap");
         return IpcError::FrameTooLarge {
             size: None,
             max: MAX_FRAME_BYTES,

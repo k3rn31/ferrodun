@@ -22,7 +22,7 @@ secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 
 [lints]
 workspace = true
@@ -30,3 +30,4 @@ workspace = true
 [dev-dependencies]
 figment = { version = "0.10.19", features = ["test"] }
 tempfile = "3.27.0"
+tracing-test = "0.2.6"

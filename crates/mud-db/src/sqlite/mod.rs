@@ -48,14 +48,18 @@ impl TenantDb {
     /// # Errors
     ///
     /// Returns [`DbError`] if the file cannot be opened or a migration fails.
+    #[tracing::instrument(level = "debug", skip_all, fields(dir = %data_dir.display()), err)]
     pub async fn open(data_dir: &Path) -> Result<Self, DbError> {
+        let path = data_dir.join(DATABASE_FILE);
         let options = SqliteConnectOptions::new()
-            .filename(data_dir.join(DATABASE_FILE))
+            .filename(&path)
             .create_if_missing(true)
             .foreign_keys(true);
 
         let pool = SqlitePoolOptions::new().connect_with(options).await?;
         MIGRATOR.run(&pool).await?;
+        // Once per tenant per boot: the design-§3 info heartbeat.
+        tracing::info!(db = %path.display(), "tenant database ready");
 
         Ok(Self { pool })
     }
@@ -76,6 +80,7 @@ impl TenantDb {
     /// # Errors
     ///
     /// Returns [`DbError`] on a query failure or a corrupt persisted id.
+    #[tracing::instrument(level = "debug", skip_all, err)]
     pub async fn world_id(&self) -> Result<WorldId, DbError> {
         // Random positive i64; NonZeroU64 rules out 0, the CHECK-ed single
         // row rules out a second value ever being written.
@@ -99,6 +104,7 @@ impl TenantDb {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use tracing_test::traced_test;
 
     async fn open_in(dir: &TempDir) -> TenantDb {
         TenantDb::open(dir.path())
@@ -130,6 +136,15 @@ mod tests {
             .await
             .expect("insert entity")
             .last_insert_rowid()
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn opening_a_tenant_db_logs_readiness_once() {
+        let dir = TempDir::new().expect("create tempdir");
+        let _db = open_in(&dir).await;
+
+        assert!(logs_contain("tenant database ready"));
     }
 
     #[tokio::test]

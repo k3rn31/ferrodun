@@ -7,4 +7,4 @@ mod places;
 mod world_loop;
 
 pub use boot::boot;
-pub use config::{Cli, ServerConfig, TenantEntry};
+pub use config::{Cli, LogFormat, ServerConfig, TenantEntry};

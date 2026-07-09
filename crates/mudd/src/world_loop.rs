@@ -74,7 +74,7 @@ pub async fn run(
                     handle_input(&mut endpoint, &mut rt, input).await?;
                 }
                 Some(GatewayFrame::Resume(_)) => {
-                    tracing::warn!("unexpected mid-stream resume frame dropped");
+                    tracing::debug!("unexpected mid-stream resume frame dropped");
                 }
                 Some(_) => {
                     // INVARIANT: GatewayFrame is #[non_exhaustive]; a future
@@ -87,30 +87,26 @@ pub async fn run(
     }
 }
 
-/// Logs one tick event at the level matching its player/operator relevance:
-/// entity creation is routine (`info`), precondition failures and arena
-/// rejections are worth an operator's attention (`warn`).
+/// Logs one tick event. Precondition failures and rejections are routine
+/// gameplay outcomes on the 20 Hz hot path — `trace`, never `warn`, or a
+/// blocked action floods the log (design §3). Effect/precondition payloads
+/// are omitted: they are `#[non_exhaustive]` and a future variant may carry
+/// player text (design §6 never-log rules).
 fn log_tick_event(event: &TickEvent) {
     match event {
-        TickEvent::Created { entity } => tracing::info!(?entity, "entity created"),
-        TickEvent::PreconditionFailed {
-            precondition,
-            effect,
-        } => {
-            tracing::warn!(?precondition, ?effect, "tick precondition failed");
-        }
-        TickEvent::Rejected { effect, error } => {
-            tracing::warn!(?effect, %error, "tick effect rejected");
-        }
-        // INVARIANT: TickEvent is #[non_exhaustive]; log unknown future
-        // variants rather than silently dropping them.
-        _ => tracing::warn!("unrecognized tick event"),
+        TickEvent::Created { entity } => tracing::debug!(?entity, "entity created"),
+        TickEvent::PreconditionFailed { .. } => tracing::trace!("tick precondition failed"),
+        TickEvent::Rejected { error, .. } => tracing::trace!(%error, "tick effect rejected"),
+        // INVARIANT: TickEvent is #[non_exhaustive]; an unknown variant means
+        // this build disagrees with itself — an operator-actionable fault.
+        _ => tracing::error!("unrecognized tick event"),
     }
 }
 
 /// Routes one input line: pre-login input goes through the session FSM,
 /// in-world input through the command pipeline. Never holds the world lock
 /// across `sessions.on_input`; it is acquired only for the in-world dispatch.
+#[tracing::instrument(name = "world_input", level = "info", skip_all, fields(session_id = %input.session_id))]
 async fn handle_input(
     endpoint: &mut InMemoryEndpoint<WorldFrame, GatewayFrame>,
     rt: &mut TenantRuntime,
@@ -167,7 +163,7 @@ async fn handle_input(
                 }
                 Err(PipelineError::UnknownSession(session)) => {
                     drop(guard);
-                    tracing::warn!(%session, "dispatch for unknown session dropped");
+                    tracing::debug!(session_id = %session, "dispatch for unknown session dropped");
                 }
                 Err(PipelineError::CommandIdExhausted) => {
                     drop(guard);
@@ -181,7 +177,38 @@ async fn handle_input(
                 }
             }
         }
-        Routing::Unknown => tracing::warn!(%session_id, "input for unknown session dropped"),
+        Routing::Unknown => tracing::debug!(%session_id, "input for unknown session dropped"),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use mud_core::{EntityId, Generation, SlotIndex, TenantTag, TickEvent};
+    use tracing_test::traced_test;
+
+    use super::log_tick_event;
+
+    #[test]
+    #[traced_test]
+    fn entity_creation_logs_at_debug_not_info() {
+        let entity = EntityId::new(
+            TenantTag::default(),
+            SlotIndex::new(1),
+            Generation::new(0).expect("generation 0 is in range"),
+        );
+        log_tick_event(&TickEvent::Created { entity });
+
+        logs_assert(|lines: &[&str]| {
+            let created: Vec<_> = lines
+                .iter()
+                .filter(|line| line.contains("entity created"))
+                .collect();
+            match created.as_slice() {
+                [line] if line.contains("DEBUG") => Ok(()),
+                [line] => Err(format!("expected DEBUG, got: {line}")),
+                other => Err(format!("expected exactly one line, got {}", other.len())),
+            }
+        });
+    }
 }

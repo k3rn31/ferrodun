@@ -205,18 +205,38 @@ impl SessionService {
         match effect {
             Effect::Authenticate { username, password } => {
                 match backend.authenticate(&username, &password).await {
-                    Ok(Ok(account)) => match backend.puppets_of(account.id).await {
-                        Ok(puppets) => EffectResult::Authenticated { account, puppets },
-                        Err(BackendError) => EffectResult::BackendError,
-                    },
-                    Ok(Err(reason)) => EffectResult::LoginRejected(reason),
+                    Ok(Ok(account)) => {
+                        // account_id only — never the username (design §6).
+                        tracing::debug!(account_id = %account.id, "login authenticated");
+                        match backend.puppets_of(account.id).await {
+                            Ok(puppets) => EffectResult::Authenticated { account, puppets },
+                            Err(BackendError) => EffectResult::BackendError,
+                        }
+                    }
+                    Ok(Err(reason)) => {
+                        // LoginError variants are data-free; Debug is safe.
+                        tracing::debug!(reason = ?reason, "login rejected");
+                        EffectResult::LoginRejected(reason)
+                    }
+                    // The backend impl already error!-logs the fault; a second
+                    // event here would double-log it.
                     Err(BackendError) => EffectResult::BackendError,
                 }
             }
             Effect::Register { username, password } => {
                 match backend.register(&username, &password).await {
-                    Ok(Ok(account)) => EffectResult::Registered { account },
-                    Ok(Err(reason)) => EffectResult::RegisterRejected(reason),
+                    Ok(Ok(account)) => {
+                        // account_id only — never the username (design §6).
+                        tracing::debug!(account_id = %account.id, "account registered");
+                        EffectResult::Registered { account }
+                    }
+                    Ok(Err(reason)) => {
+                        // RegisterError variants are data-free; Debug is safe.
+                        tracing::debug!(reason = ?reason, "registration rejected");
+                        EffectResult::RegisterRejected(reason)
+                    }
+                    // The backend impl already error!-logs the fault; a second
+                    // event here would double-log it.
                     Err(BackendError) => EffectResult::BackendError,
                 }
             }
@@ -251,6 +271,9 @@ impl SessionService {
                 // resolves; on the vanishing chance it does not, drop cleanly.
                 match backend.resolve_puppet(puppet).await {
                     Some(entity) => {
+                        // account_id and entity only — never `name`, a
+                        // player-authored PuppetName (design §6).
+                        tracing::debug!(session_id = %session, account_id = %account, ?entity, "session bound");
                         self.sessions.insert(
                             session,
                             SessionState::InWorld(InWorldBinding {
@@ -268,6 +291,7 @@ impl SessionService {
                 }
             }
             Terminal::Closed => {
+                tracing::debug!(session_id = %session, "session closed at login");
                 self.sessions.remove(&session);
                 true
             }
@@ -295,6 +319,7 @@ mod tests {
     use mud_account::{AccountState, Puppet};
     use mud_core::{Generation, SlotIndex, TenantTag};
     use std::num::NonZeroU64;
+    use tracing_test::traced_test;
 
     fn sid(n: u64) -> SessionId {
         SessionId::new(NonZeroU64::new(n).expect("nonzero"))
@@ -423,6 +448,36 @@ mod tests {
             svc.on_input(sid(1), "look", &FakeBackend).await,
             Routing::Login { .. }
         ));
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn a_successful_login_logs_the_account_id_and_no_credentials() {
+        let mut service = SessionService::new("welcome", Locale::EN);
+        let session = sid(9);
+        service.connect(session);
+        let _ = service.on_input(session, "login alice", &FakeBackend).await;
+        let _ = service.on_input(session, "hunter2", &FakeBackend).await;
+
+        assert!(logs_contain("login authenticated"));
+        // The never-log rule (design §6): credentials and usernames stay out.
+        assert!(!logs_contain("hunter2"));
+        assert!(!logs_contain("alice"));
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn a_failed_login_logs_the_rejection_without_the_password() {
+        let mut service = SessionService::new("welcome", Locale::EN);
+        let session = sid(10);
+        service.connect(session);
+        let _ = service.on_input(session, "login alice", &FakeBackend).await;
+        let _ = service
+            .on_input(session, "wrong-password", &FakeBackend)
+            .await;
+
+        assert!(logs_contain("login rejected"));
+        assert!(!logs_contain("wrong-password"));
     }
 
     #[tokio::test]

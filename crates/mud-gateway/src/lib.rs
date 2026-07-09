@@ -26,6 +26,7 @@ use mud_net::RateLimiter;
 use mud_schema::{GatewayFrame, WorldFrame};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 pub use config::GatewayConfig;
 pub use error::GatewayError;
@@ -74,10 +75,16 @@ where
                 return finished.map_err(|err| GatewayError::RouterTask(Box::new(err)))?;
             }
             accepted = listener.accept() => {
-                let (socket, _addr) = accepted.map_err(GatewayError::Accept)?;
+                let (socket, addr) = accepted.map_err(GatewayError::Accept)?;
                 let session_id = minter.next()?;
                 let limiter = RateLimiter::new(config.rate, config.burst, Instant::now());
-                tokio::spawn(run_connection(socket, session_id, to_router.clone(), limiter));
+                let span = tracing::info_span!("session", %session_id);
+                // The peer IP is PII: logged exactly once, at debug, inside the
+                // session span (which supplies session_id) for on-demand abuse
+                // correlation — never at info, never repeated per-frame, and in
+                // the same span as the matching "connection closed" (design §6).
+                span.in_scope(|| tracing::debug!(peer = %addr, "connection accepted"));
+                tokio::spawn(run_connection(socket, session_id, to_router.clone(), limiter).instrument(span));
             }
         }
     }

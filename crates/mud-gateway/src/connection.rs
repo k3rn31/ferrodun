@@ -69,6 +69,13 @@ pub(crate) async fn run_connection<S>(
         .await
     };
 
+    let cause_label = match cause {
+        ExitCause::ClientGone => "client gone",
+        ExitCause::WorldClosed => "world closed",
+    };
+    // session_id comes from the ambient session span; don't repeat it here.
+    tracing::debug!(cause = cause_label, "connection closed");
+
     match cause {
         ExitCause::ClientGone => {
             let disconnect = GatewayFrame::Disconnect(SessionDisconnect { session_id });
@@ -176,6 +183,7 @@ mod tests {
     use mud_schema::{GatewayFrame, OutputText, SessionId};
     use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
     use tokio::sync::mpsc;
+    use tracing_test::traced_test;
 
     use crate::router::{ToConnection, ToRouter};
 
@@ -364,5 +372,18 @@ mod tests {
             ToRouter::Frame(GatewayFrame::Disconnect(_))
         ));
         task.await.expect("connection task must not panic");
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn a_client_hangup_logs_the_close_at_debug() {
+        let (client, mut router_rx, task) = spawn_connection(default_limiter());
+        // Drain router messages so the connection task never blocks on send.
+        tokio::spawn(async move { while router_rx.recv().await.is_some() {} });
+
+        drop(client); // EOF: the client hung up
+        task.await.expect("connection task runs to completion");
+
+        assert!(logs_contain("connection closed"));
     }
 }
