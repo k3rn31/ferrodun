@@ -43,22 +43,32 @@ Newest entries at the bottom. One entry per task. Keep it terse — it is a brea
 
 ## Documentation site
 
-User- and builder-facing documentation lives in `docs/` (MkDocs + Material),
-published to GitHub Pages and **versioned with `mike`**: the `main` branch is
-the `next` version, and each `vX.Y.Z` tag is snapshotted to its own version.
-Markdown pages live under `docs/docs/`; navigation and theme are in
-`docs/mkdocs.yml`; the CI build/deploy is `.github/workflows/docs.yml`.
+The documentation lives in `docs/` (MkDocs + Material), published to GitHub
+Pages and **versioned with `mike`**: `main` is the `next` version, each
+`vX.Y.Z` tag its own snapshot. Pages live under `docs/docs/`; nav and theme in
+`docs/mkdocs.yml`; CI in `.github/workflows/docs.yml`. The toolchain is a uv
+project in `docs/`; verify with `uv run mkdocs build --strict` from `docs/`.
 
-**Keep the docs current as features land.** Whenever a PR adds or changes
-behavior a player, builder, or operator can observe — a command, a config key,
-a script API, a network feature, a CLI subcommand, a deployment knob — update
-or add the relevant page under `docs/docs/` (and `nav` in `mkdocs.yml`) **in
-the same PR**, and note the doc change in the journal entry. Purely internal
-changes (refactors, engine plumbing with no external surface) do not need doc
-updates. Keep the prose accurate and concise; when docs and `SPEC.md` disagree,
-`SPEC.md` wins and the docs are corrected. The toolchain is a uv project in
-`docs/` (`pyproject.toml` + `uv.lock`); verify with `uv run mkdocs build
---strict` from `docs/`.
+How the docs are treated:
+
+- **Current state only.** Document what the engine supports *today* — never
+  roadmap, planned features, or development-process/milestone content. Vision
+  belongs in `README.md`, the roadmap in `PLAN.md`. Never guess: pin every
+  claim to the code and cut what you cannot confirm there.
+- **Persona-driven structure.** Pages are organized by audience — **Playing**
+  (players), **Building** (builders), **Operating** (operators), and
+  **Architecture** (how the running system works today). New pages go under the
+  matching persona.
+- **Accuracy wins.** Code is the source of truth for current behavior; when
+  docs and code disagree, correct the docs. When docs and `SPEC.md` disagree on
+  intended behavior, `SPEC.md` wins.
+- **Diagrams are Mermaid** — text-based fenced blocks, native to Material, no
+  extra dependencies.
+- **Update in the same PR.** Whenever a PR changes observable behavior — a
+  command, config key, script API, network feature, CLI subcommand, deployment
+  knob — update the relevant page (and `nav`) in that PR and note it in the
+  journal. Purely internal changes (refactors, plumbing with no external
+  surface) need no doc update.
 
 ## Mandatory engineering rules
 
