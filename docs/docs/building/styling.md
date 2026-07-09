@@ -80,6 +80,7 @@ unknown styling, and logs a warning so you can spot the typo. Malformed markup
     *players* is a separate, locked-down path (it is escaped by default), so
     players cannot inject styling into other players' output.
 
+<!-- cross-ref added in rendering task -->
 ## How color reaches each player
 
 You author colors once, in 24-bit truecolor. The engine downsamples to whatever
