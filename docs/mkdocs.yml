@@ -58,6 +58,7 @@ nav:
       - Localization: building/localization.md
   - Operating:
       - Running a server: operating/running-a-server.md
+      - Configuration: operating/configuration.md
 
 plugins:
   - search

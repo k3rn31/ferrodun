@@ -13,9 +13,9 @@ A tenant's `config.toml` may set the rendering locale:
 locale = "en" # optional; default "en"
 ```
 
-The value flows into every engine-emitted line. See [Running a server →
-Per-tenant configuration](../operating/running-a-server.md#per-tenant-configuration)
-for where this key sits alongside the tenant's other settings.
+The value flows into every engine-emitted line. See
+[Configuration](../operating/configuration.md) for where this key sits
+alongside the tenant's other settings.
 
 ## What happens with a non-English locale
 
