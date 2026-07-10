@@ -62,3 +62,8 @@ flowchart LR
   regions, and color palette, loaded from disk.
 - **`mud-db`** — persistence: one physically distinct database per tenant,
   holding accounts, puppets, and durable world state.
+
+## See also
+
+- [Engine & the tick loop](engine.md) — the fixed-tick scheduler and the
+  command pipeline in detail.
