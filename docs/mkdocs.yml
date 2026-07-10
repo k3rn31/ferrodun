@@ -55,8 +55,17 @@ nav:
       - Rooms: building/rooms.md
       - Regions: building/regions.md
       - Color & styling: building/styling.md
+      - Localization: building/localization.md
   - Operating:
-      - Running a server: running-a-server.md
+      - Running a server: operating/running-a-server.md
+      - Configuration: operating/configuration.md
+      - Logging: operating/logging.md
+  - Architecture:
+      - Overview: architecture/index.md
+      - Engine & the tick loop: architecture/engine.md
+      - Sessions & login: architecture/sessions.md
+      - Rendering & color: architecture/rendering.md
+      - Internationalization: architecture/i18n.md
 
 plugins:
   - search
@@ -78,7 +87,11 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.keys
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist:

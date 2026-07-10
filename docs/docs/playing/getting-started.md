@@ -32,9 +32,10 @@ say whether the name exists, so no one can use failed logins to fish for
 valid account names.
 
 !!! note
-    The password prompt does not yet mask or hide your input as you type it
-    — echo suppression is coming in a later update. Be mindful of who can see
-    your screen while you type your password.
+    The password prompt does not mask or hide your input as you type it —
+    the server does not currently enable echo suppression on the telnet
+    connection, so your client's local echo shows what you type. Be mindful
+    of who can see your screen while you type your password.
 
 ## Registering
 
@@ -48,13 +49,14 @@ Password:
 Confirm password:
 ```
 
-If the two entries don't match, you're asked to start the password step
-again. If the name is already taken, you're told so and can pick another.
+If the two entries don't match, you're returned to the connection prompt —
+type `register <name>` again to retry. If the name is already taken, you're
+told so and can pick another the same way.
 
 ## Choosing your character
 
 Once you're logged in (whether you just registered or logged into an
-existing account), you move to **puppet selection** — picking which
+existing account), you move to **character selection** — picking which
 character you want to play:
 
 | Command | What it does |
