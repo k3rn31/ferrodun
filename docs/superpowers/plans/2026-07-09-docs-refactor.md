@@ -507,26 +507,25 @@ jj commit -m "docs: add Architecture sessions & login page"
 - Consumes: `architecture/index.md`, `building/styling.md`.
 - Produces: `architecture/rendering.md`.
 
-- [ ] **Step 1: Write the page.** Describe the render pipeline: authored 24-bit truecolor + palette roles + markup → compiled styled spans → per-session downsample to one of four tiers (`mono`/`ansi16`/`xterm256`/`truecolor`; default tenant tier `ansi16`; `NO_COLOR` → mono; attributes preserved under every tier) → bytes to the client. Include:
+**CURRENT-STATE REALITY (verified — must be reflected accurately).** Color/attributes are authored and compiled today but are **NOT delivered to players in the current build**: the sole live output path (`crates/mud-engine/src/pipeline.rs`, ~lines 215–217) flattens every styled message through `to_plain_string()` (test: `to_plain_string_concatenates_text_dropping_style`) before sending, so players receive plain text (correct words, no color/attributes). The ANSI/tier renderer (`crates/mud-net/src/render.rs` `render()`, `convert.rs`, `tier.rs`) is fully implemented and unit-tested but has **no non-test caller** — it is not wired into the live pipeline. Document this honestly; do NOT claim colored output reaches players today.
+
+- [ ] **Step 1: Write the page.** Describe the render model as it exists today, in two clearly separated parts: (a) **authoring & compilation, which is live** — builder markup + palette roles are parsed and compiled into styled spans at world load, and engine output is assembled as styled text; (b) **delivery to the terminal, which is implemented but not yet wired** — the tier renderer (`mono`/`ansi16`/`xterm256`/`truecolor`; default tenant tier `ansi16`; `NO_COLOR` → mono; attributes preserved under every tier) exists in `mud-net` but is not called by the live pipeline, which currently flattens styled text to plain via `to_plain_string()`. Include a Mermaid diagram that shows the live path in solid and the not-yet-wired renderer as a separate, clearly-labelled branch:
 
 ````markdown
 ```mermaid
 flowchart TD
-    Auth["Authored text<br/>24-bit color · palette roles · markup"] --> Comp["Compile markup & resolve roles<br/>mud-core/text"]
+    Auth["Authored text<br/>palette roles · markup"] --> Comp["Compile markup & resolve roles<br/>mud-core/text (live)"]
     Comp --> Style[Styled spans]
-    Style --> Tier{Session tier}
-    Tier -->|truecolor| T1[24-bit]
-    Tier -->|xterm256| T2[256-color]
-    Tier -->|ansi16| T3[16-color]
-    Tier -->|mono| T4["no color<br/>attributes kept"]
-    T1 --> Send["Bytes to client<br/>mud-net/convert"]
-    T2 --> Send
-    T3 --> Send
-    T4 --> Send
+    Style --> Flat["to_plain_string()<br/>drops color & attributes"]
+    Flat --> Send["Plain text to client<br/>(current live path)"]
+    Style -.not yet wired.-> Tier{"Tier renderer<br/>mud-net::render (exists, unused)"}
+    Tier -.-> T1["truecolor / xterm256 / ansi16 / mono"]
 ```
 ````
 
-- [ ] **Step 2: Cross-reference from styling.md.** In `building/styling.md`, replace the "How color reaches each player / tiers" subsection (and the `<!-- cross-ref added in rendering task -->` comment left in Task 4) with a concise pointer: `See [Architecture → Rendering & color](../architecture/rendering.md) for how authored color is downsampled to each player's terminal.`
+Verify the pipeline-flattening and no-caller facts against `crates/mud-engine/src/pipeline.rs` and by confirming `mud_net::render` has no non-test caller before finalizing the wording.
+
+- [ ] **Step 2: Replace the tier subsection in styling.md with an honest note.** In `building/styling.md`, replace the "How color reaches each player / tiers" subsection (and the `<!-- cross-ref added in rendering task -->` comment left in Task 4) with a current-state admonition — NOT a claim that color reaches players. Suggested content: an `!!! note` stating that authored color and text attributes are parsed and validated today, but the current build delivers **plain text** to players; color delivery (including the per-tier downsampling) is implemented in the engine but not yet wired into the live output path. Link to `../architecture/rendering.md` for the mechanism. Do not state or imply that players currently see color.
 
 - [ ] **Step 3: Link from Overview** and **add to nav**:
 
@@ -608,7 +607,7 @@ jj commit -m "docs: add Architecture internationalization page"
 
 - [ ] **Step 1: Replace the entire page.** Remove the "Under construction" admonition and the "What it will offer" list. Write:
   - One-paragraph description: Ferrodun is a pure-Rust MUD/MU\* engine.
-  - A "What works today" list, drawn only from implemented features: a telnet server; the built-in player command set; KDL-authored worlds (rooms, regions, palette); per-tenant multi-tenancy with isolated stacks; palette-driven color downsampled per session; English message rendering.
+  - A "What works today" list, drawn only from implemented features: a telnet server; the built-in player command set; KDL-authored worlds (rooms, regions, palette); per-tenant multi-tenancy with isolated stacks; English message rendering. **Do NOT list colored/styled output as working** — color/attributes are authored and compiled but the current build delivers plain text to players (the tier renderer is not wired into the live pipeline; see Task 11's reality note). Palette/markup *authoring* may be mentioned as a builder feature, but not as something players currently see rendered in color.
   - Links into Playing, Building, Operating, and Architecture.
   - One teaser Mermaid diagram (reuse the Overview component diagram from Task 8, or a simplified `client → server → world` flow) with a link to [Architecture → Overview](architecture/index.md).
 
