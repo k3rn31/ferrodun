@@ -26,3 +26,6 @@ resolves to **English** text via the fallback, silently — an `en` hit is
 not a miss. The server logs a one-time warning only for a key absent from
 every catalog, `en` included; no such key exists among the built-in
 commands today. Nothing breaks — players simply see English.
+
+See [Architecture → Internationalization](../architecture/i18n.md) for the
+`t!(locale, key, args)` seam and resolution order in detail.

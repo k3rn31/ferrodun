@@ -71,3 +71,5 @@ flowchart LR
   state machine.
 - [Rendering & color](rendering.md) — how styled text is authored,
   compiled, and (not yet) delivered to a player's terminal.
+- [Internationalization](i18n.md) — the `t!` message-key seam and the
+  English-only reality.
