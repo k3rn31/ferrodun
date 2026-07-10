@@ -67,3 +67,5 @@ flowchart LR
 
 - [Engine & the tick loop](engine.md) — the fixed-tick scheduler and the
   command pipeline in detail.
+- [Sessions & login](sessions.md) — the connection lifecycle and the login
+  state machine.
