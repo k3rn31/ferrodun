@@ -32,8 +32,8 @@ say whether the name exists, so no one can use failed logins to fish for
 valid account names.
 
 !!! note
-    The password prompt does not yet mask or hide your input as you type it
-    — echo suppression is coming in a later update. Be mindful of who can see
+    The password prompt does not mask or hide your input as you type it —
+    the server does not currently suppress echo. Be mindful of who can see
     your screen while you type your password.
 
 ## Registering

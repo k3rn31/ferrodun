@@ -11,7 +11,7 @@ TCP connection to a bound, in-world session.
 2. **Telnet negotiation** — `mud-net`'s `Negotiator` (RFC 1143 Q-method)
    opens with `DO NAWS`, `DO TTYPE`, `WILL EOR`, `WILL CHARSET`. Everything
    else, including `ECHO`, is refused with `WONT`/`DONT` — the server does
-   not echo in M1, so password input arrives and is typed back by the
+   not currently echo, so password input arrives and is typed back by the
    client unmasked.
 3. **Login FSM** — the gateway forwards each input line to the session's
    `mud-session::SessionFsm`, driven from its "World-side home" in

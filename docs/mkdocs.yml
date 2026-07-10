@@ -47,12 +47,6 @@ extra:
 
 nav:
   - Home: index.md
-  - Architecture:
-      - Overview: architecture/index.md
-      - Engine & the tick loop: architecture/engine.md
-      - Sessions & login: architecture/sessions.md
-      - Rendering & color: architecture/rendering.md
-      - Internationalization: architecture/i18n.md
   - Playing:
       - Getting started: playing/getting-started.md
       - Commands: playing/commands.md
@@ -66,6 +60,12 @@ nav:
       - Running a server: operating/running-a-server.md
       - Configuration: operating/configuration.md
       - Logging: operating/logging.md
+  - Architecture:
+      - Overview: architecture/index.md
+      - Engine & the tick loop: architecture/engine.md
+      - Sessions & login: architecture/sessions.md
+      - Rendering & color: architecture/rendering.md
+      - Internationalization: architecture/i18n.md
 
 plugins:
   - search

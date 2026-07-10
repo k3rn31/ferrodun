@@ -26,8 +26,8 @@ breakdown.
 - **A builder-authored color palette** — room text can carry `{tag}…{/}`
   markup resolved against a tenant's palette at world-load time. This is
   currently an authoring-time feature: see [Architecture →
-  Rendering](architecture/rendering.md) for why players don't yet see it
-  rendered.
+  Rendering](architecture/rendering.md) for why players don't currently see
+  it rendered.
 - **Per-tenant multi-tenancy** — each tenant is a fully isolated stack (its
   own database, its own in-memory world, its own listener); there is no
   shared state between tenants.
