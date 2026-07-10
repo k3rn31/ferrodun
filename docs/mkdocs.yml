@@ -47,6 +47,8 @@ extra:
 
 nav:
   - Home: index.md
+  - Architecture:
+      - Overview: architecture/index.md
   - Playing:
       - Getting started: playing/getting-started.md
       - Commands: playing/commands.md
