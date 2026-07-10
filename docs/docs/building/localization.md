@@ -22,6 +22,7 @@ for where this key sits alongside the tenant's other settings.
 Message lookup falls back in this order: the requested `(locale, key)`,
 then `(en, key)`, then the literal key text. Because only `en` message
 templates exist, setting `locale = "fr"` (or any other non-`en` value)
-resolves to **English** text via the fallback, and the server logs one
-warning per missing key (deduplicated). Nothing breaks — players simply
-see English.
+resolves to **English** text via the fallback, silently — an `en` hit is
+not a miss. The server logs a one-time warning only for a key absent from
+every catalog, `en` included; no such key exists among the built-in
+commands today. Nothing breaks — players simply see English.
