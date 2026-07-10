@@ -16,7 +16,7 @@
         <link rel="prev" href="../regions/">
       
       
-        <link rel="next" href="../../running-a-server/">
+        <link rel="next" href="../localization/">
       
       
         
@@ -421,6 +421,8 @@
       
         
       
+        
+      
     
     
     
@@ -633,21 +635,38 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#how-color-reaches-each-player" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How color reaches each player
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../localization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Localization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -668,6 +687,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -718,7 +741,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../running-a-server/" class="md-nav__link">
+      <a href="../../operating/running-a-server/" class="md-nav__link">
         
   
   
@@ -726,6 +749,251 @@
     
   
     Running a server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operating/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operating/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engine & the tick loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/sessions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sessions & login
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/rendering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rendering & color
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/i18n/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internationalization
   
 
     
@@ -788,17 +1056,6 @@
     <span class="md-ellipsis">
       
         Styling room fields
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-color-reaches-each-player" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How color reaches each player
       
     </span>
   </a>
@@ -912,22 +1169,19 @@ unknown styling, and logs a warning so you can spot the typo. Malformed markup
 <em>players</em> is a separate, locked-down path (it is escaped by default), so
 players cannot inject styling into other players' output.</p>
 </div>
-<h2 id="how-color-reaches-each-player">How color reaches each player<a class="headerlink" href="#how-color-reaches-each-player" title="Permanent link">&para;</a></h2>
-<p>You author colors once, in 24-bit truecolor. The engine downsamples to whatever
-each player's client can show, <strong>once per session at the output edge</strong> — you
-never think about a player's terminal while building.</p>
-<p>A session renders at one of four <strong>tiers</strong>: <code>mono</code>, <code>ansi16</code>, <code>xterm256</code>, or
-<code>truecolor</code>. The tier is resolved like this (first match wins):</p>
-<ol>
-<li>The player's saved color preference <em>(a later feature)</em>.</li>
-<li><code>NO_COLOR</code> set in the player's environment → <strong><code>mono</code></strong> (no color, attributes
-   like bold/underline preserved). See <a href="https://no-color.org/">no-color.org</a>.</li>
-<li>What the client advertises it can do <em>(a later feature)</em>.</li>
-<li>The <strong>tenant default</strong>, which is <code>ansi16</code> for the widest compatibility.</li>
-</ol>
-<p>Downsampling is deterministic: the same authored color always becomes the same
-ansi16 / xterm256 code, so output is reproducible. You can author freely in
-truecolor knowing it degrades cleanly on a 16-color client.</p>
+<div class="admonition note">
+<p class="admonition-title">Color is not delivered to players yet</p>
+<p>Everything above — palette roles, named colors, and markup — is parsed,
+validated, and compiled today, exactly as described. But the current
+build's live output path flattens every reply to plain text before it
+reaches a session, so <strong>players see correct words with no color or
+attributes</strong>, regardless of <code>NO_COLOR</code> or the tenant's configured tier.</p>
+<p>Per-tier color delivery (mono / ansi16 / xterm256 / truecolor, with
+deterministic downsampling from the truecolor you author) is already
+implemented in the engine, but is not yet wired into the live output
+path. See <a href="../../architecture/rendering/">Rendering &amp; color</a> for the
+mechanism and exactly what is and isn't connected.</p>
+</div>
 
 
 

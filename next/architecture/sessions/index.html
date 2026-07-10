@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://k3rn31.github.io/ferrodun/next/">
+        <link rel="canonical" href="https://k3rn31.github.io/ferrodun/next/architecture/sessions/">
       
       
+        <link rel="prev" href="../engine/">
       
-        <link rel="next" href="playing/getting-started/">
+      
+        <link rel="next" href="../rendering/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Ferrodun</title>
+        <title>Sessions & login - Ferrodun</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -76,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#ferrodun" class="md-skip">
+        <a href="#sessions-login" class="md-skip">
           Skip to content
         </a>
       
@@ -96,7 +98,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Ferrodun" class="md-header__button md-logo" aria-label="Ferrodun" data-md-component="logo">
+    <a href="../.." title="Ferrodun" class="md-header__button md-logo" aria-label="Ferrodun" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Sessions & login
             
           </span>
         </div>
@@ -234,7 +236,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Ferrodun" class="md-nav__button md-logo" aria-label="Ferrodun" data-md-component="logo">
+    <a href="../.." title="Ferrodun" class="md-nav__button md-logo" aria-label="Ferrodun" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -261,37 +263,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -307,48 +282,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#what-works-today" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What works today
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#where-to-go-next" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Where to go next
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -413,7 +346,7 @@
   
   
     <li class="md-nav__item">
-      <a href="playing/getting-started/" class="md-nav__link">
+      <a href="../../playing/getting-started/" class="md-nav__link">
         
   
   
@@ -441,7 +374,7 @@
   
   
     <li class="md-nav__item">
-      <a href="playing/commands/" class="md-nav__link">
+      <a href="../../playing/commands/" class="md-nav__link">
         
   
   
@@ -535,7 +468,7 @@
   
   
     <li class="md-nav__item">
-      <a href="building/world-files/" class="md-nav__link">
+      <a href="../../building/world-files/" class="md-nav__link">
         
   
   
@@ -563,7 +496,7 @@
   
   
     <li class="md-nav__item">
-      <a href="building/rooms/" class="md-nav__link">
+      <a href="../../building/rooms/" class="md-nav__link">
         
   
   
@@ -591,7 +524,7 @@
   
   
     <li class="md-nav__item">
-      <a href="building/regions/" class="md-nav__link">
+      <a href="../../building/regions/" class="md-nav__link">
         
   
   
@@ -619,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="building/styling/" class="md-nav__link">
+      <a href="../../building/styling/" class="md-nav__link">
         
   
   
@@ -647,7 +580,7 @@
   
   
     <li class="md-nav__item">
-      <a href="building/localization/" class="md-nav__link">
+      <a href="../../building/localization/" class="md-nav__link">
         
   
   
@@ -737,7 +670,7 @@
   
   
     <li class="md-nav__item">
-      <a href="operating/running-a-server/" class="md-nav__link">
+      <a href="../../operating/running-a-server/" class="md-nav__link">
         
   
   
@@ -765,7 +698,7 @@
   
   
     <li class="md-nav__item">
-      <a href="operating/configuration/" class="md-nav__link">
+      <a href="../../operating/configuration/" class="md-nav__link">
         
   
   
@@ -793,7 +726,7 @@
   
   
     <li class="md-nav__item">
-      <a href="operating/logging/" class="md-nav__link">
+      <a href="../../operating/logging/" class="md-nav__link">
         
   
   
@@ -825,6 +758,8 @@
       
   
   
+    
+  
   
   
     
@@ -846,15 +781,15 @@
     
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="architecture/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -878,7 +813,7 @@
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -898,7 +833,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture/engine/" class="md-nav__link">
+      <a href="../engine/" class="md-nav__link">
         
   
   
@@ -923,10 +858,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="architecture/sessions/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sessions & login
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -942,6 +904,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#connection-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-login-fsm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The login FSM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -954,7 +969,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture/rendering/" class="md-nav__link">
+      <a href="../rendering/" class="md-nav__link">
         
   
   
@@ -982,7 +997,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture/i18n/" class="md-nav__link">
+      <a href="../i18n/" class="md-nav__link">
         
   
   
@@ -1037,10 +1052,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-works-today" class="md-nav__link">
+  <a href="#connection-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What works today
+        Connection lifecycle
       
     </span>
   </a>
@@ -1048,10 +1063,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#where-to-go-next" class="md-nav__link">
+  <a href="#the-login-fsm" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Where to go next
+        The login FSM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
       
     </span>
   </a>
@@ -1078,46 +1104,90 @@
   
 
 
-<h1 id="ferrodun">Ferrodun<a class="headerlink" href="#ferrodun" title="Permanent link">&para;</a></h1>
-<p><strong>Ferrodun is a pure-Rust MUD/MU* engine.</strong> A <code>mudd</code> process serves one or
-more tenants over telnet, each tenant an isolated stack with its own
-database and its own hand-authored world loaded from plain-text files.</p>
-<pre class="mermaid"><code>flowchart LR
-    C[Telnet client] --&gt; S[mudd server]
-    S --&gt; Wd[(Tenant world&lt;br/&gt;KDL rooms · regions · palette)]</code></pre>
-<p>See <a href="architecture/">Architecture → Overview</a> for the full component
-breakdown.</p>
-<h2 id="what-works-today">What works today<a class="headerlink" href="#what-works-today" title="Permanent link">&para;</a></h2>
+<h1 id="sessions-login">Sessions &amp; login<a class="headerlink" href="#sessions-login" title="Permanent link">&para;</a></h1>
+<p>This page describes, in current-state terms, how a client goes from a raw
+TCP connection to a bound, in-world session.</p>
+<h2 id="connection-lifecycle">Connection lifecycle<a class="headerlink" href="#connection-lifecycle" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>TCP accept</strong> — <code>mud-gateway</code> accepts the socket, mints a <code>SessionId</code>,
+   and registers the session with the tenant's router before anything else
+   can address it.</li>
+<li><strong>Telnet negotiation</strong> — <code>mud-net</code>'s <code>Negotiator</code> (RFC 1143 Q-method)
+   opens with <code>DO NAWS</code>, <code>DO TTYPE</code>, <code>WILL EOR</code>, <code>WILL CHARSET</code>. Everything
+   else, including <code>ECHO</code>, is refused with <code>WONT</code>/<code>DONT</code> — the server does
+   not currently enable echo suppression, so password input arrives and is
+   typed back by the client unmasked.</li>
+<li><strong>Login FSM</strong> — the gateway forwards each input line to the session's
+   <code>mud-session::SessionFsm</code>, driven from its "World-side home" in
+   <code>mud-engine</code>'s session module, which reaches accounts only through the
+   injected <code>LoginBackend</code> port (backed by <code>mud-account</code>/<code>mud-db</code>).</li>
+<li><strong>Puppet selection</strong> — once authenticated or registered, the session
+   lists the account's puppets and accepts <code>play &lt;name&gt;</code>, <code>play &lt;number&gt;</code>,
+   or <code>new &lt;name&gt;</code>.</li>
+<li><strong>In-world hand-off</strong> — entering a puppet yields <code>Terminal::Bound</code>; the
+   driver stops feeding input to the FSM and routes it to the command
+   pipeline instead (see <a href="../engine/">Engine &amp; the tick loop</a>).</li>
+</ol>
+<h2 id="the-login-fsm">The login FSM<a class="headerlink" href="#the-login-fsm" title="Permanent link">&para;</a></h2>
+<p><code>SessionFsm</code> (<code>mud-session/src/fsm.rs</code>) starts every connection in <code>Anon</code>
+and only ever reaches the world through <code>PuppetSelect</code> → <code>AwaitingEnter</code> →
+<code>Terminal::Bound</code>. A few things worth calling out:</p>
 <ul>
-<li><strong>A telnet server</strong> — <code>mudd</code> accepts telnet connections and serves one or
-  more tenants, each with its own isolated database and in-memory world.</li>
-<li><strong>The built-in player command set</strong> — login/registration, character
-  selection, and in-world movement and interaction. See <a href="playing/commands/">Playing →
-  Commands</a>.</li>
-<li><strong>KDL-authored worlds</strong> — rooms, exits, and regions are written as plain
-  KDL files and loaded with strict, specific error reporting. See <a href="building/world-files/">Building →
-  World files</a>.</li>
-<li><strong>A builder-authored color palette</strong> — room text can carry <code>{tag}…{/}</code>
-  markup resolved against a tenant's palette at world-load time. This is
-  currently an authoring-time feature: see <a href="architecture/rendering/">Architecture →
-  Rendering</a> for why players don't currently see
-  it rendered.</li>
-<li><strong>Per-tenant multi-tenancy</strong> — each tenant is a fully isolated stack (its
-  own database, its own in-memory world, its own listener); there is no
-  shared state between tenants.</li>
-<li><strong>English message rendering</strong> — all engine-emitted player-facing text
-  resolves through a single, translatable message-key seam, currently
-  populated with English only. See <a href="architecture/i18n/">Architecture →
-  Internationalization</a>.</li>
+<li><strong>Login and register failures return to <code>Anon</code></strong>, not to a dead end —
+  <code>LoginRejected</code>, a backend fault, a mismatched registration
+  confirmation, or a taken username all drop the session back to the top
+  of the FSM so the player can retry.</li>
+<li><strong>Unknown user vs. bad password are indistinguishable</strong> on the wire —
+  both map to the same <code>LoginFailed</code> message, so a failed login never
+  confirms whether a username exists.</li>
+<li><strong><code>AwaitingAuth</code>, <code>AwaitingRegister</code>, <code>AwaitingCreate</code>, and
+  <code>AwaitingEnter</code></strong> are "an effect is in flight" states: <code>LoginBackend</code>
+  I/O (authenticate, register, create puppet, resolve puppet) is async, so
+  the FSM parks there and ignores any input that arrives before the
+  backend result comes back.</li>
+<li><strong>Creating a puppet immediately enters it</strong> — a successful <code>new &lt;name&gt;</code>
+  passes through <code>PuppetSelect</code> internally on its way to <code>AwaitingEnter</code>,
+  but this isn't player-observable: the puppet is created and entered in
+  one flow, with no extra prompt in between.</li>
 </ul>
-<h2 id="where-to-go-next">Where to go next<a class="headerlink" href="#where-to-go-next" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; Anon
+    Anon --&gt; LoginPassword: login &amp;lt;name&amp;gt;
+    Anon --&gt; RegisterPassword: register &amp;lt;name&amp;gt;
+    Anon --&gt; Closed: quit
+
+    LoginPassword --&gt; AwaitingAuth: password line
+    AwaitingAuth --&gt; PuppetSelect: Authenticated
+    AwaitingAuth --&gt; Anon: LoginRejected / BackendError
+
+    RegisterPassword --&gt; RegisterConfirm: password line
+    RegisterConfirm --&gt; AwaitingRegister: confirmation matches
+    RegisterConfirm --&gt; Anon: confirmation mismatch
+
+    AwaitingRegister --&gt; PuppetSelect: Registered
+    AwaitingRegister --&gt; Anon: RegisterRejected / BackendError
+
+    PuppetSelect --&gt; AwaitingEnter: play &amp;lt;name|#&amp;gt;
+    PuppetSelect --&gt; AwaitingCreate: new &amp;lt;name&amp;gt;
+    PuppetSelect --&gt; Closed: quit
+
+    AwaitingCreate --&gt; AwaitingEnter: PuppetCreated
+    AwaitingCreate --&gt; PuppetSelect: BackendError
+
+    AwaitingEnter --&gt; Bound: Entered
+    AwaitingEnter --&gt; PuppetSelect: BackendError
+
+    Closed --&gt; [*]
+    Bound --&gt; [*]</code></pre>
+<p><code>quit</code> closes the connection (<code>Terminal::Closed</code>) from <code>Anon</code> or
+<code>PuppetSelect</code>; it is not recognized while a password or confirmation is
+being captured, since those states treat the next line as secret input
+rather than a command.</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="playing/getting-started/">Playing</a></strong> — connect, log in, and play.</li>
-<li><strong><a href="building/world-files/">Building</a></strong> — author a tenant's world in KDL.</li>
-<li><strong><a href="operating/running-a-server/">Operating</a></strong> — run and configure a
-  <code>mudd</code> server.</li>
-<li><strong><a href="architecture/">Architecture</a></strong> — how the running server is put
-  together.</li>
+<li><a href="../">Architecture overview</a></li>
+<li><a href="../engine/">Engine &amp; the tick loop</a> — what happens to input once a
+  session is bound and in-world.</li>
 </ul>
 
 
@@ -1191,10 +1261,10 @@ breakdown.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.indexes", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

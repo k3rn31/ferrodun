@@ -512,6 +512,8 @@
       
         
       
+        
+      
     
     
     
@@ -664,6 +666,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../building/localization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Localization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -679,6 +709,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -729,7 +763,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../running-a-server/" class="md-nav__link">
+      <a href="../../operating/running-a-server/" class="md-nav__link">
         
   
   
@@ -737,6 +771,251 @@
     
   
     Running a server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operating/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operating/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engine & the tick loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/sessions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sessions & login
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/rendering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rendering & color
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/i18n/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internationalization
   
 
     
@@ -895,9 +1174,10 @@ say whether the name exists, so no one can use failed logins to fish for
 valid account names.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>The password prompt does not yet mask or hide your input as you type it
-— echo suppression is coming in a later update. Be mindful of who can see
-your screen while you type your password.</p>
+<p>The password prompt does not mask or hide your input as you type it —
+the server does not currently enable echo suppression on the telnet
+connection, so your client's local echo shows what you type. Be mindful
+of who can see your screen while you type your password.</p>
 </div>
 <h2 id="registering">Registering<a class="headerlink" href="#registering" title="Permanent link">&para;</a></h2>
 <p>Type <code>register &lt;name&gt;</code> to create a new account. Names may use letters,
@@ -907,11 +1187,12 @@ prompted twice, to catch typos:</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Password:
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>Confirm password:
 </code></pre></div>
-<p>If the two entries don't match, you're asked to start the password step
-again. If the name is already taken, you're told so and can pick another.</p>
+<p>If the two entries don't match, you're returned to the connection prompt —
+type <code>register &lt;name&gt;</code> again to retry. If the name is already taken, you're
+told so and can pick another the same way.</p>
 <h2 id="choosing-your-character">Choosing your character<a class="headerlink" href="#choosing-your-character" title="Permanent link">&para;</a></h2>
 <p>Once you're logged in (whether you just registered or logged into an
-existing account), you move to <strong>puppet selection</strong> — picking which
+existing account), you move to <strong>character selection</strong> — picking which
 character you want to play:</p>
 <table>
 <thead>
