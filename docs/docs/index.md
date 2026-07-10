@@ -17,7 +17,7 @@ breakdown.
 
 - **A telnet server** — `mudd` accepts telnet connections and serves one or
   more tenants, each with its own isolated database and in-memory world.
-- **The built-in player command set** — login/registration, puppet
+- **The built-in player command set** — login/registration, character
   selection, and in-world movement and interaction. See [Playing →
   Commands](playing/commands.md).
 - **KDL-authored worlds** — rooms, exits, and regions are written as plain

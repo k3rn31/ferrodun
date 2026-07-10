@@ -37,10 +37,10 @@ ANSI escapes for a session's color tier:
   only color is dropped.
 
 None of this is wired into the live output path. The engine's only route to
-a session — `mud-engine/src/pipeline.rs` (`Pipeline::dispatch`, around lines
-215–217) — flattens every reply and broadcast through
-`StyledText::to_plain_string()` before sending, discarding all style
-information. `mud_net::render` and `resolve_tier` currently have no
+a session — `crates/mud-engine/src/pipeline.rs`'s `Pipeline::dispatch` —
+flattens every reply and broadcast through `StyledText::to_plain_string()`
+before sending, discarding all style information. `mud_net::render` and
+`resolve_tier` currently have no
 non-test caller anywhere in the workspace. As a result, **players today
 receive plain text**: correct words, no color, no attributes — regardless
 of their client's `NO_COLOR` setting or the tenant's configured tier.

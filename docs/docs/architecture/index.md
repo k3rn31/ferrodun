@@ -40,7 +40,7 @@ possibly-inconsistent state. Operators run `mudd` under a supervisor
 
 ```mermaid
 flowchart LR
-    C[Telnet client] --> N["mud-net<br/>telnet · framing · rate-limit · color tier"]
+    C[Telnet client] --> N["mud-net<br/>telnet · framing · rate-limit"]
     N --> G["mud-gateway<br/>session routing"]
     G --> E["mud-engine<br/>pipeline · builtins · render"]
     E --> Core["mud-core<br/>world · entities · scheduler · text"]
@@ -48,9 +48,10 @@ flowchart LR
     E --> DB[("mud-db<br/>accounts · puppets · state")]
 ```
 
-- **`mud-net`** — the sans-IO protocol edge: the telnet state machine,
-  per-session output rendering, and rate limiting. It owns no socket; the
-  gateway drives it.
+- **`mud-net`** — the sans-IO protocol edge: the telnet state machine, a
+  per-session output renderer (implemented but not yet wired into the live
+  path — see [Rendering & color](rendering.md)), and rate limiting. It owns
+  no socket; the gateway drives it.
 - **`mud-gateway`** — accepts telnet connections and routes each session to
   its tenant's world over an internal channel.
 - **`mud-engine`** — the command pipeline: resolves a session's caller,
