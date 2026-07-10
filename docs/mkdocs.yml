@@ -59,6 +59,7 @@ nav:
   - Operating:
       - Running a server: operating/running-a-server.md
       - Configuration: operating/configuration.md
+      - Logging: operating/logging.md
 
 plugins:
   - search
