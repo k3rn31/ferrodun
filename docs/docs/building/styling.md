@@ -80,22 +80,16 @@ unknown styling, and logs a warning so you can spot the typo. Malformed markup
     *players* is a separate, locked-down path (it is escaped by default), so
     players cannot inject styling into other players' output.
 
-<!-- cross-ref added in rendering task -->
-## How color reaches each player
+!!! note "Color is not delivered to players yet"
 
-You author colors once, in 24-bit truecolor. The engine downsamples to whatever
-each player's client can show, **once per session at the output edge** — you
-never think about a player's terminal while building.
+    Everything above — palette roles, named colors, and markup — is parsed,
+    validated, and compiled today, exactly as described. But the current
+    build's live output path flattens every reply to plain text before it
+    reaches a session, so **players see correct words with no color or
+    attributes**, regardless of `NO_COLOR` or the tenant's configured tier.
 
-A session renders at one of four **tiers**: `mono`, `ansi16`, `xterm256`, or
-`truecolor`. The tier is resolved like this (first match wins):
-
-1. The player's saved color preference *(a later feature)*.
-2. `NO_COLOR` set in the player's environment → **`mono`** (no color, attributes
-   like bold/underline preserved). See [no-color.org](https://no-color.org/).
-3. What the client advertises it can do *(a later feature)*.
-4. The **tenant default**, which is `ansi16` for the widest compatibility.
-
-Downsampling is deterministic: the same authored color always becomes the same
-ansi16 / xterm256 code, so output is reproducible. You can author freely in
-truecolor knowing it degrades cleanly on a 16-color client.
+    Per-tier color delivery (mono / ansi16 / xterm256 / truecolor, with
+    deterministic downsampling from the truecolor you author) is already
+    implemented in the engine, but is not yet wired into the live output
+    path. See [Rendering & color](../architecture/rendering.md) for the
+    mechanism and exactly what is and isn't connected.

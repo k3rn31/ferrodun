@@ -51,6 +51,7 @@ nav:
       - Overview: architecture/index.md
       - Engine & the tick loop: architecture/engine.md
       - Sessions & login: architecture/sessions.md
+      - Rendering & color: architecture/rendering.md
   - Playing:
       - Getting started: playing/getting-started.md
       - Commands: playing/commands.md

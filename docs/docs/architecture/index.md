@@ -69,3 +69,5 @@ flowchart LR
   command pipeline in detail.
 - [Sessions & login](sessions.md) — the connection lifecycle and the login
   state machine.
+- [Rendering & color](rendering.md) — how styled text is authored,
+  compiled, and (not yet) delivered to a player's terminal.
