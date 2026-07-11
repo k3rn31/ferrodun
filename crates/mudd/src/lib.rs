@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod config;
 mod places;
 pub mod scaffold;
+pub mod tenant;
 mod world_loop;
 
 pub use boot::boot;
