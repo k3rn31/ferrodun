@@ -177,6 +177,13 @@ impl Catalog {
                 .collect(),
         };
         let text = toml::to_string_pretty(&raw).context("serializing tenant catalogue")?;
+        // The catalogue lives beside the server config under `ferrodun/`, which
+        // does not exist on a fresh install; create it so the first `tenant add`
+        // succeeds rather than failing on the missing parent directory.
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating catalogue directory {}", parent.display()))?;
+        }
         std::fs::write(path, text)
             .with_context(|| format!("writing tenant catalogue {}", path.display()))?;
         Ok(())
@@ -331,6 +338,25 @@ mod tests {
             }],
         };
         catalog.save(&path).expect("saves");
+
+        let reloaded = Catalog::load(&path).expect("loads");
+        assert_eq!(reloaded, catalog);
+    }
+
+    #[test]
+    fn save_creates_missing_parent_directories() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        // The catalogue sits beside the server config under `ferrodun/`, a
+        // directory that does not exist on a fresh install — save must create it.
+        let path = dir.path().join("ferrodun").join("catalog.toml");
+        let catalog = Catalog {
+            entries: vec![CatalogEntry {
+                name: TenantName::parse("alpha").expect("slug"),
+                port: 4000,
+                tag: tag(1),
+            }],
+        };
+        catalog.save(&path).expect("saves into a fresh directory tree");
 
         let reloaded = Catalog::load(&path).expect("loads");
         assert_eq!(reloaded, catalog);
