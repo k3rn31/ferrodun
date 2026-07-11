@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
+use mud_core::TenantTag;
 use mud_net::{Burst, SustainedRate};
 use serde::{Deserialize, Serialize};
 
@@ -55,11 +56,20 @@ pub struct Cli {
     pub log_format: Option<LogFormat>,
 }
 
-/// One registered tenant: its folder and its telnet listen address.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One registered tenant: its folder, telnet listen address, and the runtime
+/// tenant tag stamped into its `EntityId`s.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantEntry {
     pub dir: PathBuf,
     pub listen: SocketAddr,
+    pub tag: TenantTag,
+}
+
+/// The `[[tenants]]` shape as authored in the server config file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RawTenantEntry {
+    dir: PathBuf,
+    listen: SocketAddr,
 }
 
 /// The resolved server configuration (defaults < config.toml < MUDD_* env < flags).
@@ -79,7 +89,7 @@ struct RawServerConfig {
     #[serde(default = "default_burst")]
     burst: NonZeroU32,
     #[serde(default)]
-    tenants: Vec<TenantEntry>,
+    tenants: Vec<RawTenantEntry>,
     #[serde(default)]
     log_format: LogFormat,
 }
@@ -136,8 +146,26 @@ impl ServerConfig {
             Some(dir) => vec![TenantEntry {
                 dir: dir.clone(),
                 listen: cli.listen.unwrap_or(DEFAULT_LISTEN),
+                tag: TenantTag::default(),
             }],
-            None => raw.tenants,
+            None => raw
+                .tenants
+                .into_iter()
+                .enumerate()
+                .map(|(index, raw)| {
+                    let position = u16::try_from(index + 1)
+                        .ok()
+                        .and_then(|value| TenantTag::new(value).ok())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("too many tenants: at most 4095 fit in one process")
+                        })?;
+                    Ok(TenantEntry {
+                        dir: raw.dir,
+                        listen: raw.listen,
+                        tag: position,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
         };
 
         if tenants.is_empty() {
@@ -189,6 +217,8 @@ fn config_file_path(cli: &Cli) -> anyhow::Result<PathBuf> {
 mod tests {
     use std::num::NonZeroU32;
 
+    use mud_core::TenantTag;
+
     use super::*;
 
     fn cli_with_tenant_dir(dir: &str) -> Cli {
@@ -215,6 +245,7 @@ mod tests {
                 vec![TenantEntry {
                     dir: PathBuf::from("/t"),
                     listen: DEFAULT_LISTEN,
+                    tag: TenantTag::default(),
                 }]
             );
             assert_eq!(config.rate, SustainedRate::DEFAULT);

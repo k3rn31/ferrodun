@@ -2,7 +2,6 @@
 //! its own DB, arena, scheduler, session registry, and TCP listener — bridged
 //! to an embedded gateway over an in-memory IPC channel (design §Boot).
 
-use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -29,12 +28,11 @@ use crate::world_loop;
 /// # Errors
 ///
 /// Returns an error if any tenant's config, world, or database fails to load,
-/// if its listener fails to bind, or if two tenants share a `tenant_tag`.
+/// or if its listener fails to bind.
 pub async fn boot(
     config: ServerConfig,
 ) -> anyhow::Result<(Vec<SocketAddr>, JoinSet<anyhow::Result<()>>)> {
     let mut addrs = Vec::with_capacity(config.tenants.len());
-    let mut tenant_tags = Vec::with_capacity(config.tenants.len());
     let mut tasks = JoinSet::new();
 
     for entry in &config.tenants {
@@ -52,7 +50,7 @@ pub async fn boot(
             .with_context(|| format!("reading world id at {}", entry.dir.display()))?;
 
         let place_map = PlaceMap::from_pairs(loaded.rooms().place_keys());
-        let world = PersistentWorld::load(db.clone(), tenant_config.tenant_tag(), place_map)
+        let world = PersistentWorld::load(db.clone(), entry.tag, place_map)
             .await
             .with_context(|| format!("loading persistent world at {}", entry.dir.display()))?;
         let world = Arc::new(Mutex::new(world));
@@ -85,7 +83,7 @@ pub async fn boot(
         // ambiently (design §4; SPEC §3.11.2).
         let tenant_span = tracing::info_span!(
             "tenant",
-            tenant = tenant_config.tenant_tag().get(),
+            tenant = entry.tag.get(),
             world_id = %world_id,
         );
         tasks.spawn({
@@ -110,17 +108,6 @@ pub async fn boot(
         tasks.spawn(world_loop::run(world_end, world_id, runtime).instrument(tenant_span));
 
         addrs.push(bound_addr);
-        tenant_tags.push((entry.dir.clone(), tenant_config.tenant_tag()));
-    }
-
-    let mut seen = HashSet::with_capacity(tenant_tags.len());
-    for (dir, tag) in &tenant_tags {
-        if !seen.insert(tag) {
-            anyhow::bail!(
-                "duplicate tenant_tag across tenants: {} collides with an earlier tenant",
-                dir.display()
-            );
-        }
     }
 
     Ok((addrs, tasks))

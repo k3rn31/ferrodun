@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use mud_core::TenantTag;
 use mud_net::{Burst, SustainedRate};
 use mudd::{LogFormat, ServerConfig, TenantEntry};
 use tempfile::TempDir;
@@ -17,12 +18,9 @@ const TICK: Duration = Duration::from_secs(5);
 
 /// Writes a minimal, self-contained tenant directory: one region, one room
 /// with no exits, and a welcome banner (no dangling references).
-fn write_tenant(dir: &Path, tag: u16) {
-    std::fs::write(
-        dir.join("config.toml"),
-        format!("start_room = \"town_square\"\ntenant_tag = {tag}\n"),
-    )
-    .expect("write config.toml");
+fn write_tenant(dir: &Path) {
+    std::fs::write(dir.join("config.toml"), "start_room = \"town_square\"\n")
+        .expect("write config.toml");
     std::fs::write(
         dir.join("welcome.kdl"),
         "banner \"Welcome to Testville.\"\n",
@@ -101,6 +99,7 @@ fn single_tenant_config(dir: &Path) -> ServerConfig {
         tenants: vec![TenantEntry {
             dir: dir.to_path_buf(),
             listen: "127.0.0.1:0".parse().expect("addr"),
+            tag: TenantTag::new(1).expect("tag 1 is in range"),
         }],
         log_format: LogFormat::default(),
     }
@@ -131,7 +130,7 @@ async fn login_and_enter_world(client: &mut ClientReader) {
 #[tokio::test]
 async fn a_full_register_create_enter_flow_over_telnet() {
     let tenant_dir = TempDir::new().expect("temp dir");
-    write_tenant(tenant_dir.path(), 1);
+    write_tenant(tenant_dir.path());
 
     let (addrs, _tasks) = mudd::boot(single_tenant_config(tenant_dir.path()))
         .await
@@ -150,8 +149,8 @@ async fn a_full_register_create_enter_flow_over_telnet() {
 async fn two_tenants_serve_independent_logins_at_once() {
     let tenant_a = TempDir::new().expect("temp dir a");
     let tenant_b = TempDir::new().expect("temp dir b");
-    write_tenant(tenant_a.path(), 1);
-    write_tenant(tenant_b.path(), 2);
+    write_tenant(tenant_a.path());
+    write_tenant(tenant_b.path());
 
     let config = ServerConfig {
         rate: SustainedRate::DEFAULT,
@@ -160,10 +159,12 @@ async fn two_tenants_serve_independent_logins_at_once() {
             TenantEntry {
                 dir: tenant_a.path().to_path_buf(),
                 listen: "127.0.0.1:0".parse().expect("addr"),
+                tag: TenantTag::new(1).expect("tag 1 is in range"),
             },
             TenantEntry {
                 dir: tenant_b.path().to_path_buf(),
                 listen: "127.0.0.1:0".parse().expect("addr"),
+                tag: TenantTag::new(2).expect("tag 2 is in range"),
             },
         ],
         log_format: LogFormat::default(),
@@ -184,34 +185,5 @@ async fn two_tenants_serve_independent_logins_at_once() {
     tokio::join!(
         login_and_enter_world(&mut client_a),
         login_and_enter_world(&mut client_b),
-    );
-}
-
-#[tokio::test]
-async fn duplicate_tenant_tags_fail_boot() {
-    let tenant_a = TempDir::new().expect("temp dir a");
-    let tenant_b = TempDir::new().expect("temp dir b");
-    write_tenant(tenant_a.path(), 1);
-    write_tenant(tenant_b.path(), 1);
-
-    let config = ServerConfig {
-        rate: SustainedRate::DEFAULT,
-        burst: Burst::DEFAULT,
-        tenants: vec![
-            TenantEntry {
-                dir: tenant_a.path().to_path_buf(),
-                listen: "127.0.0.1:0".parse().expect("addr"),
-            },
-            TenantEntry {
-                dir: tenant_b.path().to_path_buf(),
-                listen: "127.0.0.1:0".parse().expect("addr"),
-            },
-        ],
-        log_format: LogFormat::default(),
-    };
-
-    assert!(
-        mudd::boot(config).await.is_err(),
-        "duplicate tenant_tag must fail boot"
     );
 }
