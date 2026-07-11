@@ -43,7 +43,6 @@ pub fn ensure_tenant_dir(dir: &Path, name: &TenantName) -> anyhow::Result<Scaffo
     let region_dir = dir.join("world").join("start");
     std::fs::create_dir_all(&region_dir)
         .with_context(|| format!("creating tenant world dir {}", region_dir.display()))?;
-    write_new(&dir.join("config.toml"), "start_room = \"start\"\n")?;
     write_new(
         &dir.join("welcome.kdl"),
         &format!("banner \"Welcome to {name}.\"\n"),
@@ -56,6 +55,11 @@ pub fn ensure_tenant_dir(dir: &Path, name: &TenantName) -> anyhow::Result<Scaffo
         &region_dir.join("start.kdl"),
         "room \"start\" {\n    title \"Start\"\n    description \"A quiet starting room. Edit world/start/start.kdl to begin building.\"\n}\n",
     )?;
+    // config.toml is written last: its presence is what ensure_tenant_dir
+    // reads to decide a folder is a complete tenant. Writing it only after
+    // the world files means an interrupted scaffold leaves no config.toml,
+    // so the next call rejects the half-formed folder instead of registering it.
+    write_new(&dir.join("config.toml"), "start_room = \"start\"\n")?;
     Ok(Scaffolded::Created)
 }
 
