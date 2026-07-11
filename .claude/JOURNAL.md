@@ -1544,3 +1544,17 @@ truth when this log drifts.
 - **Done:** reordered `docs/mkdocs.yml` nav so `Architecture` (technical deep-dive) is last, after `Playing`/`Building`/`Operating` (the three audience sections) instead of right after `Home`. Reworded the one milestone-jargon reference (`architecture/sessions.md`: "does not echo in M1" → "does not currently echo") and one future-tense phrasing (`index.md`: "don't yet see it rendered" → "don't currently see it rendered"). Reworded an aspirational promise in `playing/getting-started.md` ("echo suppression is coming in a later update" → "the server does not currently suppress echo") surfaced by the residual-aspirational grep sweep. Terminology sweep (puppet/character, tenant/world, direction set, heading case) found the existing usage already consistent — no further changes needed.
 - **Verify:** `uv run mkdocs build --strict` exit 0, zero warnings; all 5 architecture pages (`index`, `engine`, `sessions`, `rendering`, `i18n`) render a Mermaid diagram in `docs/site/architecture/**/index.html` (note: `architecture/index.md` builds to `architecture/index.html` directly, not a subdirectory — checked accordingly); `grep -rn "running-a-server.md" docs/docs` shows only the one `operating/`-relative reference.
 - **Next:** none — docs refactor complete; keep pages current in-PR per `CLAUDE.md` going forward.
+
+## 2026-07-11 — Tenant catalogue + mudd subcommand CLI (M1-24)
+
+- **Spec:** §3.11.3; docs/superpowers/specs/2026-07-11-tenant-catalog-cli-design.md
+- **Done:** `tenant_tag` removed from tenant config (runtime tag now rides
+  `TenantEntry`, assigned by the new `catalog.toml` next to the server
+  config); `mudd` restructured into `serve` + `tenant add/remove/list`
+  subcommands (bare `mudd` = help, `--config` global); server config gained
+  `tenants_dir`/`bind`/`base_port`, lost `[[tenants]]`; `tenant add`
+  scaffolds a minimal bootable world.
+- **Verify:** `cargo test --workspace`, `cargo clippy --workspace
+  --all-targets`, `uv run mkdocs build --strict`; manual `tenant
+  add`/`list`/bare-`mudd` smoke test.
+- **Next:** none — catalogue and CLI are complete per the design doc.

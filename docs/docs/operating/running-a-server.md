@@ -8,16 +8,31 @@ tenants, and keep the process running in production.
 
 ## Quick start
 
-The fastest way to get a single world online is to point `mudd` at a tenant
-directory:
+Register a tenant, then serve:
 
 ```
-mudd --tenant-dir /path/to/tenant
+mudd tenant add mygame
+mudd serve
+```
+
+`tenant add` scaffolds a minimal bootable world under the tenants directory
+(see [Configuration](configuration.md)) and assigns the tenant a port
+(starting at 4000) — the moment it finishes, `mudd serve` boots the tenant
+and a player can connect. Manage the registry with `mudd tenant list` and
+`mudd tenant remove <name>` (add `--purge` to also delete the folder;
+without it, the folder and its database stay on disk).
+
+For a one-off world in a specific folder, bypass the catalogue:
+
+```
+mudd serve --tenant-dir /path/to/tenant
 ```
 
 This serves that tenant over telnet on `127.0.0.1:4000`. The tenant directory
 holds the world's `config.toml`, its `world/` room files, and its welcome
 banner — see [World files](../building/world-files.md).
+
+Running `mudd` with no subcommand prints the available commands.
 
 See [Configuration](configuration.md) for every setting.
 
@@ -39,7 +54,7 @@ Description=Ferrodun MUD server
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/mudd
+ExecStart=/usr/local/bin/mudd serve
 Restart=on-failure
 RestartSec=2
 # A persistent fault (e.g. a full disk) must not crash-loop forever:

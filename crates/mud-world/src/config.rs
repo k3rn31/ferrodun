@@ -10,7 +10,6 @@ use std::path::{Component, Path, PathBuf};
 
 use figment::Figment;
 use figment::providers::{Format, Toml};
-use mud_core::TenantTag;
 use mud_i18n::Locale;
 use serde::Deserialize;
 
@@ -31,11 +30,6 @@ pub struct TenantConfig {
     #[serde(default = "default_palette")]
     palette: PathBuf,
     start_room: String,
-    /// The raw 12-bit tenant tag (§3.11). Validated against `TenantTag::MAX` at
-    /// [`load`](TenantConfig::load); use [`tenant_tag`](TenantConfig::tenant_tag)
-    /// to get the typed value.
-    #[serde(default)]
-    tenant_tag: u16,
     /// The tenant's rendering locale (§3.14.6).
     #[serde(default = "default_locale")]
     locale: String,
@@ -83,10 +77,8 @@ impl TenantConfig {
     /// # Errors
     ///
     /// Returns [`WorldError::Config`] if the file is missing, malformed, or omits
-    /// a required field (`start_room`), [`WorldError::EscapingPath`] if the
-    /// configured `banner` path would escape the tenant directory, or
-    /// [`WorldError::TenantTagOutOfRange`] if `tenant_tag` exceeds
-    /// `TenantTag::MAX`.
+    /// a required field (`start_room`), or [`WorldError::EscapingPath`] if the
+    /// configured `banner` path would escape the tenant directory.
     pub fn load(tenant_dir: impl AsRef<Path>) -> Result<Self, WorldError> {
         let tenant_dir = tenant_dir.as_ref();
         let mut config: TenantConfig = Figment::new()
@@ -95,8 +87,6 @@ impl TenantConfig {
             .map_err(|error| WorldError::Config(Box::new(error)))?;
         ensure_contained("banner", &config.banner)?;
         ensure_contained("palette", &config.palette)?;
-        let _: TenantTag = TenantTag::try_from(config.tenant_tag)
-            .map_err(|_| WorldError::TenantTagOutOfRange(config.tenant_tag))?;
         config.tenant_dir = tenant_dir.to_path_buf();
         Ok(config)
     }
@@ -124,13 +114,6 @@ impl TenantConfig {
     #[must_use]
     pub fn world_dir(&self) -> PathBuf {
         self.tenant_dir.join(WORLD_SUBDIR)
-    }
-
-    /// The tenant's identity tag (§3.11).
-    pub fn tenant_tag(&self) -> TenantTag {
-        // load() rejects values > TenantTag::MAX, so try_from always succeeds;
-        // unwrap_or_default (tenant 0) is a defensive floor, never taken here.
-        TenantTag::try_from(self.tenant_tag).unwrap_or_default()
     }
 
     /// The tenant's rendering locale (§3.14.6).
@@ -221,45 +204,40 @@ mod tests {
     }
 
     #[test]
-    fn tenant_tag_and_locale_are_exposed() {
+    fn locale_is_exposed() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(
                 "config.toml",
-                "start_room = \"town_square\"\ntenant_tag = 3\nlocale = \"fr\"",
+                "start_room = \"town_square\"\nlocale = \"fr\"",
             )?;
             let config = TenantConfig::load(jail.directory()).expect("config loads");
 
-            assert_eq!(config.tenant_tag(), TenantTag::new(3).expect("in range"));
             assert_eq!(config.locale().as_str(), "fr");
             Ok(())
         });
     }
 
     #[test]
-    fn tenant_tag_and_locale_default_when_absent() {
+    fn locale_defaults_when_absent() {
         figment::Jail::expect_with(|jail| {
             jail.create_file("config.toml", "start_room = \"town_square\"")?;
             let config = TenantConfig::load(jail.directory()).expect("config loads");
 
-            assert_eq!(config.tenant_tag(), TenantTag::default());
             assert_eq!(config.locale().as_str(), "en");
             Ok(())
         });
     }
 
     #[test]
-    fn an_out_of_range_tenant_tag_is_rejected() {
+    fn a_stale_tenant_tag_key_is_ignored() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(
                 "config.toml",
-                "start_room = \"town_square\"\ntenant_tag = 5000",
+                "start_room = \"town_square\"\ntenant_tag = 3",
             )?;
-            let error = TenantConfig::load(jail.directory());
+            let config = TenantConfig::load(jail.directory()).expect("config loads");
 
-            assert!(
-                matches!(error, Err(WorldError::TenantTagOutOfRange(5000))),
-                "an out-of-range tenant_tag must be rejected, got {error:?}"
-            );
+            assert_eq!(config.start_room(), "town_square");
             Ok(())
         });
     }

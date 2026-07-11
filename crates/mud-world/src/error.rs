@@ -173,8 +173,4 @@ pub enum WorldError {
         /// The unknown color name.
         value: String,
     },
-
-    /// A configured `tenant_tag` exceeds the 12-bit maximum (`TenantTag::MAX`).
-    #[error("tenant_tag {0} exceeds the maximum of 4095")]
-    TenantTagOutOfRange(u16),
 }
