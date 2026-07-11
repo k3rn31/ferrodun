@@ -771,6 +771,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-tenant-catalogue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The tenant catalogue
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#per-tenant-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1052,6 +1063,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-tenant-catalogue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The tenant catalogue
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#per-tenant-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1083,24 +1105,19 @@
 
 
 <h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
-<p>The full key reference for <code>mudd</code>'s server-wide config file and each
-tenant's <code>config.toml</code>.</p>
+<p>The full key reference for <code>mudd</code>'s server-wide config file, the tenant
+catalogue, and each tenant's <code>config.toml</code>.</p>
 <h2 id="server-wide-configuration">Server-wide configuration<a class="headerlink" href="#server-wide-configuration" title="Permanent link">&para;</a></h2>
 <p><code>mudd</code> reads a server-wide configuration file from
 <code>$XDG_CONFIG_HOME/ferrodun/config.toml</code> (by default
-<code>~/.config/ferrodun/config.toml</code>). Override the location with <code>--config</code>. Every
-key is optional:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">rate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="w">          </span><span class="c1"># per-session sustained commands/second</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">burst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">20</span><span class="w">         </span><span class="c1"># per-session burst allowance</span>
+<code>~/.config/ferrodun/config.toml</code>). Override the location with the global
+<code>--config</code> flag. Every key is optional:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">rate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="w">           </span><span class="c1"># per-session sustained commands/second</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">burst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">20</span><span class="w">          </span><span class="c1"># per-session burst allowance</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">log_format</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;text&quot;</span><span class="w"> </span><span class="c1"># log wire format: &quot;text&quot; (default) or &quot;json&quot;</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">[[tenants]]</span><span class="w">      </span><span class="c1"># the tenant registry: one block per tenant</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/srv/ferrodun/tenants/midgard&quot;</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">listen</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;127.0.0.1:4000&quot;</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="k">[[tenants]]</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/srv/ferrodun/tenants/asgard&quot;</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">listen</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;127.0.0.1:4001&quot;</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">bind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;127.0.0.1&quot;</span><span class="w">  </span><span class="c1"># host address every tenant listener binds to</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">base_port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4000</span><span class="w">    </span><span class="c1"># lowest port the catalogue may assign</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">tenants_dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/srv/ferrodun/tenants&quot;</span><span class="w"> </span><span class="c1"># root holding one folder per tenant</span>
 </code></pre></div>
 <table>
 <thead>
@@ -1127,16 +1144,22 @@ key is optional:</p>
 <td>Log wire format: <code>text</code> or <code>json</code>. Also settable via <code>--log-format</code> or <code>MUDD_LOG_FORMAT</code>.</td>
 </tr>
 <tr>
-<td><code>[[tenants]]</code></td>
-<td>—</td>
-<td>The tenant registry: one block per tenant, each with <code>dir</code> and <code>listen</code>.</td>
+<td><code>bind</code></td>
+<td><code>127.0.0.1</code></td>
+<td>Host address every tenant listener binds to. Set <code>0.0.0.0</code> to expose publicly.</td>
+</tr>
+<tr>
+<td><code>base_port</code></td>
+<td><code>4000</code></td>
+<td>Lowest port <code>mudd tenant add</code> may assign.</td>
+</tr>
+<tr>
+<td><code>tenants_dir</code></td>
+<td><code>$XDG_DATA_HOME/ferrodun/tenants</code></td>
+<td>Root directory holding one folder per tenant, named after it.</td>
 </tr>
 </tbody>
 </table>
-<p>Each tenant is an isolated stack — its own database, its own world, its own
-listener. Listen addresses must be distinct, and each tenant's <code>config.toml</code>
-must carry a <code>tenant_tag</code> that is unique across the registry; <code>mudd</code> refuses to
-start otherwise.</p>
 <p>Configuration is layered, weakest first:</p>
 <ol>
 <li>built-in defaults,</li>
@@ -1144,12 +1167,33 @@ start otherwise.</p>
 <li><code>MUDD_*</code> environment variables (e.g. <code>MUDD_RATE=5</code>),</li>
 <li>command-line flags.</li>
 </ol>
-<p><code>--tenant-dir</code> replaces the whole registry with a single tenant, listening on
-<code>--listen</code> (default <code>127.0.0.1:4000</code>).</p>
+<h2 id="the-tenant-catalogue">The tenant catalogue<a class="headerlink" href="#the-tenant-catalogue" title="Permanent link">&para;</a></h2>
+<p>The tenant registry lives in <code>catalog.toml</code>, a sibling of the server config
+file. It is <strong>machine-managed</strong>: <code>mudd tenant add</code> and <code>mudd tenant remove</code>
+are its writers, and there are no environment or flag overrides for its
+contents. Each entry records the tenant's name and its assigned values:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">[[tenants]]</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;midgard&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4000</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">tag</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+</code></pre></div>
+<ul>
+<li>The tenant's directory is always <code>&lt;tenants_dir&gt;/&lt;name&gt;</code> — no path is
+  stored.</li>
+<li><code>port</code> is assigned by <code>mudd tenant add</code>: the lowest free port at or above
+  <code>base_port</code>. Ports freed by <code>mudd tenant remove</code> are reused.</li>
+<li><code>tag</code> is the runtime tenant tag stamped into the tenant's entity ids
+  (12-bit, <code>1..=4095</code>; <code>0</code> is reserved for <code>--tenant-dir</code> dev mode).
+  Assigned lowest-free, reused after removal.</li>
+</ul>
+<p>Hand-edits are validated when the file loads: names, ports, and tags must
+be unique, and tags must be in range. See
+<a href="../running-a-server/">Running a server</a> for the <code>mudd tenant</code> commands.</p>
 <h2 id="per-tenant-configuration">Per-tenant configuration<a class="headerlink" href="#per-tenant-configuration" title="Permanent link">&para;</a></h2>
-<p>Inside a tenant directory, <code>config.toml</code> describes that one world. There is
-no environment-variable override for these keys — the file is the sole
-source of a tenant's configuration.</p>
+<p>Inside a tenant directory, <code>config.toml</code> describes that one world. It is
+builder content only — no ports, no tags. There is no environment-variable
+override for these keys — the file is the sole source of a tenant's
+configuration.</p>
 <table>
 <thead>
 <tr>
@@ -1165,12 +1209,6 @@ source of a tenant's configuration.</p>
 <td>yes</td>
 <td>—</td>
 <td>Slug of the room new characters begin in.</td>
-</tr>
-<tr>
-<td><code>tenant_tag</code></td>
-<td>no</td>
-<td><code>0</code></td>
-<td>Identity of this tenant, unique across the registry.</td>
 </tr>
 <tr>
 <td><code>locale</code></td>

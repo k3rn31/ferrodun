@@ -1112,13 +1112,23 @@ tenants, and keep the process running in production.</p>
 <p>Linux is the only supported deployment target for now.</p>
 </div>
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
-<p>The fastest way to get a single world online is to point <code>mudd</code> at a tenant
-directory:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mudd --tenant-dir /path/to/tenant
+<p>Register a tenant, then serve:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mudd tenant add mygame
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>mudd serve
+</code></pre></div>
+<p><code>tenant add</code> scaffolds a minimal bootable world under the tenants directory
+(see <a href="../configuration/">Configuration</a>) and assigns the tenant a port
+(starting at 4000) — the moment it finishes, <code>mudd serve</code> boots the tenant
+and a player can connect. Manage the registry with <code>mudd tenant list</code> and
+<code>mudd tenant remove &lt;name&gt;</code> (add <code>--purge</code> to also delete the folder;
+without it, the folder and its database stay on disk).</p>
+<p>For a one-off world in a specific folder, bypass the catalogue:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>mudd serve --tenant-dir /path/to/tenant
 </code></pre></div>
 <p>This serves that tenant over telnet on <code>127.0.0.1:4000</code>. The tenant directory
 holds the world's <code>config.toml</code>, its <code>world/</code> room files, and its welcome
 banner — see <a href="../../building/world-files/">World files</a>.</p>
+<p>Running <code>mudd</code> with no subcommand prints the available commands.</p>
 <p>See <a href="../configuration/">Configuration</a> for every setting.</p>
 <h2 id="running-under-a-supervisor">Running under a supervisor<a class="headerlink" href="#running-under-a-supervisor" title="Permanent link">&para;</a></h2>
 <p><code>mudd</code> is <strong>fail-stop</strong> by design: on an unrecoverable error — a database write
@@ -1128,21 +1138,21 @@ durable state lives in the database, and the in-memory world is rebuilt from it
 at boot, so the recovery mechanism is simply <em>restart the process</em>. Run <code>mudd</code>
 under a supervisor that does this for you.</p>
 <p>A minimal systemd unit:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># /etc/systemd/system/ferrodun.service</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">[Unit]</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="na">Description</span><span class="o">=</span><span class="s">Ferrodun MUD server</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">[Service]</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/local/bin/mudd</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="na">Restart</span><span class="o">=</span><span class="s">on-failure</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="na">RestartSec</span><span class="o">=</span><span class="s">2</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># A persistent fault (e.g. a full disk) must not crash-loop forever:</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="na">StartLimitIntervalSec</span><span class="o">=</span><span class="s">60</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="na">StartLimitBurst</span><span class="o">=</span><span class="s">5</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="k">[Install]</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># /etc/systemd/system/ferrodun.service</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">[Unit]</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="na">Description</span><span class="o">=</span><span class="s">Ferrodun MUD server</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">[Service]</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/local/bin/mudd serve</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="na">Restart</span><span class="o">=</span><span class="s">on-failure</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="na">RestartSec</span><span class="o">=</span><span class="s">2</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># A persistent fault (e.g. a full disk) must not crash-loop forever:</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="na">StartLimitIntervalSec</span><span class="o">=</span><span class="s">60</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="na">StartLimitBurst</span><span class="o">=</span><span class="s">5</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="k">[Install]</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
 </code></pre></div>
 <p>Under a container runtime, use an equivalent restart policy — <code>restart:
 on-failure</code> in Compose, or the platform's on-failure restart setting.</p>
