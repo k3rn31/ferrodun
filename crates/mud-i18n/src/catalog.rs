@@ -42,10 +42,10 @@ impl Catalog {
     /// The process-wide built-in `en` catalog (§3.14.2.1).
     ///
     /// Holds the engine-emitted `en` strings for the M1-17 built-in commands
-    /// (§3.14.6.2 requires every `t!`-referenced `en` key to exist). Keys not
-    /// listed here still fall through to the literal key (§3.14.4.3) — the
-    /// M1-16 pipeline `command.*` outcomes remain literal for now. M2-I replaces
-    /// this hand-built table with Fluent bundles without changing the contract.
+    /// and the M1-16 pipeline `command.*` outcomes (§3.14.6.2 requires every
+    /// `t!`-referenced `en` key to exist). Keys not listed here still fall
+    /// through to the literal key (§3.14.4.3). M2-I replaces this hand-built
+    /// table with Fluent bundles without changing the contract.
     pub fn builtin() -> &'static Self {
         static BUILTIN: OnceLock<Catalog> = OnceLock::new();
         BUILTIN.get_or_init(builtin_en)
@@ -84,6 +84,12 @@ const ENTRIES: &[(&str, &str)] = &[
     ("object.ambiguous", "Which do you mean? { $options }"),
     // content cap (§3.6.4)
     ("content.too-long", "Your message is too long."),
+    // command pipeline outcomes (§2.7 steps 5–6)
+    ("command.not-found", "Unrecognized command. Type 'help'."),
+    ("command.ambiguous", "Which do you mean? { $options }"),
+    ("command.bad-switch", "Invalid switch: { $reason }."),
+    ("command.unbound", "That command isn't available right now."),
+    ("command.denied", "You can't do that."),
     // session FSM (§3.19.1)
     (
         "session.prompt",
@@ -173,7 +179,7 @@ mod tests {
         // ...while an unlisted key still misses, falling through to the literal
         // key at the translate boundary (§3.14.4.3).
         assert_eq!(
-            Catalog::builtin().lookup(&Locale::EN, &MessageKey::from_static("command.not-found")),
+            Catalog::builtin().lookup(&Locale::EN, &MessageKey::from_static("engine.boot")),
             None
         );
     }
@@ -206,6 +212,25 @@ mod tests {
                     .lookup(&Locale::EN, &MessageKey::from_static(key))
                     .is_some(),
                 "missing session key: {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_builtin_catalog_holds_the_command_pipeline_keys() {
+        let catalog = Catalog::builtin();
+        for key in [
+            "command.not-found",
+            "command.ambiguous",
+            "command.bad-switch",
+            "command.unbound",
+            "command.denied",
+        ] {
+            assert!(
+                catalog
+                    .lookup(&Locale::EN, &MessageKey::from_static(key))
+                    .is_some(),
+                "missing command pipeline key: {key}"
             );
         }
     }

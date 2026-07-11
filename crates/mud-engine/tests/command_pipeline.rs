@@ -259,7 +259,7 @@ fn the_puppet_alias_survives_the_merge_but_the_locations_does_not() {
         .dispatch(&world, &NoPlaces, &resolver, &input("q"))
         .expect("dispatch succeeds")
         .outputs;
-    assert_eq!(only_line(&dropped), "command.not-found");
+    assert_eq!(only_line(&dropped), "Unrecognized command. Type 'help'.");
     assert_eq!(look.runs(), 1, "only the alias hit runs the handler");
 }
 
@@ -279,7 +279,7 @@ fn an_unknown_command_reports_not_found_and_runs_nothing() {
         .expect("dispatch succeeds")
         .outputs;
 
-    assert_eq!(only_line(&outputs), "command.not-found");
+    assert_eq!(only_line(&outputs), "Unrecognized command. Type 'help'.");
     assert_eq!(look.runs(), 0);
 }
 
@@ -288,16 +288,15 @@ fn an_ambiguous_prefix_reports_ambiguity() {
     let (world, resolver) = fixture(LockContext::new());
     let mut pipeline = Pipeline::new(Dispatcher::new());
 
-    // `s` prefixes both `say` and `score`. The candidate list is threaded to the
-    // `t!` seam as `options`, but `command.ambiguous` is not in the builtin
-    // catalog (only the M1-17 command bodies' keys are), so the message renders
-    // as its literal key; surfacing the candidates is a M2 catalog concern.
+    // `s` prefixes `say` and `score` (location layer) and `smite` (puppet
+    // layer). The merged table lists commands in canonical-name order, so the
+    // candidate list rendered through `command.ambiguous` is deterministic.
     let outputs = pipeline
         .dispatch(&world, &NoPlaces, &resolver, &input("s"))
         .expect("dispatch succeeds")
         .outputs;
 
-    assert_eq!(only_line(&outputs), "command.ambiguous");
+    assert_eq!(only_line(&outputs), "Which do you mean? say, score, smite");
 }
 
 #[test]
@@ -310,7 +309,10 @@ fn a_malformed_switch_reports_a_bad_switch() {
         .expect("dispatch succeeds")
         .outputs;
 
-    assert_eq!(only_line(&outputs), "command.bad-switch");
+    assert_eq!(
+        only_line(&outputs),
+        "Invalid switch: switch must not be empty."
+    );
 }
 
 #[test]
@@ -337,7 +339,10 @@ fn a_matched_but_unbound_command_reports_generically() {
         .expect("dispatch succeeds")
         .outputs;
 
-    assert_eq!(only_line(&outputs), "command.unbound");
+    assert_eq!(
+        only_line(&outputs),
+        "That command isn't available right now."
+    );
 }
 
 #[test]
@@ -356,7 +361,7 @@ fn a_lock_denies_a_caller_without_permission() {
         .expect("dispatch succeeds")
         .outputs;
 
-    assert_eq!(only_line(&outputs), "command.denied");
+    assert_eq!(only_line(&outputs), "You can't do that.");
     assert_eq!(smite.runs(), 0, "the gated handler must not run");
 }
 
@@ -419,8 +424,11 @@ fn each_run_mints_a_distinct_command_id() {
         .expect("second dispatch")
         .outputs;
 
-    assert_eq!(only_line(&first), "command.unbound");
-    assert_eq!(only_line(&second), "command.unbound");
+    assert_eq!(only_line(&first), "That command isn't available right now.");
+    assert_eq!(
+        only_line(&second),
+        "That command isn't available right now."
+    );
 }
 
 /// A handler that returns a `MoveTo` effect for the caller, to prove the

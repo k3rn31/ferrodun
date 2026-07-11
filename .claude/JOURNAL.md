@@ -1558,3 +1558,10 @@ truth when this log drifts.
   --all-targets`, `uv run mkdocs build --strict`; manual `tenant
   add`/`list`/bare-`mudd` smoke test.
 - **Next:** none — catalogue and CLI are complete per the design doc.
+
+## 2026-07-11 — command.* pipeline keys get en templates
+
+- **Spec:** §3.14.6.2 — every `t!`-referenced key MUST exist in `en`; §3.14.4.3 fallback was leaking literal keys to players
+- **Done:** added `command.not-found` / `.ambiguous` / `.bad-switch` / `.unbound` / `.denied` en templates to the builtin catalog; updated the 8 integration-test assertions that pinned the literal keys; misclassified missing-key WARN gone as a side effect
+- **Verify:** `cargo test --workspace`, `cargo clippy --workspace --all-targets` clean
+- **Next:** load-time §3.14.6.2 verification lands with M2-I (design: docs/superpowers/specs/2026-07-11-command-pipeline-i18n-templates-design.md)
