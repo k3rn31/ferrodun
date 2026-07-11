@@ -158,7 +158,10 @@ mod tests {
         assert_eq!(catalog.entries().len(), 1);
         assert!(settings.tenants_dir.join("mygame/config.toml").exists());
         let report = output_of(&out);
-        assert!(report.contains("mygame"), "report names the tenant: {report}");
+        assert!(
+            report.contains("mygame"),
+            "report names the tenant: {report}"
+        );
         assert!(report.contains("4000"), "report shows the port: {report}");
     }
 
@@ -169,7 +172,10 @@ mod tests {
         let mut out = Vec::new();
 
         assert!(add(&settings, "My Game", &mut out).is_err());
-        assert!(!settings.catalog_path.exists(), "catalogue must be untouched");
+        assert!(
+            !settings.catalog_path.exists(),
+            "catalogue must be untouched"
+        );
     }
 
     #[test]
@@ -234,7 +240,10 @@ mod tests {
 
         let catalog = Catalog::load(&settings.catalog_path).expect("catalog loads");
         assert!(catalog.entries().is_empty());
-        assert!(!settings.tenants_dir.join("mygame").exists(), "folder deleted");
+        assert!(
+            !settings.tenants_dir.join("mygame").exists(),
+            "folder deleted"
+        );
     }
 
     #[test]
@@ -249,8 +258,14 @@ mod tests {
         list(&settings, &mut listing).expect("list succeeds");
 
         let text = output_of(&listing);
-        assert!(text.contains("alpha") && text.contains("beta"), "both rows: {text}");
-        assert!(text.contains("4000") && text.contains("4001"), "ports shown: {text}");
+        assert!(
+            text.contains("alpha") && text.contains("beta"),
+            "both rows: {text}"
+        );
+        assert!(
+            text.contains("4000") && text.contains("4001"),
+            "ports shown: {text}"
+        );
     }
 
     #[test]

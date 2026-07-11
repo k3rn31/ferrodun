@@ -32,8 +32,8 @@ impl TenantName {
         let starts_alnum = chars
             .next()
             .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-        let rest_valid = chars
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+        let rest_valid =
+            chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
         if !(starts_alnum && rest_valid) {
             anyhow::bail!(
                 "invalid tenant name {value:?}: use lowercase letters, digits, `-`, `_`, starting with a letter or digit"
@@ -294,7 +294,11 @@ mod tests {
         catalog.remove(&name("a")).expect("remove a");
 
         let c = catalog.add(name("c"), 4000).expect("add c");
-        assert_eq!((c.port, c.tag), (4000, tag(1)), "freed port and tag are reused");
+        assert_eq!(
+            (c.port, c.tag),
+            (4000, tag(1)),
+            "freed port and tag are reused"
+        );
     }
 
     #[test]
@@ -356,7 +360,9 @@ mod tests {
                 tag: tag(1),
             }],
         };
-        catalog.save(&path).expect("saves into a fresh directory tree");
+        catalog
+            .save(&path)
+            .expect("saves into a fresh directory tree");
 
         let reloaded = Catalog::load(&path).expect("loads");
         assert_eq!(reloaded, catalog);
@@ -371,7 +377,10 @@ mod tests {
             "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 1\n\n[[tenants]]\nname = \"b\"\nport = 4000\ntag = 2\n",
         )
         .expect("write");
-        assert!(Catalog::load(&path).is_err(), "duplicate port must be rejected");
+        assert!(
+            Catalog::load(&path).is_err(),
+            "duplicate port must be rejected"
+        );
     }
 
     #[test]
@@ -383,26 +392,40 @@ mod tests {
             "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 1\n\n[[tenants]]\nname = \"a\"\nport = 4001\ntag = 2\n",
         )
         .expect("write");
-        assert!(Catalog::load(&path).is_err(), "duplicate name must be rejected");
+        assert!(
+            Catalog::load(&path).is_err(),
+            "duplicate name must be rejected"
+        );
 
         std::fs::write(
             &path,
             "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 1\n\n[[tenants]]\nname = \"b\"\nport = 4001\ntag = 1\n",
         )
         .expect("write");
-        assert!(Catalog::load(&path).is_err(), "duplicate tag must be rejected");
+        assert!(
+            Catalog::load(&path).is_err(),
+            "duplicate tag must be rejected"
+        );
     }
 
     #[test]
     fn out_of_range_tags_are_rejected() {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("catalog.toml");
-        std::fs::write(&path, "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 0\n")
-            .expect("write");
-        assert!(Catalog::load(&path).is_err(), "tag 0 is reserved for dev mode");
+        std::fs::write(&path, "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 0\n").expect("write");
+        assert!(
+            Catalog::load(&path).is_err(),
+            "tag 0 is reserved for dev mode"
+        );
 
-        std::fs::write(&path, "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 5000\n")
-            .expect("write");
-        assert!(Catalog::load(&path).is_err(), "tag above 4095 must be rejected");
+        std::fs::write(
+            &path,
+            "[[tenants]]\nname = \"a\"\nport = 4000\ntag = 5000\n",
+        )
+        .expect("write");
+        assert!(
+            Catalog::load(&path).is_err(),
+            "tag above 4095 must be rejected"
+        );
     }
 }

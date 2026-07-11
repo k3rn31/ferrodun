@@ -108,7 +108,10 @@ mod tests {
             config, "start_room = \"town_square\"\n",
             "existing files must never be overwritten"
         );
-        assert!(!dir.join("world").exists(), "no scaffold on an existing dir");
+        assert!(
+            !dir.join("world").exists(),
+            "no scaffold on an existing dir"
+        );
     }
 
     #[test]

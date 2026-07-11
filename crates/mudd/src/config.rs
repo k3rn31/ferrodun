@@ -383,9 +383,8 @@ log_format = "json"
             )?;
             jail.set_env("MUDD_BASE_PORT", "6000");
             let config_path = jail.directory().join("config.toml");
-            let settings =
-                Settings::resolve(Some(&config_path), &Overrides::default())
-                    .expect("settings resolve");
+            let settings = Settings::resolve(Some(&config_path), &Overrides::default())
+                .expect("settings resolve");
 
             assert_eq!(settings.bind, "0.0.0.0".parse::<IpAddr>().expect("ip"));
             assert_eq!(settings.base_port, 6000, "env overrides the file");
@@ -432,7 +431,10 @@ log_format = "json"
 
             let mut catalog = Catalog::default();
             catalog
-                .add(TenantName::parse("alpha").expect("slug"), settings.base_port)
+                .add(
+                    TenantName::parse("alpha").expect("slug"),
+                    settings.base_port,
+                )
                 .expect("add alpha");
             let tenants = tenants_from_catalog(&settings, &catalog).expect("mapping");
 
@@ -485,7 +487,12 @@ log_format = "json"
     #[test]
     fn serve_accepts_the_dev_flags() {
         let cli = Cli::try_parse_from([
-            "mudd", "serve", "--tenant-dir", "/t", "--listen", "127.0.0.1:5000",
+            "mudd",
+            "serve",
+            "--tenant-dir",
+            "/t",
+            "--listen",
+            "127.0.0.1:5000",
         ])
         .expect("serve flags parse");
         let Command::Serve(args) = cli.command else {
