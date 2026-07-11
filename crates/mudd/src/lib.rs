@@ -2,6 +2,7 @@
 //! multi-tenant boot entry point, exposed for integration tests.
 mod backend;
 pub mod boot;
+pub mod catalog;
 pub mod config;
 mod places;
 mod world_loop;
