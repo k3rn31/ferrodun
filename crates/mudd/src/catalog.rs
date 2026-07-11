@@ -187,6 +187,48 @@ impl Catalog {
     pub fn entries(&self) -> &[CatalogEntry] {
         &self.entries
     }
+
+    /// Registers `name`, assigning the lowest free port `>= base_port` and
+    /// the lowest free tag `>= 1`. Values freed by [`remove`](Catalog::remove)
+    /// are reused.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the name is already registered, or if the port or
+    /// tag space is exhausted.
+    pub fn add(&mut self, name: TenantName, base_port: u16) -> anyhow::Result<CatalogEntry> {
+        if self.entries.iter().any(|entry| entry.name == name) {
+            anyhow::bail!("tenant {name} is already registered");
+        }
+        let used_ports: HashSet<u16> = self.entries.iter().map(|entry| entry.port).collect();
+        let port = (base_port..=u16::MAX)
+            .find(|candidate| !used_ports.contains(candidate))
+            .ok_or_else(|| anyhow::anyhow!("no free port at or above {base_port}"))?;
+        let used_tags: HashSet<TenantTag> = self.entries.iter().map(|entry| entry.tag).collect();
+        let tag = (1..=TenantTag::MAX)
+            .filter_map(|candidate| TenantTag::new(candidate).ok())
+            .find(|candidate| !used_tags.contains(candidate))
+            .ok_or_else(|| anyhow::anyhow!("all {} tenant tags are in use", TenantTag::MAX))?;
+
+        let entry = CatalogEntry { name, port, tag };
+        self.entries.push(entry.clone());
+        Ok(entry)
+    }
+
+    /// Deregisters `name`, freeing its port and tag for reuse, and returns
+    /// the removed entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no tenant with that name is registered.
+    pub fn remove(&mut self, name: &TenantName) -> anyhow::Result<CatalogEntry> {
+        let index = self
+            .entries
+            .iter()
+            .position(|entry| &entry.name == name)
+            .ok_or_else(|| anyhow::anyhow!("no tenant named {name} is registered"))?;
+        Ok(self.entries.remove(index))
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +263,53 @@ mod tests {
 
     fn tag(value: u16) -> TenantTag {
         TenantTag::new(value).expect("test tag is in range")
+    }
+
+    fn name(value: &str) -> TenantName {
+        TenantName::parse(value).expect("valid test slug")
+    }
+
+    #[test]
+    fn add_assigns_sequential_ports_and_tags() {
+        let mut catalog = Catalog::default();
+        let a = catalog.add(name("a"), 4000).expect("add a");
+        let b = catalog.add(name("b"), 4000).expect("add b");
+
+        assert_eq!((a.port, a.tag), (4000, tag(1)));
+        assert_eq!((b.port, b.tag), (4001, tag(2)));
+    }
+
+    #[test]
+    fn removed_values_are_reused() {
+        let mut catalog = Catalog::default();
+        catalog.add(name("a"), 4000).expect("add a");
+        catalog.add(name("b"), 4000).expect("add b");
+        catalog.remove(&name("a")).expect("remove a");
+
+        let c = catalog.add(name("c"), 4000).expect("add c");
+        assert_eq!((c.port, c.tag), (4000, tag(1)), "freed port and tag are reused");
+    }
+
+    #[test]
+    fn a_duplicate_name_is_rejected() {
+        let mut catalog = Catalog::default();
+        catalog.add(name("a"), 4000).expect("add a");
+        assert!(catalog.add(name("a"), 4000).is_err());
+    }
+
+    #[test]
+    fn removing_an_unknown_name_is_an_error() {
+        let mut catalog = Catalog::default();
+        assert!(catalog.remove(&name("ghost")).is_err());
+    }
+
+    #[test]
+    fn remove_returns_the_entry() {
+        let mut catalog = Catalog::default();
+        catalog.add(name("a"), 4000).expect("add a");
+        let removed = catalog.remove(&name("a")).expect("remove a");
+        assert_eq!((removed.port, removed.tag), (4000, tag(1)));
+        assert!(catalog.entries().is_empty());
     }
 
     #[test]
