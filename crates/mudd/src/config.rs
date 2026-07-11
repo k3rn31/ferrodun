@@ -7,15 +7,17 @@
 //! `$HOME/.config/ferrodun/config.toml`; Linux is the only supported target).
 
 use std::collections::HashSet;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
 use mud_core::TenantTag;
 use mud_net::{Burst, SustainedRate};
 use serde::{Deserialize, Serialize};
+
+use crate::catalog::Catalog;
 
 /// Default telnet listen address for `--tenant-dir` mode.
 const DEFAULT_LISTEN: SocketAddr =
@@ -131,7 +133,7 @@ impl ServerConfig {
     /// the resulting tenant registry is empty and `--tenant-dir` was not
     /// given, or if two tenants share a listen address.
     pub fn resolve(cli: &Cli) -> anyhow::Result<ServerConfig> {
-        let config_path = config_file_path(cli)?;
+        let config_path = cli.config.clone().map_or_else(default_config_path, Ok)?;
 
         let raw: RawServerConfig = Figment::from(Serialized::defaults(RawServerConfig::default()))
             .merge(Toml::file(config_path))
@@ -190,14 +192,11 @@ impl ServerConfig {
     }
 }
 
-/// Resolves the server config file path: `--config` if given, else the
-/// XDG-standard `ferrodun/config.toml` under `$XDG_CONFIG_HOME` (or
-/// `$HOME/.config`).
-fn config_file_path(cli: &Cli) -> anyhow::Result<PathBuf> {
-    if let Some(path) = &cli.config {
-        return Ok(path.clone());
-    }
-
+/// Resolves the default server config file path: the XDG-standard
+/// `ferrodun/config.toml` under `$XDG_CONFIG_HOME` (or `$HOME/.config`).
+/// Callers that support a `--config` flag should short-circuit to it before
+/// falling back to this.
+fn default_config_path() -> anyhow::Result<PathBuf> {
     let config_home = match std::env::var("XDG_CONFIG_HOME") {
         Ok(value) => PathBuf::from(value),
         Err(_) => {
@@ -208,6 +207,150 @@ fn config_file_path(cli: &Cli) -> anyhow::Result<PathBuf> {
     };
 
     Ok(config_home.join("ferrodun").join("config.toml"))
+}
+
+/// Server-wide runtime config keys for the catalogue-era subcommand CLI:
+/// tenant registry root, listener bind address, and where the tenant
+/// catalogue lives. `MUDD_`-prefixed env vars override the config file;
+/// [`Overrides`] (parsed from flags) override the environment.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Settings {
+    pub rate: SustainedRate,
+    pub burst: Burst,
+    pub log_format: LogFormat,
+    pub tenants_dir: PathBuf,
+    pub bind: IpAddr,
+    pub base_port: u16,
+    pub catalog_path: PathBuf,
+}
+
+/// Flag-level overrides for [`Settings::resolve`]; each field beats both the
+/// config file and the environment when set.
+#[derive(Debug, Clone, Default)]
+pub struct Overrides {
+    pub rate: Option<NonZeroU32>,
+    pub burst: Option<NonZeroU32>,
+    pub log_format: Option<LogFormat>,
+}
+
+/// Untyped shape extracted from figment before conversion to typed values.
+#[derive(Debug, Serialize, Deserialize)]
+struct RawSettings {
+    #[serde(default = "default_rate")]
+    rate: NonZeroU32,
+    #[serde(default = "default_burst")]
+    burst: NonZeroU32,
+    #[serde(default)]
+    log_format: LogFormat,
+    tenants_dir: Option<PathBuf>,
+    #[serde(default = "default_bind")]
+    bind: IpAddr,
+    #[serde(default = "default_base_port")]
+    base_port: u16,
+}
+
+impl Default for RawSettings {
+    fn default() -> Self {
+        RawSettings {
+            rate: default_rate(),
+            burst: default_burst(),
+            log_format: LogFormat::default(),
+            tenants_dir: None,
+            bind: default_bind(),
+            base_port: default_base_port(),
+        }
+    }
+}
+
+/// Default listener host: loopback, so a fresh install is never publicly
+/// exposed by accident.
+fn default_bind() -> IpAddr {
+    IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+}
+
+/// Default lowest assignable tenant port.
+fn default_base_port() -> u16 {
+    4000
+}
+
+impl Settings {
+    /// Resolves settings (built-in defaults < `config.toml` < `MUDD_`-prefixed
+    /// env < `overrides`). `config` overrides the XDG config-file location;
+    /// `None` uses the XDG default.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config file is unreadable or malformed, or if
+    /// neither `XDG_DATA_HOME` nor `HOME` is set and the default tenants
+    /// directory is needed.
+    pub fn resolve(config: Option<&Path>, overrides: &Overrides) -> anyhow::Result<Settings> {
+        let config_path = match config {
+            Some(path) => path.to_path_buf(),
+            None => default_config_path()?,
+        };
+        let raw: RawSettings = Figment::from(Serialized::defaults(RawSettings::default()))
+            .merge(Toml::file(&config_path))
+            .merge(Env::prefixed("MUDD_"))
+            .extract()?;
+
+        let tenants_dir = match raw.tenants_dir {
+            Some(dir) => dir,
+            None => default_tenants_dir()?,
+        };
+        let catalog_path = config_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("catalog.toml");
+
+        Ok(Settings {
+            rate: SustainedRate::new(overrides.rate.unwrap_or(raw.rate)),
+            burst: Burst::new(overrides.burst.unwrap_or(raw.burst)),
+            log_format: overrides.log_format.unwrap_or(raw.log_format),
+            tenants_dir,
+            bind: raw.bind,
+            base_port: raw.base_port,
+            catalog_path,
+        })
+    }
+}
+
+/// Maps the tenant catalogue onto [`TenantEntry`] values ready to boot:
+/// each entry's folder under `tenants_dir`, its listen address (`bind` +
+/// its assigned port), and its runtime tag.
+///
+/// # Errors
+///
+/// Returns an error if the catalogue is empty — nothing to serve.
+pub fn tenants_from_catalog(
+    settings: &Settings,
+    catalog: &Catalog,
+) -> anyhow::Result<Vec<TenantEntry>> {
+    if catalog.entries().is_empty() {
+        anyhow::bail!("no tenants registered: run `mudd tenant add <name>`");
+    }
+    Ok(catalog
+        .entries()
+        .iter()
+        .map(|entry| TenantEntry {
+            dir: settings.tenants_dir.join(entry.name.as_str()),
+            listen: SocketAddr::new(settings.bind, entry.port),
+            tag: entry.tag,
+        })
+        .collect())
+}
+
+/// XDG-standard tenants root: `$XDG_DATA_HOME/ferrodun/tenants`, falling
+/// back to `~/.local/share/ferrodun/tenants`.
+fn default_tenants_dir() -> anyhow::Result<PathBuf> {
+    let data_home = match std::env::var("XDG_DATA_HOME") {
+        Ok(value) => PathBuf::from(value),
+        Err(_) => {
+            let home = std::env::var("HOME")
+                .map_err(|_| anyhow::anyhow!("neither XDG_DATA_HOME nor HOME set"))?;
+            PathBuf::from(home).join(".local").join("share")
+        }
+    };
+    Ok(data_home.join("ferrodun").join("tenants"))
 }
 
 #[cfg(test)]
@@ -511,6 +654,131 @@ listen = "127.0.0.1:4001"
             };
 
             let result = ServerConfig::resolve(&cli);
+            assert!(result.is_err(), "expected an error, got {result:?}");
+            Ok(())
+        });
+    }
+
+    use std::net::IpAddr;
+
+    use crate::catalog::{Catalog, TenantName};
+
+    #[test]
+    fn settings_defaults_apply_when_the_config_file_is_absent() {
+        figment::Jail::expect_with(|jail| {
+            let home = jail.directory().to_path_buf();
+            jail.set_env("XDG_CONFIG_HOME", home.display());
+            jail.set_env("XDG_DATA_HOME", home.display());
+            let settings =
+                Settings::resolve(None, &Overrides::default()).expect("settings resolve");
+
+            assert_eq!(settings.rate, SustainedRate::DEFAULT);
+            assert_eq!(settings.burst, Burst::DEFAULT);
+            assert_eq!(settings.log_format, LogFormat::Text);
+            assert_eq!(
+                settings.tenants_dir,
+                jail.directory().join("ferrodun").join("tenants")
+            );
+            assert_eq!(settings.bind, "127.0.0.1".parse::<IpAddr>().expect("ip"));
+            assert_eq!(settings.base_port, 4000);
+            assert_eq!(
+                settings.catalog_path,
+                jail.directory().join("ferrodun").join("catalog.toml")
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn settings_read_the_file_and_env_overrides_it() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "config.toml",
+                r#"
+rate = 5
+bind = "0.0.0.0"
+base_port = 5000
+tenants_dir = "/srv/ferrodun/tenants"
+log_format = "json"
+"#,
+            )?;
+            jail.set_env("MUDD_BASE_PORT", "6000");
+            let config_path = jail.directory().join("config.toml");
+            let settings =
+                Settings::resolve(Some(&config_path), &Overrides::default())
+                    .expect("settings resolve");
+
+            assert_eq!(settings.bind, "0.0.0.0".parse::<IpAddr>().expect("ip"));
+            assert_eq!(settings.base_port, 6000, "env overrides the file");
+            assert_eq!(settings.tenants_dir, PathBuf::from("/srv/ferrodun/tenants"));
+            assert_eq!(settings.log_format, LogFormat::Json);
+            assert_eq!(
+                settings.catalog_path,
+                jail.directory().join("catalog.toml"),
+                "the catalogue sits beside the config file"
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn overrides_beat_file_and_env() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file("config.toml", "rate = 5")?;
+            jail.set_env("MUDD_RATE", "7");
+            let config_path = jail.directory().join("config.toml");
+            let overrides = Overrides {
+                rate: Some(NonZeroU32::new(9).expect("nonzero")),
+                ..Overrides::default()
+            };
+            let settings =
+                Settings::resolve(Some(&config_path), &overrides).expect("settings resolve");
+
+            assert_eq!(
+                settings.rate,
+                SustainedRate::new(NonZeroU32::new(9).expect("nonzero"))
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn the_catalog_maps_to_tenant_entries() {
+        figment::Jail::expect_with(|jail| {
+            let home = jail.directory().to_path_buf();
+            jail.set_env("XDG_CONFIG_HOME", home.display());
+            jail.set_env("XDG_DATA_HOME", home.display());
+            let settings =
+                Settings::resolve(None, &Overrides::default()).expect("settings resolve");
+
+            let mut catalog = Catalog::default();
+            catalog
+                .add(TenantName::parse("alpha").expect("slug"), settings.base_port)
+                .expect("add alpha");
+            let tenants = tenants_from_catalog(&settings, &catalog).expect("mapping");
+
+            assert_eq!(tenants.len(), 1);
+            let tenant = tenants.first().expect("one tenant");
+            assert_eq!(tenant.dir, settings.tenants_dir.join("alpha"));
+            assert_eq!(
+                tenant.listen,
+                "127.0.0.1:4000".parse().expect("socket addr")
+            );
+            assert_eq!(tenant.tag.get(), 1);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn an_empty_catalog_is_a_serve_error() {
+        figment::Jail::expect_with(|jail| {
+            let home = jail.directory().to_path_buf();
+            jail.set_env("XDG_CONFIG_HOME", home.display());
+            jail.set_env("XDG_DATA_HOME", home.display());
+            let settings =
+                Settings::resolve(None, &Overrides::default()).expect("settings resolve");
+
+            let result = tenants_from_catalog(&settings, &Catalog::default());
             assert!(result.is_err(), "expected an error, got {result:?}");
             Ok(())
         });

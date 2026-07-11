@@ -9,4 +9,6 @@ pub mod scaffold;
 mod world_loop;
 
 pub use boot::boot;
-pub use config::{Cli, LogFormat, ServerConfig, TenantEntry};
+pub use config::{
+    Cli, LogFormat, Overrides, ServerConfig, Settings, TenantEntry, tenants_from_catalog,
+};
