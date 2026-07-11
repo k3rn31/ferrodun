@@ -653,6 +653,21 @@ spine.
   World API (not just the arena). Locks parse + evaluate in at least one
   gated command.
   - *Spec:* §7.4 M1. *Verify:* this is the M1 gate — it must pass to claim M1.
+- **M1-24 — Tenant catalogue + `mudd` subcommand CLI.** Remove `tenant_tag`
+  from tenant `config.toml` (restoring M1-12's "content fields only"
+  contract); introduce the operator-side tenant catalogue (`catalog.toml`,
+  sibling of the server config) that assigns each tenant its port (lowest
+  free ≥ `base_port`, reused after removal) and its runtime tag (lowest
+  free ≥ 1; 0 stays the `--tenant-dir` dev tag); restructure `mudd` into
+  subcommands — `serve`, `tenant add/remove/list` — with bare `mudd`
+  printing help and `--config` global. `[[tenants]]` leaves the server
+  config in favor of the catalogue; new server keys `tenants_dir`, `bind`,
+  `base_port`. The duplicate-tag and duplicate-listen boot errors disappear
+  (uniqueness is the catalogue's invariant, by construction).
+  - *Spec:* §3.11.3; design doc
+    `docs/superpowers/specs/2026-07-11-tenant-catalog-cli-design.md`.
+    *Verify:* `mudd tenant add` scaffolds a tenant that `mudd serve` boots;
+    workspace tests and clippy green.
 
 ---
 

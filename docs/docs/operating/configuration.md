@@ -1,27 +1,22 @@
 # Configuration
 
-The full key reference for `mudd`'s server-wide config file and each
-tenant's `config.toml`.
+The full key reference for `mudd`'s server-wide config file, the tenant
+catalogue, and each tenant's `config.toml`.
 
 ## Server-wide configuration
 
 `mudd` reads a server-wide configuration file from
 `$XDG_CONFIG_HOME/ferrodun/config.toml` (by default
-`~/.config/ferrodun/config.toml`). Override the location with `--config`. Every
-key is optional:
+`~/.config/ferrodun/config.toml`). Override the location with the global
+`--config` flag. Every key is optional:
 
 ```toml
-rate = 10          # per-session sustained commands/second
-burst = 20         # per-session burst allowance
+rate = 10           # per-session sustained commands/second
+burst = 20          # per-session burst allowance
 log_format = "text" # log wire format: "text" (default) or "json"
-
-[[tenants]]      # the tenant registry: one block per tenant
-dir = "/srv/ferrodun/tenants/midgard"
-listen = "127.0.0.1:4000"
-
-[[tenants]]
-dir = "/srv/ferrodun/tenants/asgard"
-listen = "127.0.0.1:4001"
+bind = "127.0.0.1"  # host address every tenant listener binds to
+base_port = 4000    # lowest port the catalogue may assign
+tenants_dir = "/srv/ferrodun/tenants" # root holding one folder per tenant
 ```
 
 | Key | Default | Meaning |
@@ -29,12 +24,9 @@ listen = "127.0.0.1:4001"
 | `rate` | `10` | Per-session sustained commands/second. |
 | `burst` | `20` | Per-session burst allowance. |
 | `log_format` | `text` | Log wire format: `text` or `json`. Also settable via `--log-format` or `MUDD_LOG_FORMAT`. |
-| `[[tenants]]` | — | The tenant registry: one block per tenant, each with `dir` and `listen`. |
-
-Each tenant is an isolated stack — its own database, its own world, its own
-listener. Listen addresses must be distinct, and each tenant's `config.toml`
-must carry a `tenant_tag` that is unique across the registry; `mudd` refuses to
-start otherwise.
+| `bind` | `127.0.0.1` | Host address every tenant listener binds to. Set `0.0.0.0` to expose publicly. |
+| `base_port` | `4000` | Lowest port `mudd tenant add` may assign. |
+| `tenants_dir` | `$XDG_DATA_HOME/ferrodun/tenants` | Root directory holding one folder per tenant, named after it. |
 
 Configuration is layered, weakest first:
 
@@ -43,19 +35,42 @@ Configuration is layered, weakest first:
 3. `MUDD_*` environment variables (e.g. `MUDD_RATE=5`),
 4. command-line flags.
 
-`--tenant-dir` replaces the whole registry with a single tenant, listening on
-`--listen` (default `127.0.0.1:4000`).
+## The tenant catalogue
+
+The tenant registry lives in `catalog.toml`, a sibling of the server config
+file. It is **machine-managed**: `mudd tenant add` and `mudd tenant remove`
+are its writers, and there are no environment or flag overrides for its
+contents. Each entry records the tenant's name and its assigned values:
+
+```toml
+[[tenants]]
+name = "midgard"
+port = 4000
+tag = 1
+```
+
+- The tenant's directory is always `<tenants_dir>/<name>` — no path is
+  stored.
+- `port` is assigned by `mudd tenant add`: the lowest free port at or above
+  `base_port`. Ports freed by `mudd tenant remove` are reused.
+- `tag` is the runtime tenant tag stamped into the tenant's entity ids
+  (12-bit, `1..=4095`; `0` is reserved for `--tenant-dir` dev mode).
+  Assigned lowest-free, reused after removal.
+
+Hand-edits are validated when the file loads: names, ports, and tags must
+be unique, and tags must be in range. See
+[Running a server](running-a-server.md) for the `mudd tenant` commands.
 
 ## Per-tenant configuration
 
-Inside a tenant directory, `config.toml` describes that one world. There is
-no environment-variable override for these keys — the file is the sole
-source of a tenant's configuration.
+Inside a tenant directory, `config.toml` describes that one world. It is
+builder content only — no ports, no tags. There is no environment-variable
+override for these keys — the file is the sole source of a tenant's
+configuration.
 
 | Key | Required | Default | Meaning |
 |---|---|---|---|
 | `start_room` | yes | — | Slug of the room new characters begin in. |
-| `tenant_tag` | no | `0` | Identity of this tenant, unique across the registry. |
 | `locale` | no | `"en"` | Language engine messages render in. See [Localization](../building/localization.md). |
 | `banner` | no | `welcome.kdl` | Welcome-banner file, relative to the tenant directory. |
 | `palette` | no | `palette.kdl` | Color palette file, relative to the tenant directory. |
