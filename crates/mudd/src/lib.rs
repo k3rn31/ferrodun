@@ -11,5 +11,6 @@ mod world_loop;
 
 pub use boot::boot;
 pub use config::{
-    Cli, LogFormat, Overrides, ServerConfig, Settings, TenantEntry, tenants_from_catalog,
+    Cli, Command, LogFormat, Overrides, ServeArgs, ServerConfig, Settings, TenantCommand,
+    TenantEntry, serve_tenants, tenants_from_catalog,
 };

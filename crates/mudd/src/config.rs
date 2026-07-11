@@ -6,7 +6,6 @@
 //! (`$XDG_CONFIG_HOME/ferrodun/config.toml`, falling back to
 //! `$HOME/.config/ferrodun/config.toml`; Linux is the only supported target).
 
-use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -35,13 +34,37 @@ pub enum LogFormat {
     Json,
 }
 
-/// Command-line arguments; every flag overrides the server config (PLAN M1-22).
+/// Command-line interface for the `mudd` server binary.
 #[derive(Debug, clap::Parser)]
+#[command(
+    name = "mudd",
+    version,
+    about = "The Ferrodun MUD server",
+    arg_required_else_help = true
+)]
 pub struct Cli {
     /// Server config path (default: $XDG_CONFIG_HOME/ferrodun/config.toml).
-    #[arg(long)]
+    /// The tenant catalogue (catalog.toml) always sits beside it.
+    #[arg(long, global = true)]
     pub config: Option<PathBuf>,
-    /// Boot exactly this tenant, replacing the configured registry.
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+/// Top-level `mudd` subcommands.
+#[derive(Debug, clap::Subcommand)]
+pub enum Command {
+    /// Serve every tenant registered in the catalogue.
+    Serve(ServeArgs),
+    /// Manage the tenant catalogue.
+    #[command(subcommand)]
+    Tenant(TenantCommand),
+}
+
+/// Flags for `mudd serve`; each overrides the server config.
+#[derive(Debug, clap::Args)]
+pub struct ServeArgs {
+    /// Boot exactly this tenant, bypassing the catalogue (dev mode).
     #[arg(long)]
     pub tenant_dir: Option<PathBuf>,
     /// Listen address for --tenant-dir mode (default 127.0.0.1:4000).
@@ -58,6 +81,22 @@ pub struct Cli {
     pub log_format: Option<LogFormat>,
 }
 
+/// `mudd tenant` subcommands.
+#[derive(Debug, clap::Subcommand)]
+pub enum TenantCommand {
+    /// Register a tenant: assign a port and tag, scaffold its folder.
+    Add { name: String },
+    /// Deregister a tenant. --purge also deletes its folder (asks for
+    /// confirmation).
+    Remove {
+        name: String,
+        #[arg(long)]
+        purge: bool,
+    },
+    /// List registered tenants.
+    List,
+}
+
 /// One registered tenant: its folder, telnet listen address, and the runtime
 /// tenant tag stamped into its `EntityId`s.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,13 +106,6 @@ pub struct TenantEntry {
     pub tag: TenantTag,
 }
 
-/// The `[[tenants]]` shape as authored in the server config file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RawTenantEntry {
-    dir: PathBuf,
-    listen: SocketAddr,
-}
-
 /// The resolved server configuration (defaults < config.toml < MUDD_* env < flags).
 #[derive(Debug, PartialEq, Eq)]
 pub struct ServerConfig {
@@ -81,30 +113,6 @@ pub struct ServerConfig {
     pub burst: Burst,
     pub tenants: Vec<TenantEntry>,
     pub log_format: LogFormat,
-}
-
-/// Untyped shape extracted from figment before conversion to typed values.
-#[derive(Debug, Serialize, Deserialize)]
-struct RawServerConfig {
-    #[serde(default = "default_rate")]
-    rate: NonZeroU32,
-    #[serde(default = "default_burst")]
-    burst: NonZeroU32,
-    #[serde(default)]
-    tenants: Vec<RawTenantEntry>,
-    #[serde(default)]
-    log_format: LogFormat,
-}
-
-impl Default for RawServerConfig {
-    fn default() -> Self {
-        RawServerConfig {
-            rate: default_rate(),
-            burst: default_burst(),
-            tenants: Vec::new(),
-            log_format: LogFormat::default(),
-        }
-    }
 }
 
 /// Default sustained command rate (commands/second), matching [`SustainedRate::DEFAULT`].
@@ -121,75 +129,6 @@ fn default_rate() -> NonZeroU32 {
 /// Default command burst allowance: mirrors [`Burst::DEFAULT`].
 fn default_burst() -> NonZeroU32 {
     NonZeroU32::new(DEFAULT_BURST).unwrap_or(NonZeroU32::MIN)
-}
-
-impl ServerConfig {
-    /// Resolves the server configuration from defaults, the config file,
-    /// environment variables, and CLI flags, in that precedence order.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the config file is unreadable or malformed, if
-    /// the resulting tenant registry is empty and `--tenant-dir` was not
-    /// given, or if two tenants share a listen address.
-    pub fn resolve(cli: &Cli) -> anyhow::Result<ServerConfig> {
-        let config_path = cli.config.clone().map_or_else(default_config_path, Ok)?;
-
-        let raw: RawServerConfig = Figment::from(Serialized::defaults(RawServerConfig::default()))
-            .merge(Toml::file(config_path))
-            .merge(Env::prefixed("MUDD_"))
-            .extract()?;
-
-        let rate = cli.rate.unwrap_or(raw.rate);
-        let burst = cli.burst.unwrap_or(raw.burst);
-        let log_format = cli.log_format.unwrap_or(raw.log_format);
-
-        let tenants = match &cli.tenant_dir {
-            Some(dir) => vec![TenantEntry {
-                dir: dir.clone(),
-                listen: cli.listen.unwrap_or(DEFAULT_LISTEN),
-                tag: TenantTag::default(),
-            }],
-            None => raw
-                .tenants
-                .into_iter()
-                .enumerate()
-                .map(|(index, raw)| {
-                    let position = u16::try_from(index + 1)
-                        .ok()
-                        .and_then(|value| TenantTag::new(value).ok())
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("too many tenants: at most 4095 fit in one process")
-                        })?;
-                    Ok(TenantEntry {
-                        dir: raw.dir,
-                        listen: raw.listen,
-                        tag: position,
-                    })
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?,
-        };
-
-        if tenants.is_empty() {
-            anyhow::bail!(
-                "no tenants configured: add [[tenants]] entries to the server config, or pass --tenant-dir"
-            );
-        }
-
-        let mut seen_addrs = HashSet::with_capacity(tenants.len());
-        for tenant in &tenants {
-            if !seen_addrs.insert(tenant.listen) {
-                anyhow::bail!("duplicate listen address {} across tenants", tenant.listen);
-            }
-        }
-
-        Ok(ServerConfig {
-            rate: SustainedRate::new(rate),
-            burst: Burst::new(burst),
-            tenants,
-            log_format,
-        })
-    }
 }
 
 /// Resolves the default server config file path: the XDG-standard
@@ -339,6 +278,27 @@ pub fn tenants_from_catalog(
         .collect())
 }
 
+/// Builds the boot registry for `mudd serve`: the single `--tenant-dir`
+/// tenant (tag 0) in dev mode, otherwise the catalogue via
+/// [`tenants_from_catalog`].
+///
+/// # Errors
+///
+/// Returns an error if the catalogue is unreadable, invalid, or empty.
+pub fn serve_tenants(settings: &Settings, args: &ServeArgs) -> anyhow::Result<Vec<TenantEntry>> {
+    match &args.tenant_dir {
+        Some(dir) => Ok(vec![TenantEntry {
+            dir: dir.clone(),
+            listen: args.listen.unwrap_or(DEFAULT_LISTEN),
+            tag: TenantTag::default(),
+        }]),
+        None => {
+            let catalog = Catalog::load(&settings.catalog_path)?;
+            tenants_from_catalog(settings, &catalog)
+        }
+    }
+}
+
 /// XDG-standard tenants root: `$XDG_DATA_HOME/ferrodun/tenants`, falling
 /// back to `~/.local/share/ferrodun/tenants`.
 fn default_tenants_dir() -> anyhow::Result<PathBuf> {
@@ -364,297 +324,16 @@ mod tests {
 
     use super::*;
 
-    fn cli_with_tenant_dir(dir: &str) -> Cli {
-        Cli {
-            config: None,
-            tenant_dir: Some(PathBuf::from(dir)),
-            listen: None,
-            rate: None,
-            burst: None,
-            log_format: None,
-        }
-    }
-
-    #[test]
-    fn defaults_apply_when_the_config_file_is_absent() {
-        figment::Jail::expect_with(|jail| {
-            let config_home = jail.directory().to_path_buf();
-            jail.set_env("XDG_CONFIG_HOME", config_home.display());
-            let cli = cli_with_tenant_dir("/t");
-            let config = ServerConfig::resolve(&cli).expect("config resolves");
-
-            assert_eq!(
-                config.tenants,
-                vec![TenantEntry {
-                    dir: PathBuf::from("/t"),
-                    listen: DEFAULT_LISTEN,
-                    tag: TenantTag::default(),
-                }]
-            );
-            assert_eq!(config.rate, SustainedRate::DEFAULT);
-            assert_eq!(config.burst, Burst::DEFAULT);
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn the_registry_loads_from_the_server_config() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-rate = 5
-
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-
-[[tenants]]
-dir = "/tenants/b"
-listen = "127.0.0.1:4002"
-"#,
-            )?;
-            let cli = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-            let config = ServerConfig::resolve(&cli).expect("config resolves");
-
-            assert_eq!(config.tenants.len(), 2);
-            assert_eq!(
-                config.rate,
-                SustainedRate::new(NonZeroU32::new(5).expect("nonzero"))
-            );
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn tenant_dir_flag_replaces_the_registry() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-
-[[tenants]]
-dir = "/tenants/b"
-listen = "127.0.0.1:4002"
-"#,
-            )?;
-            let cli = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                ..cli_with_tenant_dir("/override")
-            };
-            let config = ServerConfig::resolve(&cli).expect("config resolves");
-
-            assert_eq!(config.tenants.len(), 1);
-            let tenant = config.tenants.first().expect("one tenant");
-            assert_eq!(tenant.dir, PathBuf::from("/override"));
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn env_overrides_file_and_flags_override_env() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-rate = 5
-
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-"#,
-            )?;
-            jail.set_env("MUDD_RATE", "7");
-
-            let cli_env_only = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-            let env_config = ServerConfig::resolve(&cli_env_only).expect("config resolves");
-            assert_eq!(
-                env_config.rate,
-                SustainedRate::new(NonZeroU32::new(7).expect("nonzero"))
-            );
-
-            let cli_with_flag = Cli {
-                rate: Some(NonZeroU32::new(9).expect("nonzero")),
-                ..cli_env_only
-            };
-            let flag_config = ServerConfig::resolve(&cli_with_flag).expect("config resolves");
-            assert_eq!(
-                flag_config.rate,
-                SustainedRate::new(NonZeroU32::new(9).expect("nonzero"))
-            );
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn log_format_defaults_to_text() {
-        figment::Jail::expect_with(|jail| {
-            let config_home = jail.directory().to_path_buf();
-            jail.set_env("XDG_CONFIG_HOME", config_home.display());
-            let cli = cli_with_tenant_dir("/t");
-            let config = ServerConfig::resolve(&cli).expect("config resolves");
-
-            assert_eq!(config.log_format, LogFormat::Text);
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn log_format_reads_from_the_config_file() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-log_format = "json"
-
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-"#,
-            )?;
-            let cli = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-            let config = ServerConfig::resolve(&cli).expect("config resolves");
-
-            assert_eq!(config.log_format, LogFormat::Json);
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn env_sets_log_format_and_the_flag_overrides_it() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-"#,
-            )?;
-            jail.set_env("MUDD_LOG_FORMAT", "json");
-
-            let cli_env_only = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-            let env_config = ServerConfig::resolve(&cli_env_only).expect("config resolves");
-            assert_eq!(env_config.log_format, LogFormat::Json);
-
-            let cli_with_flag = Cli {
-                log_format: Some(LogFormat::Text),
-                ..cli_env_only
-            };
-            let flag_config = ServerConfig::resolve(&cli_with_flag).expect("config resolves");
-            assert_eq!(flag_config.log_format, LogFormat::Text);
-            Ok(())
-        });
-    }
-
     #[test]
     fn an_unknown_log_format_is_a_startup_error() {
         figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-log_format = "yaml"
-
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-"#,
-            )?;
-            let cli = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-
-            let result = ServerConfig::resolve(&cli);
+            jail.create_file("config.toml", "log_format = \"yaml\"")?;
+            let config_path = jail.directory().join("config.toml");
+            let result = Settings::resolve(Some(&config_path), &Overrides::default());
             assert!(
                 result.is_err(),
                 "unknown log format must fail fast, got {result:?}"
             );
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn an_empty_registry_without_tenant_dir_is_an_error() {
-        figment::Jail::expect_with(|jail| {
-            let config_home = jail.directory().to_path_buf();
-            jail.set_env("XDG_CONFIG_HOME", config_home.display());
-            let cli = Cli {
-                config: None,
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-
-            let result = ServerConfig::resolve(&cli);
-            assert!(result.is_err(), "expected an error, got {result:?}");
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn duplicate_listen_addresses_are_rejected() {
-        figment::Jail::expect_with(|jail| {
-            jail.create_file(
-                "config.toml",
-                r#"
-[[tenants]]
-dir = "/tenants/a"
-listen = "127.0.0.1:4001"
-
-[[tenants]]
-dir = "/tenants/b"
-listen = "127.0.0.1:4001"
-"#,
-            )?;
-            let cli = Cli {
-                config: Some(jail.directory().join("config.toml")),
-                tenant_dir: None,
-                listen: None,
-                rate: None,
-                burst: None,
-                log_format: None,
-            };
-
-            let result = ServerConfig::resolve(&cli);
-            assert!(result.is_err(), "expected an error, got {result:?}");
             Ok(())
         });
     }
@@ -780,6 +459,77 @@ log_format = "json"
 
             let result = tenants_from_catalog(&settings, &Catalog::default());
             assert!(result.is_err(), "expected an error, got {result:?}");
+            Ok(())
+        });
+    }
+
+    use clap::Parser as _;
+
+    #[test]
+    fn bare_mudd_asks_for_a_subcommand() {
+        let error = Cli::try_parse_from(["mudd"]).expect_err("bare mudd must not serve");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        );
+    }
+
+    #[test]
+    fn config_is_a_global_flag() {
+        let cli = Cli::try_parse_from(["mudd", "tenant", "list", "--config", "/etc/f.toml"])
+            .expect("global --config parses after the subcommand");
+        assert_eq!(cli.config, Some(PathBuf::from("/etc/f.toml")));
+        assert!(matches!(cli.command, Command::Tenant(TenantCommand::List)));
+    }
+
+    #[test]
+    fn serve_accepts_the_dev_flags() {
+        let cli = Cli::try_parse_from([
+            "mudd", "serve", "--tenant-dir", "/t", "--listen", "127.0.0.1:5000",
+        ])
+        .expect("serve flags parse");
+        let Command::Serve(args) = cli.command else {
+            panic!("expected the serve subcommand");
+        };
+        assert_eq!(args.tenant_dir, Some(PathBuf::from("/t")));
+        assert_eq!(args.listen, Some("127.0.0.1:5000".parse().expect("addr")));
+    }
+
+    #[test]
+    fn tenant_remove_takes_a_purge_flag() {
+        let cli = Cli::try_parse_from(["mudd", "tenant", "remove", "old", "--purge"])
+            .expect("remove parses");
+        assert!(matches!(
+            cli.command,
+            Command::Tenant(TenantCommand::Remove { ref name, purge: true }) if name == "old"
+        ));
+    }
+
+    #[test]
+    fn tenant_dir_bypasses_the_catalogue() {
+        figment::Jail::expect_with(|jail| {
+            let home = jail.directory().to_path_buf();
+            jail.set_env("XDG_CONFIG_HOME", home.display());
+            jail.set_env("XDG_DATA_HOME", home.display());
+            let settings =
+                Settings::resolve(None, &Overrides::default()).expect("settings resolve");
+            let args = ServeArgs {
+                tenant_dir: Some(PathBuf::from("/t")),
+                listen: None,
+                rate: None,
+                burst: None,
+                log_format: None,
+            };
+
+            let tenants = serve_tenants(&settings, &args).expect("dev mode needs no catalogue");
+            assert_eq!(
+                tenants,
+                vec![TenantEntry {
+                    dir: PathBuf::from("/t"),
+                    listen: DEFAULT_LISTEN,
+                    tag: TenantTag::default(),
+                }]
+            );
             Ok(())
         });
     }
