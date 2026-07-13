@@ -23,5 +23,5 @@ mod tier;
 
 pub use ratelimit::{Burst, Decision, RateLimiter, SustainedRate};
 pub use render::render;
-pub use telnet::{TelnetEvent, TelnetMachine};
+pub use telnet::{LocalEcho, TelnetEvent, TelnetMachine};
 pub use tier::{DEFAULT_TENANT_TIER, Tier, process_no_color, resolve_tier};

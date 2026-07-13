@@ -3,11 +3,13 @@
 //! RFC 1143 Q-method state per option prevents negotiation loops. Options we
 //! ask the client to enable ("him"): NAWS (RFC 1073), TTYPE (RFC 1091).
 //! Options we offer to enable ourselves ("us"): EOR (RFC 885), CHARSET
-//! (RFC 2066, UTF-8 only). Everything else — including ECHO and SGA — is
-//! refused; unknown options are never silently ignored.
+//! (RFC 2066, UTF-8 only). ECHO is server-claimed around password entry
+//! (RFC 857); SGA and everything else is refused; unknown options are never
+//! silently ignored.
 
 use super::parser::{DO, DONT, IAC, SB, SE, Verb, WILL, WONT};
 
+pub(crate) const OPT_ECHO: u8 = 1;
 pub(crate) const OPT_TTYPE: u8 = 24;
 pub(crate) const OPT_EOR: u8 = 25;
 pub(crate) const OPT_NAWS: u8 = 31;
@@ -28,12 +30,14 @@ pub(crate) enum CharsetMode {
     Utf8,
 }
 
-/// RFC 1143 Q-method option state (subset: we never actively disable).
+/// RFC 1143 Q-method option state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QState {
     No,
     WantYes,
     Yes,
+    /// We sent a disabling verb and await the acknowledgement.
+    WantNo,
 }
 
 /// Per-connection negotiation state for the M1 option subset.
@@ -43,6 +47,7 @@ pub(crate) struct Negotiator {
     him_ttype: QState,
     us_eor: QState,
     us_charset: QState,
+    us_echo: QState,
     charset_mode: CharsetMode,
 }
 
@@ -69,6 +74,7 @@ impl Negotiator {
             him_ttype: QState::WantYes,
             us_eor: QState::WantYes,
             us_charset: QState::WantYes,
+            us_echo: QState::No,
             charset_mode: CharsetMode::Ascii,
         }
     }
@@ -103,11 +109,22 @@ impl Negotiator {
                         out.extend_from_slice(&[IAC, SE]);
                     }
                 }
+                OPT_ECHO => match self.us_echo {
+                    QState::WantYes => self.us_echo = QState::Yes,
+                    // No offer outstanding: the server never echoes normal
+                    // input, so a spontaneous DO is refused.
+                    QState::No => out.extend_from_slice(&[IAC, WONT, OPT_ECHO]),
+                    // Stale agreement to a WILL we have since retracted; our
+                    // WONT is in flight and the client's DONT lands us in No.
+                    QState::WantNo => {}
+                    QState::Yes => {}
+                },
                 unsupported => out.extend_from_slice(&[IAC, WONT, unsupported]),
             },
             Verb::Dont => match option {
                 OPT_EOR => Self::disable(&mut self.us_eor, WONT, option, out),
                 OPT_CHARSET => Self::disable(&mut self.us_charset, WONT, option, out),
+                OPT_ECHO => Self::disable(&mut self.us_echo, WONT, option, out),
                 _ => {}
             },
         }
@@ -142,7 +159,7 @@ impl Negotiator {
                 *state = QState::Yes;
                 true
             }
-            QState::No => {
+            QState::No | QState::WantNo => {
                 *state = QState::Yes;
                 out.extend_from_slice(&[IAC, ack_verb, option]);
                 true
@@ -159,8 +176,38 @@ impl Negotiator {
                 *state = QState::No;
                 out.extend_from_slice(&[IAC, ack_verb, option]);
             }
-            QState::WantYes | QState::No => *state = QState::No,
+            QState::WantYes | QState::WantNo | QState::No => *state = QState::No,
         }
+    }
+
+    /// Claims the ECHO option (RFC 857): asks the client to stop local echo
+    /// for password entry. Idempotent while an offer is pending or active.
+    pub(crate) fn suppress_echo(&mut self, out: &mut Vec<u8>) {
+        match self.us_echo {
+            QState::No | QState::WantNo => {
+                self.us_echo = QState::WantYes;
+                out.extend_from_slice(&[IAC, WILL, OPT_ECHO]);
+            }
+            QState::WantYes | QState::Yes => {}
+        }
+    }
+
+    /// Releases the ECHO option: the client resumes local echo. Also sent
+    /// from `WantYes` — the password line can be consumed before the
+    /// client's DO arrives, and the retraction must still go out.
+    pub(crate) fn restore_echo(&mut self, out: &mut Vec<u8>) {
+        match self.us_echo {
+            QState::Yes | QState::WantYes => {
+                self.us_echo = QState::WantNo;
+                out.extend_from_slice(&[IAC, WONT, OPT_ECHO]);
+            }
+            QState::WantNo | QState::No => {}
+        }
+    }
+
+    /// True when the client has agreed to suppress its local echo.
+    pub(crate) fn echo_suppressed(&self) -> bool {
+        self.us_echo == QState::Yes
     }
 }
 
@@ -285,8 +332,83 @@ mod tests {
     #[test]
     fn do_echo_is_refused_with_wont() {
         let (mut negotiator, mut out) = opened();
-        negotiator.on_negotiate(Verb::Do, 1, &mut out); // ECHO: no server echo in M1
+        negotiator.on_negotiate(Verb::Do, 1, &mut out); // ECHO: the server never echoes normal input
         assert_eq!(out, vec![IAC, WONT, 1]);
+    }
+
+    #[test]
+    fn suppress_echo_sends_will_echo() {
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        assert_eq!(out, vec![IAC, WILL, OPT_ECHO]);
+    }
+
+    #[test]
+    fn suppress_echo_twice_sends_one_will() {
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        out.clear();
+        negotiator.suppress_echo(&mut out);
+        assert!(out.is_empty(), "a pending offer must not repeat");
+    }
+
+    #[test]
+    fn do_echo_after_our_will_enables_without_reply() {
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        out.clear();
+        negotiator.on_negotiate(Verb::Do, OPT_ECHO, &mut out);
+        assert!(negotiator.echo_suppressed());
+        assert!(out.is_empty(), "DO answering our WILL must not be re-acknowledged");
+    }
+
+    #[test]
+    fn dont_echo_after_our_will_is_a_refusal() {
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        out.clear();
+        negotiator.on_negotiate(Verb::Dont, OPT_ECHO, &mut out);
+        assert!(!negotiator.echo_suppressed());
+        assert!(out.is_empty(), "refusal of a pending offer needs no reply");
+    }
+
+    #[test]
+    fn restore_echo_after_agreement_sends_wont_and_dont_acks_it() {
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        negotiator.on_negotiate(Verb::Do, OPT_ECHO, &mut out);
+        out.clear();
+        negotiator.restore_echo(&mut out);
+        assert_eq!(out, vec![IAC, WONT, OPT_ECHO]);
+        assert!(!negotiator.echo_suppressed());
+        out.clear();
+        negotiator.on_negotiate(Verb::Dont, OPT_ECHO, &mut out);
+        assert!(out.is_empty(), "DONT answering our WONT must not be re-acknowledged");
+    }
+
+    #[test]
+    fn restore_echo_before_the_client_replied_still_sends_wont() {
+        // The password line can be consumed before the client's DO arrives.
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        out.clear();
+        negotiator.restore_echo(&mut out);
+        assert_eq!(out, vec![IAC, WONT, OPT_ECHO]);
+    }
+
+    #[test]
+    fn stale_do_echo_after_our_wont_is_ignored() {
+        // WILL sent, WONT sent, then the client's DO (answering the WILL)
+        // arrives: our WONT is already in flight and wins.
+        let (mut negotiator, mut out) = opened();
+        negotiator.suppress_echo(&mut out);
+        negotiator.restore_echo(&mut out);
+        out.clear();
+        negotiator.on_negotiate(Verb::Do, OPT_ECHO, &mut out);
+        assert!(out.is_empty());
+        assert!(!negotiator.echo_suppressed());
+        negotiator.on_negotiate(Verb::Dont, OPT_ECHO, &mut out);
+        assert!(out.is_empty(), "the DONT lands us back in No, silently");
     }
 
     #[test]
