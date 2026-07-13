@@ -138,6 +138,27 @@ pub struct HandshakeAck {
     pub schema_version: SchemaVersion,
 }
 
+/// Whether a session's client should locally echo input (RFC 857 masking).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
+pub enum EchoMode {
+    /// Normal input: the client echoes what the player types.
+    Enabled,
+    /// Secret entry (a password): the client must not echo.
+    Suppressed,
+}
+
+/// Instructs the Gateway to change a session's local-echo mode
+/// (World → Gateway; emitted around password entry).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
+pub struct SessionEcho {
+    /// The session whose echo mode changes.
+    pub session_id: SessionId,
+    /// The new echo mode.
+    pub mode: EchoMode,
+}
+
 /// A frame sent from Gateway to World (§2.1.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -164,6 +185,8 @@ pub enum WorldFrame {
     Close(SessionClose),
     /// Acknowledgement of a [`ResumeHandshake`] (§2.1.3.2).
     ResumeAck(HandshakeAck),
+    /// A change to a session's local-echo mode (password masking, §2.8.2).
+    Echo(SessionEcho),
 }
 
 #[cfg(test)]
@@ -284,7 +307,7 @@ mod tests {
         assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x03]);
     }
 
-    // Resume = variant 3; world_id = 7; schema_version = 1; live_sessions =
+    // Resume = variant 3; world_id = 7; schema_version = 2; live_sessions =
     // [1, 2] (len 2 then the two ids). Pins the multi-field, vec-bearing frame.
     #[test]
     fn resume_frame_has_a_stable_encoding() {
@@ -295,7 +318,7 @@ mod tests {
         });
         assert_eq!(
             encode(&frame).expect("encode"),
-            vec![0x03, 0x07, 0x01, 0x02, 0x01, 0x02]
+            vec![0x03, 0x07, 0x02, 0x02, 0x01, 0x02]
         );
     }
 
@@ -321,14 +344,14 @@ mod tests {
         assert_eq!(encode(&frame).expect("encode"), vec![0x01, 0x05]);
     }
 
-    // ResumeAck = variant 2; world_id = 7; schema_version = 1.
+    // ResumeAck = variant 2; world_id = 7; schema_version = 2.
     #[test]
     fn resume_ack_frame_has_a_stable_encoding() {
         let frame = WorldFrame::ResumeAck(HandshakeAck {
             world_id: world(7),
             schema_version: crate::SCHEMA_VERSION,
         });
-        assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x07, 0x01]);
+        assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x07, 0x02]);
     }
 
     #[test]
@@ -373,5 +396,16 @@ mod tests {
         });
         let bytes = encode(&frame).expect("encode");
         assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn echo_frame_round_trips() {
+        let frame = WorldFrame::Echo(SessionEcho {
+            session_id: SessionId::new(NonZeroU64::new(7).expect("nonzero id")),
+            mode: EchoMode::Suppressed,
+        });
+        let bytes = encode(&frame).expect("echo frame must encode");
+        let decoded: WorldFrame = decode(&bytes).expect("echo frame must decode");
+        assert_eq!(decoded, frame);
     }
 }
