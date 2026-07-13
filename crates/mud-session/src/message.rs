@@ -16,7 +16,8 @@ pub enum SessionMessage {
     UnknownCommand,
     /// A farewell shown before the session closes.
     Goodbye,
-    /// Prompt for a password on its own line (echo masking is M1-20).
+    /// Prompt for a password on its own line. Echo suppression rides on
+    /// [`Transition::echo`](crate::Transition), not on this message.
     PasswordPrompt,
     /// A non-leaky login failure: wrong user *or* wrong password read alike.
     LoginFailed,

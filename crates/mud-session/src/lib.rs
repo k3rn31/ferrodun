@@ -12,5 +12,5 @@ mod fsm;
 mod message;
 
 pub use effect::{Effect, EffectResult};
-pub use fsm::{SessionFsm, Terminal, Transition};
+pub use fsm::{InputEcho, SessionFsm, Terminal, Transition};
 pub use message::SessionMessage;
