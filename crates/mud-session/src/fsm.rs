@@ -126,12 +126,19 @@ impl State {
     /// Whether this state is mid-collection of a secret (a password), which
     /// requires the client's local echo to stay suppressed.
     fn collects_secret(&self) -> bool {
-        matches!(
-            self,
+        // Exhaustive on purpose: a new secret-collecting State variant must
+        // force a decision here rather than silently default to echo-on.
+        match self {
             State::LoginPassword { .. }
-                | State::RegisterPassword { .. }
-                | State::RegisterConfirm { .. }
-        )
+            | State::RegisterPassword { .. }
+            | State::RegisterConfirm { .. } => true,
+            State::Anon
+            | State::AwaitingAuth
+            | State::AwaitingRegister
+            | State::PuppetSelect { .. }
+            | State::AwaitingCreate { .. }
+            | State::AwaitingEnter { .. } => false,
+        }
     }
 }
 
