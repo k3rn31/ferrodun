@@ -111,13 +111,25 @@ async fn login_and_enter_world(client: &mut ClientReader) {
     client.read_until(b"Welcome to Testville.").await;
 
     client.write_line("register alice").await;
-    client.read_until(b"Password:").await;
+    let to_password = client.read_until(b"Password:").await;
+    assert!(
+        to_password.windows(3).any(|w| w == [255, 251, 1]),
+        "IAC WILL ECHO must precede the password prompt, got {to_password:?}"
+    );
 
     client.write_line("hunter2!").await;
-    client.read_until(b"Confirm password:").await;
+    let to_confirm = client.read_until(b"Confirm password:").await;
+    assert!(
+        !to_confirm.windows(3).any(|w| w == [255, 252, 1]),
+        "echo must stay suppressed across the confirm prompt, got {to_confirm:?}"
+    );
 
     client.write_line("hunter2!").await;
-    client.read_until(b"You have no characters yet.").await;
+    let after_secret = client.read_until(b"You have no characters yet.").await;
+    assert!(
+        after_secret.windows(3).any(|w| w == [255, 252, 1]),
+        "IAC WONT ECHO must follow the final password line, got {after_secret:?}"
+    );
 
     client.write_line("new Hero").await;
     client.read_until(b"Created Hero.").await;
@@ -185,5 +197,46 @@ async fn two_tenants_serve_independent_logins_at_once() {
     tokio::join!(
         login_and_enter_world(&mut client_a),
         login_and_enter_world(&mut client_b),
+    );
+}
+
+#[tokio::test]
+async fn login_masks_the_password_like_registration() {
+    let tenant_dir = TempDir::new().expect("temp dir");
+    write_tenant(tenant_dir.path());
+
+    let (addrs, _tasks) = mudd::boot(single_tenant_config(tenant_dir.path()))
+        .await
+        .expect("boot must succeed");
+    let addr = *addrs.first().expect("one bound address");
+
+    // First connection registers alice and creates the puppet Hero.
+    let stream = TcpStream::connect(addr).await.expect("client must connect");
+    let mut client = ClientReader::new(stream);
+    login_and_enter_world(&mut client).await;
+    client.write_line("quit").await;
+    drop(client);
+
+    // Second connection logs in; the password prompt must be masked too.
+    let stream = TcpStream::connect(addr)
+        .await
+        .expect("client must reconnect");
+    let mut client = ClientReader::new(stream);
+    client.read_until(b"Welcome to Testville.").await;
+
+    client.write_line("login alice").await;
+    let to_password = client.read_until(b"Password:").await;
+    assert!(
+        to_password.windows(3).any(|w| w == [255, 251, 1]),
+        "IAC WILL ECHO must precede the login password prompt, got {to_password:?}"
+    );
+
+    client.write_line("hunter2!").await;
+    // The first post-auth output is the puppet list naming Hero; the echo
+    // release must have been written by then.
+    let after_secret = client.read_until(b"Hero").await;
+    assert!(
+        after_secret.windows(3).any(|w| w == [255, 252, 1]),
+        "IAC WONT ECHO must follow the password line, got {after_secret:?}"
     );
 }

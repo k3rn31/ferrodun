@@ -32,10 +32,10 @@ say whether the name exists, so no one can use failed logins to fish for
 valid account names.
 
 !!! note
-    The password prompt does not mask or hide your input as you type it —
-    the server does not currently enable echo suppression on the telnet
-    connection, so your client's local echo shows what you type. Be mindful
-    of who can see your screen while you type your password.
+    The server asks your client to stop echoing while you type a password
+    (telnet echo suppression, RFC 857). Most MUD clients and plain `telnet`
+    honor it; if yours refuses, it will still display the password as you
+    type — be mindful of who can see your screen.
 
 ## Registering
 

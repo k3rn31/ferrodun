@@ -1565,3 +1565,14 @@ truth when this log drifts.
 - **Done:** added `command.not-found` / `.ambiguous` / `.bad-switch` / `.unbound` / `.denied` en templates to the builtin catalog; updated the 8 integration-test assertions that pinned the literal keys; misclassified missing-key WARN gone as a side effect
 - **Verify:** `cargo test --workspace`, `cargo clippy --workspace --all-targets` clean
 - **Next:** load-time §3.14.6.2 verification lands with M2-I (design: docs/superpowers/specs/2026-07-11-command-pipeline-i18n-templates-design.md)
+
+## 2026-07-14 — M1-25 password echo suppression
+
+- **Spec:** §2.8.2 (ECHO row added), §2.1.3 — mask password entry over telnet.
+- **Done:** `Transition.echo` derived in the FSM; `WorldFrame::Echo`
+  (SCHEMA_VERSION 2); `LoginOutput` through `Routing::Login`; gateway routes
+  to `TelnetMachine::set_echo` (RFC 857 WILL/WONT ECHO + CRLF after masked
+  lines). Docs note reduced to refusing clients; PLAN M1-25 added.
+- **Verify:** per-crate unit tests; `telnet_login` e2e asserts WILL/WONT
+  ECHO framing; workspace tests + clippy green.
+- **Next:** none — refusing clients intentionally get no warning (design §1).

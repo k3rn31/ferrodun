@@ -6,6 +6,17 @@ use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterEr
 use mud_core::EntityKey;
 use secrecy::{ExposeSecret, SecretString};
 
+/// Whether the client should locally echo the next input. Derived from
+/// password-state membership on each FSM step; the driver relays it to the
+/// transport (design 2026-07-11), which maps it onto telnet RFC 857.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputEcho {
+    /// Normal input: the client echoes what the player types.
+    Enabled,
+    /// Secret entry: the client must not echo (password masking).
+    Suppressed,
+}
+
 /// The result of one FSM step: what to show, what I/O to perform, whether the
 /// session has left the login flow.
 #[derive(Debug)]
@@ -18,6 +29,8 @@ pub struct Transition {
     pub effect: Option<Effect>,
     /// Set once the session leaves the login flow.
     pub terminal: Option<Terminal>,
+    /// A change to the client's local echo, applied before `messages`.
+    pub echo: Option<InputEcho>,
 }
 
 impl Transition {
@@ -26,6 +39,7 @@ impl Transition {
             messages,
             effect: None,
             terminal: None,
+            echo: None,
         }
     }
 
@@ -38,6 +52,7 @@ impl Transition {
             messages: vec![message],
             effect: None,
             terminal: Some(Terminal::Closed),
+            echo: None,
         }
     }
 }
@@ -107,6 +122,35 @@ enum State {
     },
 }
 
+impl State {
+    /// Whether this state is mid-collection of a secret (a password), which
+    /// requires the client's local echo to stay suppressed.
+    fn collects_secret(&self) -> bool {
+        // Exhaustive on purpose: a new secret-collecting State variant must
+        // force a decision here rather than silently default to echo-on.
+        match self {
+            State::LoginPassword { .. }
+            | State::RegisterPassword { .. }
+            | State::RegisterConfirm { .. } => true,
+            State::Anon
+            | State::AwaitingAuth
+            | State::AwaitingRegister
+            | State::PuppetSelect { .. }
+            | State::AwaitingCreate { .. }
+            | State::AwaitingEnter { .. } => false,
+        }
+    }
+}
+
+/// The echo change implied by entering or leaving secret entry, if any.
+fn echo_change(was_secret: bool, is_secret: bool) -> Option<InputEcho> {
+    match (was_secret, is_secret) {
+        (false, true) => Some(InputEcho::Suppressed),
+        (true, false) => Some(InputEcho::Enabled),
+        (true, true) | (false, false) => None,
+    }
+}
+
 impl Default for SessionFsm {
     fn default() -> Self {
         Self::new()
@@ -126,6 +170,13 @@ impl SessionFsm {
 
     /// Feeds one input line to the machine.
     pub fn on_input(&mut self, line: &str) -> Transition {
+        let was_secret = self.state.collects_secret();
+        let mut transition = self.dispatch_input(line);
+        transition.echo = echo_change(was_secret, self.state.collects_secret());
+        transition
+    }
+
+    fn dispatch_input(&mut self, line: &str) -> Transition {
         match &self.state {
             State::Anon => self.anon_input(line),
             State::LoginPassword { .. } => self.capture_login_password(line),
@@ -180,6 +231,7 @@ impl SessionFsm {
             messages: Vec::new(),
             effect: Some(Effect::Authenticate { username, password }),
             terminal: None,
+            echo: None,
         }
     }
 
@@ -212,6 +264,7 @@ impl SessionFsm {
             messages: Vec::new(),
             effect: Some(Effect::Register { username, password }),
             terminal: None,
+            echo: None,
         }
     }
 
@@ -271,6 +324,7 @@ impl SessionFsm {
                         name,
                     }),
                     terminal: None,
+                    echo: None,
                 }
             }
             Err(_) => Transition::message(SessionMessage::NameInvalid),
@@ -299,11 +353,19 @@ impl SessionFsm {
                 puppet: chosen,
             }),
             terminal: None,
+            echo: None,
         }
     }
 
     /// Feeds an [`EffectResult`] back after the driver performed an [`Effect`].
     pub fn on_effect(&mut self, result: EffectResult) -> Transition {
+        let was_secret = self.state.collects_secret();
+        let mut transition = self.dispatch_effect(result);
+        transition.echo = echo_change(was_secret, self.state.collects_secret());
+        transition
+    }
+
+    fn dispatch_effect(&mut self, result: EffectResult) -> Transition {
         match (std::mem::replace(&mut self.state, State::Anon), result) {
             (State::AwaitingAuth, EffectResult::Authenticated { account, puppets }) => {
                 self.enter_puppet_select(account, puppets)
@@ -356,6 +418,7 @@ impl SessionFsm {
                     puppet: chosen,
                     name: chosen_name,
                 }),
+                echo: None,
             },
             (
                 State::AwaitingEnter {
@@ -765,5 +828,54 @@ mod tests {
             puppets: vec![puppet(10, "arden")],
         });
         assert_eq!(fsm.on_input("quit").terminal, Some(Terminal::Closed));
+    }
+
+    #[test]
+    fn login_flow_suppresses_echo_for_the_password_line_only() {
+        let mut fsm = SessionFsm::new();
+        let t = fsm.on_input("login alice");
+        assert_eq!(t.echo, Some(InputEcho::Suppressed));
+        let t = fsm.on_input("hunter2");
+        assert_eq!(t.echo, Some(InputEcho::Enabled));
+    }
+
+    #[test]
+    fn register_flow_keeps_echo_suppressed_across_the_confirm_prompt() {
+        let mut fsm = SessionFsm::new();
+        let t = fsm.on_input("register alice");
+        assert_eq!(t.echo, Some(InputEcho::Suppressed));
+        // Password line moves RegisterPassword -> RegisterConfirm: still secret,
+        // so no echo change is signaled (client stays suppressed).
+        let t = fsm.on_input("hunter2");
+        assert_eq!(t.echo, None);
+        // Confirm line matches: leaves secret entry, echo re-enables.
+        let t = fsm.on_input("hunter2");
+        assert_eq!(t.echo, Some(InputEcho::Enabled));
+    }
+
+    #[test]
+    fn a_mismatched_confirmation_re_enables_echo() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("register alice");
+        let _ = fsm.on_input("hunter2");
+        let t = fsm.on_input("typo");
+        assert_eq!(t.echo, Some(InputEcho::Enabled));
+    }
+
+    #[test]
+    fn echo_is_none_outside_secret_state_transitions() {
+        let mut fsm = SessionFsm::new();
+        assert_eq!(fsm.on_connect().echo, None);
+        assert_eq!(fsm.on_input("help").echo, None);
+        assert_eq!(fsm.on_input("who").echo, None);
+    }
+
+    #[test]
+    fn login_rejection_does_not_change_echo() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("wrong");
+        let t = fsm.on_effect(EffectResult::LoginRejected(LoginError::BadPassword));
+        assert_eq!(t.echo, None);
     }
 }

@@ -14,8 +14,8 @@ use std::future::Future;
 use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterError, Username};
 use mud_core::{EntityId, EntityKey};
 use mud_i18n::Locale;
-use mud_schema::{OutputText, SessionId, SessionOutput};
-use mud_session::{Effect, EffectResult, SessionFsm, Terminal, Transition};
+use mud_schema::{EchoMode, OutputText, SessionEcho, SessionId, SessionOutput};
+use mud_session::{Effect, EffectResult, InputEcho, SessionFsm, Terminal, Transition};
 use secrecy::SecretString;
 
 use render::render;
@@ -96,13 +96,23 @@ pub struct SessionService {
     locale: Locale,
 }
 
+/// One ordered item of pre-login output.
+#[derive(Debug)]
+#[must_use]
+pub enum LoginOutput {
+    /// Rendered text for the session.
+    Text(SessionOutput),
+    /// A change to the session's local-echo mode (password masking).
+    Echo(SessionEcho),
+}
+
 /// How an input line was routed.
 #[derive(Debug)]
 #[must_use]
 pub enum Routing {
     /// Handled by the pre-login FSM; here is the output and whether to close.
     Login {
-        outputs: Vec<SessionOutput>,
+        outputs: Vec<LoginOutput>,
         close: bool,
     },
     /// The session is in-world; the caller must run the command pipeline.
@@ -175,7 +185,17 @@ impl SessionService {
         let mut outputs = Vec::new();
         let mut transition = first;
         loop {
-            outputs.extend(self.render_outputs(session, std::mem::take(&mut transition.messages)));
+            if let Some(echo) = transition.echo {
+                outputs.push(LoginOutput::Echo(SessionEcho {
+                    session_id: session,
+                    mode: echo_mode(echo),
+                }));
+            }
+            outputs.extend(
+                self.render_outputs(session, std::mem::take(&mut transition.messages))
+                    .into_iter()
+                    .map(LoginOutput::Text),
+            );
 
             if let Some(terminal) = transition.terminal {
                 let close = self.apply_terminal(session, terminal, backend).await;
@@ -313,6 +333,14 @@ impl SessionService {
     }
 }
 
+/// Maps the FSM's echo signal onto the IPC wire type at the engine boundary.
+fn echo_mode(echo: InputEcho) -> EchoMode {
+    match echo {
+        InputEcho::Enabled => EchoMode::Enabled,
+        InputEcho::Suppressed => EchoMode::Suppressed,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +422,17 @@ mod tests {
             .join("\n")
     }
 
+    fn login_text_of(outputs: &[LoginOutput]) -> String {
+        outputs
+            .iter()
+            .filter_map(|output| match output {
+                LoginOutput::Text(text) => Some(text.text.as_str()),
+                LoginOutput::Echo(_) => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[tokio::test]
     async fn connect_greets_with_a_banner_and_prompt() {
         let mut svc = SessionService::new("WELCOME", Locale::EN);
@@ -439,9 +478,9 @@ mod tests {
             unreachable!()
         };
         assert!(
-            text_of(&outputs).contains("Login failed"),
+            login_text_of(&outputs).contains("Login failed"),
             "got: {}",
-            text_of(&outputs)
+            login_text_of(&outputs)
         );
         // Still pre-login: not routed to the pipeline.
         assert!(matches!(
@@ -500,6 +539,47 @@ mod tests {
             svc.on_input(sid(7), "hi", &FakeBackend).await,
             Routing::Unknown
         ));
+    }
+
+    /// Collects the echo items of a login routing, in order.
+    fn echoes_of(routing: &Routing) -> Vec<EchoMode> {
+        let Routing::Login { outputs, .. } = routing else {
+            return Vec::new();
+        };
+        outputs
+            .iter()
+            .filter_map(|output| match output {
+                LoginOutput::Echo(echo) => Some(echo.mode),
+                LoginOutput::Text(_) => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn login_flow_emits_echo_changes_around_the_password() {
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let routing = svc.on_input(sid(1), "login alice", &FakeBackend).await;
+        assert_eq!(echoes_of(&routing), vec![EchoMode::Suppressed]);
+        // The suppression must precede the rendered password prompt.
+        let Routing::Login { outputs, .. } = &routing else {
+            unreachable!("asserted Login above")
+        };
+        assert!(
+            matches!(outputs.first(), Some(LoginOutput::Echo(_))),
+            "echo change must come before the prompt, got {outputs:?}"
+        );
+
+        let routing = svc.on_input(sid(1), "hunter2", &FakeBackend).await;
+        assert_eq!(echoes_of(&routing), vec![EchoMode::Enabled]);
+    }
+
+    #[tokio::test]
+    async fn non_password_input_emits_no_echo_changes() {
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let routing = svc.on_input(sid(1), "help", &FakeBackend).await;
+        assert_eq!(echoes_of(&routing), Vec::new());
     }
 
     #[tokio::test]

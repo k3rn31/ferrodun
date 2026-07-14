@@ -28,6 +28,15 @@ pub enum TelnetEvent {
     TerminalType(String),
 }
 
+/// Client-side local echo, controlled by the server via RFC 857.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalEcho {
+    /// Normal input: the client echoes what the player types.
+    Enabled,
+    /// Secret entry: the client is asked to stop echoing (IAC WILL ECHO).
+    Suppressed,
+}
+
 /// Per-connection telnet protocol state machine (sans-IO).
 ///
 /// Feed raw socket bytes to [`receive`](Self::receive) and get decoded
@@ -66,6 +75,12 @@ impl TelnetMachine {
             match item {
                 ParsedItem::Data(byte) => {
                     if let Some(text) = self.line.push(byte) {
+                        // A client that agreed to suppress echo shows nothing
+                        // — not even the Enter — so advance its display past
+                        // the prompt line (design 2026-07-11 §4).
+                        if self.negotiator.echo_suppressed() {
+                            self.output.extend_from_slice(b"\r\n");
+                        }
                         events.push(TelnetEvent::Line(text));
                     }
                 }
@@ -79,6 +94,17 @@ impl TelnetMachine {
             }
         }
         events
+    }
+
+    /// Asks the client to change its local echo (RFC 857, password masking).
+    /// The negotiation bytes accumulate internally; drain them with
+    /// [`take_output`](Self::take_output) and write them to the client
+    /// before the prompt they guard.
+    pub fn set_echo(&mut self, echo: LocalEcho) {
+        match echo {
+            LocalEcho::Suppressed => self.negotiator.suppress_echo(&mut self.output),
+            LocalEcho::Enabled => self.negotiator.restore_echo(&mut self.output),
+        }
     }
 
     /// Drains the bytes the server must write to the client.
@@ -305,5 +331,53 @@ mod tests {
         let mut machine = TelnetMachine::new();
         let _ = machine.receive(&[IAC, DONT, OPT_EOR]);
         assert_eq!(machine.prompt_frame(), vec![IAC, GA]);
+    }
+
+    #[test]
+    fn set_echo_queues_the_negotiation_bytes() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output(); // discard opening offers
+        machine.set_echo(LocalEcho::Suppressed);
+        assert_eq!(machine.take_output(), vec![255, 251, 1], "IAC WILL ECHO");
+        machine.set_echo(LocalEcho::Enabled);
+        assert_eq!(machine.take_output(), vec![255, 252, 1], "IAC WONT ECHO");
+    }
+
+    #[test]
+    fn a_masked_line_is_answered_with_a_crlf() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output();
+        machine.set_echo(LocalEcho::Suppressed);
+        let _ = machine.receive(&[255, 253, 1]); // client agrees: IAC DO ECHO
+        let _ = machine.take_output();
+        let events = machine.receive(b"hunter2\r\n");
+        assert_eq!(events, vec![TelnetEvent::Line("hunter2".into())]);
+        assert_eq!(
+            machine.take_output(),
+            b"\r\n".to_vec(),
+            "the client echoes nothing, so the server advances the line"
+        );
+    }
+
+    #[test]
+    fn an_unmasked_line_gets_no_crlf() {
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output();
+        let events = machine.receive(b"look\r\n");
+        assert_eq!(events, vec![TelnetEvent::Line("look".into())]);
+        assert!(machine.take_output().is_empty());
+    }
+
+    #[test]
+    fn a_refusing_client_gets_no_crlf_compensation() {
+        // The client refused (or ignored) WILL ECHO: it is still echoing
+        // locally, including the newline, so no compensation is owed.
+        let mut machine = TelnetMachine::new();
+        let _ = machine.take_output();
+        machine.set_echo(LocalEcho::Suppressed);
+        let _ = machine.receive(&[255, 254, 1]); // IAC DONT ECHO
+        let _ = machine.take_output();
+        let _ = machine.receive(b"visible\r\n");
+        assert!(machine.take_output().is_empty());
     }
 }

@@ -7,7 +7,9 @@ use anyhow::Context;
 use mud_cmd::Command;
 use mud_core::{MutationCommand, TICK_PERIOD, TickEvent};
 use mud_db::PersistentWorld;
-use mud_engine::{Pipeline, PipelineError, Routing, SessionDisposition, SessionService};
+use mud_engine::{
+    LoginOutput, Pipeline, PipelineError, Routing, SessionDisposition, SessionService,
+};
 use mud_ipc::{Endpoint, InMemoryEndpoint, accept_resume};
 use mud_schema::{GatewayFrame, SessionClose, SessionInput, WorldFrame, WorldId};
 use tokio::sync::Mutex;
@@ -87,6 +89,14 @@ pub async fn run(
     }
 }
 
+/// Maps one pre-login output item onto its IPC frame.
+fn frame_of(output: LoginOutput) -> WorldFrame {
+    match output {
+        LoginOutput::Text(output) => WorldFrame::Output(output),
+        LoginOutput::Echo(echo) => WorldFrame::Echo(echo),
+    }
+}
+
 /// Logs one tick event. Precondition failures and rejections are routine
 /// gameplay outcomes on the 20 Hz hot path — `trace`, never `warn`, or a
 /// blocked action floods the log (design §3). Effect/precondition payloads
@@ -121,7 +131,7 @@ async fn handle_input(
         Routing::Login { outputs, close } => {
             for output in outputs {
                 endpoint
-                    .send(WorldFrame::Output(output))
+                    .send(frame_of(output))
                     .await
                     .context("send output")?;
             }

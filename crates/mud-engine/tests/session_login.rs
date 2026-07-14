@@ -195,7 +195,13 @@ async fn a_wrong_password_then_retry_succeeds() {
     let Routing::Login { outputs, .. } = routing else {
         unreachable!()
     };
-    let text = outputs.iter().map(|o| o.text.as_str()).collect::<String>();
+    let text = outputs
+        .iter()
+        .filter_map(|output| match output {
+            mud_engine::LoginOutput::Text(text) => Some(text.text.as_str()),
+            mud_engine::LoginOutput::Echo(_) => None,
+        })
+        .collect::<String>();
     assert!(
         text.contains("Login failed"),
         "expected non-leaky failure, got: {text}"

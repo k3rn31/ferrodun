@@ -8,8 +8,8 @@
 
 use std::time::Instant;
 
-use mud_net::{Decision, RateLimiter, TelnetEvent, TelnetMachine};
-use mud_schema::{GatewayFrame, InputLine, SessionDisconnect, SessionId, SessionInput};
+use mud_net::{Decision, LocalEcho, RateLimiter, TelnetEvent, TelnetMachine};
+use mud_schema::{EchoMode, GatewayFrame, InputLine, SessionDisconnect, SessionId, SessionInput};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
 
@@ -135,6 +135,17 @@ where
                         return ExitCause::ClientGone;
                     }
                 }
+                Some(ToConnection::Echo(mode)) => {
+                    machine.set_echo(match mode {
+                        EchoMode::Enabled => LocalEcho::Enabled,
+                        EchoMode::Suppressed => LocalEcho::Suppressed,
+                    });
+                    // Negotiation only — no prompt frame rides along.
+                    let bytes = machine.take_output();
+                    if !bytes.is_empty() && writer.write_all(&bytes).await.is_err() {
+                        return ExitCause::ClientGone;
+                    }
+                }
                 // Close, or the router dropped the registry entry / shut down.
                 Some(ToConnection::Close) | None => return ExitCause::WorldClosed,
             },
@@ -180,7 +191,7 @@ mod tests {
     use std::time::Instant;
 
     use mud_net::{Burst, RateLimiter, SustainedRate};
-    use mud_schema::{GatewayFrame, OutputText, SessionId};
+    use mud_schema::{EchoMode, GatewayFrame, OutputText, SessionId};
     use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
@@ -385,5 +396,40 @@ mod tests {
         task.await.expect("connection task runs to completion");
 
         assert!(logs_contain("connection closed"));
+    }
+
+    #[tokio::test]
+    async fn echo_change_writes_will_echo_without_a_prompt_frame() {
+        let (mut client, mut router_rx, _task) = spawn_connection(default_limiter());
+
+        let tx = expect_register(&mut router_rx).await;
+        let _connect = router_rx.recv().await.expect("connect frame");
+
+        let mut offers = [0u8; 12];
+        client
+            .read_exact(&mut offers)
+            .await
+            .expect("opening offers");
+
+        tx.send(ToConnection::Echo(EchoMode::Suppressed))
+            .await
+            .expect("connection must accept the echo change");
+
+        // Exactly IAC WILL ECHO — no prompt frame rides along.
+        let mut buf = [0u8; 3];
+        client
+            .read_exact(&mut buf)
+            .await
+            .expect("negotiation bytes must be written");
+        assert_eq!(buf, [255, 251, 1]);
+
+        tx.send(ToConnection::Echo(EchoMode::Enabled))
+            .await
+            .expect("connection must accept the echo change");
+        client
+            .read_exact(&mut buf)
+            .await
+            .expect("negotiation bytes must be written");
+        assert_eq!(buf, [255, 252, 1]);
     }
 }

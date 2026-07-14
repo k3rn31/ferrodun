@@ -39,6 +39,7 @@ pub use pipeline::{DispatchOutcome, Pipeline, PipelineError};
 pub use places::Places;
 pub use roster::{Presence, Roster};
 pub use session::{
-    BackendError, InWorldBinding, LoginBackend, RegistryResolver, Routing, SessionService,
+    BackendError, InWorldBinding, LoginBackend, LoginOutput, RegistryResolver, Routing,
+    SessionService,
 };
 pub use text::{ContentTooLong, MAX_CONTENT_BYTES, sanitize};
