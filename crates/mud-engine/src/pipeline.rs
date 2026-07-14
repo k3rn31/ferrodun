@@ -432,7 +432,10 @@ mod tests {
         // pipeline's locale (§3.14.6).
         let expected = t!(Locale::EN, "command.not-found");
         assert!(
-            outcome.outputs.iter().any(|o| o.text.as_str() == expected),
+            outcome
+                .outputs
+                .iter()
+                .any(|o| o.text.to_plain_string() == expected),
             "expected not-found rendered in the pipeline locale, got {:?}",
             outcome.outputs,
         );
@@ -469,15 +472,15 @@ mod tests {
         // speaker is not in the broadcast audience.
         assert!(outcome.outputs.iter().any(|o| o.session_id
             == mud_schema::SessionId::new(NonZeroU64::new(1).expect("nz"))
-            && o.text.as_str() == "you shout"));
+            && o.text.to_plain_string() == "you shout"));
         assert!(outcome.outputs.iter().any(|o| o.session_id
             == mud_schema::SessionId::new(NonZeroU64::new(2).expect("nz"))
-            && o.text.as_str() == "someone shouts"));
+            && o.text.to_plain_string() == "someone shouts"));
         assert_eq!(
             outcome
                 .outputs
                 .iter()
-                .filter(|o| o.text.as_str() == "someone shouts")
+                .filter(|o| o.text.to_plain_string() == "someone shouts")
                 .count(),
             1,
             "the speaker must not hear their own broadcast"

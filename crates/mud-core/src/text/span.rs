@@ -7,7 +7,7 @@
 use super::style::{RoleName, SpanStyle, Style};
 
 /// A run of text sharing one [`SpanStyle`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[must_use]
 pub struct Span {
     text: String,
@@ -53,7 +53,7 @@ impl Span {
 
 /// A flat sequence of [`Span`]s — the representation every player-facing string
 /// is built from (§3.20.1.1).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[must_use]
 pub struct StyledText {
     spans: Vec<Span>,

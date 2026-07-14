@@ -8,7 +8,7 @@
 use std::fmt;
 
 /// A 24-bit RGB color (§3.20.3.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[must_use]
 pub struct Color {
     r: u8,

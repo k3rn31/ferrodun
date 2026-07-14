@@ -8,7 +8,9 @@ use super::color::Color;
 
 /// A concrete, already-resolved style: an optional foreground and background
 /// color plus a set of attributes (§3.20.1.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 #[must_use]
 pub struct Style {
     fg: Option<Color>,
@@ -79,7 +81,7 @@ impl Style {
 /// baseline constant and a parsed copy of the same name are equal and hash alike
 /// — a palette keyed by baseline constants resolves a parsed role regardless of
 /// provenance.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[must_use]
 pub struct RoleName(Cow<'static, str>);
 
@@ -130,7 +132,7 @@ impl fmt::Display for RoleName {
 /// keeps a [`Role`](SpanStyle::Role) unresolved until render time — which is what
 /// lets a tenant restyle `say`/`emote`/`tell` by overriding the palette instead
 /// of editing content (§3.20.4.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SpanStyle {
     /// Unstyled text: emits no escape sequence under any tier (§3.20.1.2).
     Plain,

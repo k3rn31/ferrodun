@@ -198,7 +198,7 @@ async fn a_wrong_password_then_retry_succeeds() {
     let text = outputs
         .iter()
         .filter_map(|output| match output {
-            mud_engine::LoginOutput::Text(text) => Some(text.text.as_str()),
+            mud_engine::LoginOutput::Text(text) => Some(text.text.to_plain_string()),
             mud_engine::LoginOutput::Echo(_) => None,
         })
         .collect::<String>();

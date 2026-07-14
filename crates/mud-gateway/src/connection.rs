@@ -128,7 +128,7 @@ where
             }
             output = output_rx.recv() => match output {
                 Some(ToConnection::Output(text)) => {
-                    let mut bytes = machine.encode_output(text.as_str());
+                    let mut bytes = machine.encode_output(&text.to_plain_string());
                     // One rendered block = one prompt frame (§2.8.2 EOR/GA).
                     bytes.extend_from_slice(&machine.prompt_frame());
                     if writer.write_all(&bytes).await.is_err() {

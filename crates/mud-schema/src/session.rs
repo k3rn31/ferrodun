@@ -73,7 +73,7 @@ impl fmt::Display for SchemaVersion {
 }
 
 /// The IPC schema version this build speaks (§2.1.3.1).
-pub const SCHEMA_VERSION: SchemaVersion = SchemaVersion(2);
+pub const SCHEMA_VERSION: SchemaVersion = SchemaVersion(3);
 
 /// Identifies one World a Gateway holds an IPC channel to (§2.1.3.1).
 ///
@@ -136,8 +136,8 @@ mod tests {
     }
 
     #[test]
-    fn schema_version_is_two() {
-        assert_eq!(SCHEMA_VERSION.get(), 2);
+    fn schema_version_is_three() {
+        assert_eq!(SCHEMA_VERSION.get(), 3);
     }
 
     #[test]
