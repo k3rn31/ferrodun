@@ -218,7 +218,9 @@ async fn login_masks_the_password_like_registration() {
     drop(client);
 
     // Second connection logs in; the password prompt must be masked too.
-    let stream = TcpStream::connect(addr).await.expect("client must reconnect");
+    let stream = TcpStream::connect(addr)
+        .await
+        .expect("client must reconnect");
     let mut client = ClientReader::new(stream);
     client.read_until(b"Welcome to Testville.").await;
 

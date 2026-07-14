@@ -359,7 +359,10 @@ mod tests {
         out.clear();
         negotiator.on_negotiate(Verb::Do, OPT_ECHO, &mut out);
         assert!(negotiator.echo_suppressed());
-        assert!(out.is_empty(), "DO answering our WILL must not be re-acknowledged");
+        assert!(
+            out.is_empty(),
+            "DO answering our WILL must not be re-acknowledged"
+        );
     }
 
     #[test]
@@ -383,7 +386,10 @@ mod tests {
         assert!(!negotiator.echo_suppressed());
         out.clear();
         negotiator.on_negotiate(Verb::Dont, OPT_ECHO, &mut out);
-        assert!(out.is_empty(), "DONT answering our WONT must not be re-acknowledged");
+        assert!(
+            out.is_empty(),
+            "DONT answering our WONT must not be re-acknowledged"
+        );
     }
 
     #[test]
