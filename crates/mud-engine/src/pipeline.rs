@@ -211,10 +211,11 @@ impl Pipeline {
 
         // Caller reply first, then fan out each broadcast to the other sessions
         // in its audience — all resolved against the pre-effect world, before the
-        // reply's own effects apply.
-        let mut outputs = message(session_id, reply.output().to_plain_string());
+        // reply's own effects apply. Styled text passes through untouched; the
+        // gateway renders it per session (§3.20.1.2).
+        let mut outputs = message(session_id, reply.output().clone());
         for broadcast in reply.broadcasts() {
-            let rendered = broadcast.message().to_plain_string();
+            let styled = broadcast.message().clone();
             for occupant in world.occupants_of(broadcast.place()) {
                 if occupant == broadcast.except() {
                     continue;
@@ -222,7 +223,7 @@ impl Pipeline {
                 if let Some(recipient) = roster.session_of(occupant) {
                     outputs.push(SessionOutput {
                         session_id: recipient,
-                        text: OutputText::new(rendered.clone()),
+                        text: OutputText::new(styled.clone()),
                     });
                 }
             }
@@ -245,7 +246,10 @@ struct Parsed<'a> {
 }
 
 /// Wraps one engine message as a single-element output for `session_id`.
-fn message(session_id: mud_schema::SessionId, text: String) -> Vec<SessionOutput> {
+fn message(
+    session_id: mud_schema::SessionId,
+    text: impl Into<mud_core::StyledText>,
+) -> Vec<SessionOutput> {
     vec![SessionOutput {
         session_id,
         text: OutputText::new(text),

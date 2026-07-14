@@ -652,5 +652,27 @@ mod tests {
                 && o.text.to_plain_string().contains("hi")),
             "the second session must receive the broadcast",
         );
+
+        // styled payload survive frame: renderer (gateway side) resolves SAY
+        // role against palette (§3.20.4.2).
+        let has_say_role = |o: &mud_schema::SessionOutput| {
+            o.text.styled().spans().iter().any(
+                |s| matches!(s.style(), mud_core::SpanStyle::Role(r) if *r == mud_core::RoleName::SAY),
+            )
+        };
+        assert!(
+            outcome
+                .outputs
+                .iter()
+                .any(|o| o.session_id == sid(2) && has_say_role(o)),
+            "the broadcast must carry say role span",
+        );
+        assert!(
+            outcome
+                .outputs
+                .iter()
+                .any(|o| o.session_id == sid(1) && has_say_role(o)),
+            "the caller reply must carry say role span",
+        );
     }
 }
