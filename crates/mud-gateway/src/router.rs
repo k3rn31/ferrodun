@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use mud_ipc::Endpoint;
-use mud_schema::{GatewayFrame, OutputText, SessionId, WorldFrame};
+use mud_schema::{EchoMode, GatewayFrame, OutputText, SessionId, WorldFrame};
 use tokio::sync::mpsc;
 
 use crate::error::GatewayError;
@@ -24,6 +24,8 @@ pub(crate) const OUTPUT_CAPACITY: usize = 64;
 pub(crate) enum ToConnection {
     /// Rendered text to write to the client, followed by a prompt frame.
     Output(OutputText),
+    /// Ask the client to change its local echo (password masking, RFC 857).
+    Echo(EchoMode),
     /// World-initiated close (§2.1.3): drop the connection, no `Disconnect` echo.
     Close,
 }
@@ -61,6 +63,9 @@ where
                 }
                 Some(WorldFrame::Close(close)) => {
                     route(&registry, close.session_id, ToConnection::Close);
+                }
+                Some(WorldFrame::Echo(echo)) => {
+                    route(&registry, echo.session_id, ToConnection::Echo(echo.mode));
                 }
                 // ResumeAck is consumed by the handshake before the router
                 // starts; WorldFrame is #[non_exhaustive], so future variants
@@ -108,8 +113,8 @@ mod tests {
 
     use mud_ipc::{Endpoint, in_memory_pair};
     use mud_schema::{
-        GatewayFrame, OutputText, SessionClose, SessionConnect, SessionId, SessionOutput,
-        WorldFrame,
+        EchoMode, GatewayFrame, OutputText, SessionClose, SessionConnect, SessionEcho, SessionId,
+        SessionOutput, WorldFrame,
     };
     use tokio::sync::mpsc;
 
@@ -399,6 +404,39 @@ mod tests {
             rx_b.try_recv().is_err(),
             "output addressed to A must not reach B"
         );
+
+        drop(world_end);
+        router
+            .await
+            .expect("router task must not panic")
+            .expect("closed peer is a clean shutdown");
+    }
+
+    #[tokio::test]
+    async fn echo_frame_routes_to_the_registered_session() {
+        let (gateway_end, mut world_end) = in_memory_pair();
+        let (commands_tx, commands_rx) = mpsc::channel(8);
+        let router = tokio::spawn(run_router(gateway_end, commands_rx));
+
+        let (tx, mut output_rx) = mpsc::channel(OUTPUT_CAPACITY);
+        let id = session(1);
+        commands_tx
+            .send(ToRouter::Register { session_id: id, tx })
+            .await
+            .expect("router must accept registration");
+
+        drain_barrier(&commands_tx, &mut world_end, session(2)).await;
+
+        world_end
+            .send(WorldFrame::Echo(SessionEcho {
+                session_id: id,
+                mode: EchoMode::Suppressed,
+            }))
+            .await
+            .expect("world endpoint must send");
+
+        let routed = output_rx.recv().await.expect("echo must be routed");
+        assert!(matches!(routed, ToConnection::Echo(EchoMode::Suppressed)));
 
         drop(world_end);
         router
