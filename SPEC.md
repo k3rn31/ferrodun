@@ -985,6 +985,9 @@ The Gateway MUST support:
   - **CHARSET** — UTF-8 negotiation, with fallback transliteration
     for legacy clients.
   - **EOR / GA** — prompt framing.
+  - **ECHO** (RFC 857) — server-claimed around password entry to suppress
+    the client's local echo; released as soon as the secret line is
+    consumed. The server never echoes normal input.
 - **Telnet over TLS** on a separate port.
 - **SSH** via `russh`. Account authentication via SSH keys MUST be
   available, and SSH support MAY be optional per deployment.

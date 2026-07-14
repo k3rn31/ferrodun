@@ -668,6 +668,18 @@ spine.
     `docs/superpowers/specs/2026-07-11-tenant-catalog-cli-design.md`.
     *Verify:* `mudd tenant add` scaffolds a tenant that `mudd serve` boots;
     workspace tests and clippy green.
+- **M1-25 — Password echo suppression.** The session FSM signals secret
+  entry (`Transition.echo`, derived from password-state membership so a
+  future secret-collecting state is masked automatically); a new
+  `WorldFrame::Echo` carries it to the gateway (SCHEMA_VERSION 2); the
+  telnet negotiator claims ECHO (RFC 857): IAC WILL ECHO before the
+  password prompt, IAC WONT ECHO once the secret line is consumed, plus a
+  CRLF echo for masked lines. Clients that refuse keep visible passwords
+  (documented limitation, no warning message).
+  - *Spec:* §2.8.2; design doc
+    `docs/superpowers/specs/2026-07-11-password-echo-suppression-design.md`.
+    *Verify:* telnet e2e asserts WILL/WONT ECHO framing around the password
+    prompt; workspace tests and clippy green.
 
 ---
 
