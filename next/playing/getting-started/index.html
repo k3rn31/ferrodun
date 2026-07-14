@@ -1174,10 +1174,10 @@ say whether the name exists, so no one can use failed logins to fish for
 valid account names.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>The password prompt does not mask or hide your input as you type it —
-the server does not currently enable echo suppression on the telnet
-connection, so your client's local echo shows what you type. Be mindful
-of who can see your screen while you type your password.</p>
+<p>The server asks your client to stop echoing while you type a password
+(telnet echo suppression, RFC 857). Most MUD clients and plain <code>telnet</code>
+honor it; if yours refuses, it will still display the password as you
+type — be mindful of who can see your screen.</p>
 </div>
 <h2 id="registering">Registering<a class="headerlink" href="#registering" title="Permanent link">&para;</a></h2>
 <p>Type <code>register &lt;name&gt;</code> to create a new account. Names may use letters,
