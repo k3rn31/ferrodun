@@ -32,8 +32,13 @@ Room-to-room movement already broadcasts departure and directional arrival
   players appear in `look` and in announcements. Full linkdead handling
   remains M7.
 - **Quit and drop read identically to observers.** Both emit the same
-  "left the game" message; an observer cannot distinguish a clean quit from
+  disappearance message; an observer cannot distinguish a clean quit from
   a dropped connection.
+- **Announcements stay in-fiction.** No out-of-world phrasing like
+  "the game": entering reads as appearing, leaving as disappearing. Both
+  messages always name exactly one puppet (each enter/leave is its own
+  event), so they need no plural form; the only multi-subject text is the
+  `look` players line, which has distinct singular/plural keys.
 - **Players and objects render differently in `look`.** Every major MUD
   lineage separates characters from things (Diku/ROM: one authored sentence
   per character and per object; Evennia: separate `Characters:` and
@@ -47,10 +52,10 @@ Room-to-room movement already broadcasts departure and directional arrival
 ## Player-visible behavior
 
 - **Spawn:** everyone else in the destination room sees
-  `Alice has entered the game.` (key `presence.enter`, `system` role). The
+  `Alice appears from nowhere.` (key `presence.enter`, `system` role). The
   newcomer sees the room render, as today.
 - **Quit / socket drop:** everyone else in the room sees
-  `Alice has left the game.` (key `presence.leave`, `system` role).
+  `Alice disappears.` (key `presence.leave`, `system` role).
 - **`look`:** after the exits line, connected players collapse into one
   Diku-voice sentence, then objects keep the current list:
 
@@ -137,10 +142,10 @@ and `mud-session` are untouched.
   - Pipeline refactor regression gate: every existing `tests/broadcast.rs`
     test stays green untouched.
 - **`mudd` e2e (two telnet sessions):** Bob logs in → Alice sees
-  `Bob has entered the game.`; `look` shows `Bob is here.`; Bob quits →
-  Alice sees the leave message; Bob reconnects and the socket is hard-dropped
-  → Alice sees the same leave message; after either leave, `look` no longer
-  shows Bob.
+  `Bob appears from nowhere.`; `look` shows `Bob is here.`; Bob quits →
+  Alice sees `Bob disappears.`; Bob reconnects and the socket is hard-dropped
+  → Alice sees the same disappearance message; after either leave, `look` no
+  longer shows Bob.
 - **Docs:** update the Playing pages that describe `look` and session
   behavior in the same PR.
 
