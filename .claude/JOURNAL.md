@@ -1576,3 +1576,19 @@ truth when this log drifts.
 - **Verify:** per-crate unit tests; `telnet_login` e2e asserts WILL/WONT
   ECHO framing; workspace tests + clippy green.
 - **Next:** none — refusing clients intentionally get no warning (design §1).
+
+## 2026-07-14 — ANSI renderer wiring (M1-26)
+
+- **Spec:** §3.20.1.2, §3.20.5 — escapes generated only in the per-session
+  telnet renderer; styled text over internal pipelines.
+- **Done:** serde on the `mud-core` text model; `OutputText` wraps
+  `StyledText` (SCHEMA_VERSION 3); pipeline passes styled text through
+  unflattened; gateway renders per session at `ansi16` (`GatewayConfig`
+  gains palette + tier at boot); `encode_output`'s ASCII transliteration
+  shields ANSI escapes; PLAN M1-26 added, stale M1-21/22 pointer fixed;
+  docs (rendering/engine/styling) updated to current state.
+- **Verify:** gateway loopback test asserts `ansi16` SGR reaches the
+  client; `mudd` telnet e2e asserts ANSI escapes in a `look` reply;
+  workspace tests + clippy green; `mkdocs --strict` green.
+- **Next:** M1-23's acceptance integration test now has the wiring its
+  "assert ANSI" clause needs. Tier negotiation deferred to M3.

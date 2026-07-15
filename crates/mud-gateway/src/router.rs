@@ -175,7 +175,7 @@ mod tests {
             .expect("world endpoint must send");
 
         let routed = output_rx.recv().await.expect("output must be routed");
-        assert!(matches!(routed, ToConnection::Output(text) if text.as_str() == "hello"));
+        assert!(matches!(routed, ToConnection::Output(text) if text.to_plain_string() == "hello"));
 
         drop(world_end); // peer closes -> clean shutdown
         router
@@ -342,7 +342,7 @@ mod tests {
             .recv()
             .await
             .expect("B receives its output while A is flooded");
-        assert!(matches!(marker, ToConnection::Output(t) if t.as_str() == "b-marker"));
+        assert!(matches!(marker, ToConnection::Output(t) if t.to_plain_string() == "b-marker"));
 
         // A buffered exactly its capacity; the overflow hit the drop branch.
         let mut delivered = 0usize;
@@ -397,7 +397,7 @@ mod tests {
             .expect("world endpoint must send");
 
         let got = rx_a.recv().await.expect("A receives its output");
-        assert!(matches!(got, ToConnection::Output(t) if t.as_str() == "for-a"));
+        assert!(matches!(got, ToConnection::Output(t) if t.to_plain_string() == "for-a"));
         // Blocking on A's receiver means the frame is fully routed; B, never
         // addressed, has nothing waiting.
         assert!(

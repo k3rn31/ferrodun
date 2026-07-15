@@ -6,9 +6,11 @@
 //! an echo would be spurious). Either way the session deregisters from the
 //! router.
 
+use std::sync::Arc;
 use std::time::Instant;
 
-use mud_net::{Decision, LocalEcho, RateLimiter, TelnetEvent, TelnetMachine};
+use mud_core::Palette;
+use mud_net::{Decision, LocalEcho, RateLimiter, TelnetEvent, TelnetMachine, Tier};
 use mud_schema::{EchoMode, GatewayFrame, InputLine, SessionDisconnect, SessionId, SessionInput};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
@@ -23,6 +25,16 @@ enum ExitCause {
     WorldClosed,
 }
 
+/// The identity and render target for one connection: fixed for the whole
+/// loop, unlike `reader`/`writer`/`machine`/`limiter`, which carry per-read
+/// mutable state. Grouped to keep `connection_loop`'s parameter count sane.
+struct SessionContext<'a> {
+    session_id: SessionId,
+    to_router: &'a mpsc::Sender<ToRouter>,
+    palette: &'a Palette,
+    tier: Tier,
+}
+
 /// Serves one client connection until the client hangs up or the World closes
 /// the session. Infallible from the caller's view: every failure path is a
 /// per-connection teardown, never a gateway-wide error.
@@ -31,6 +43,8 @@ pub(crate) async fn run_connection<S>(
     session_id: SessionId,
     to_router: mpsc::Sender<ToRouter>,
     mut limiter: RateLimiter,
+    palette: Arc<Palette>,
+    tier: Tier,
 ) where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
@@ -57,14 +71,19 @@ pub(crate) async fn run_connection<S>(
     let cause = if writer.write_all(&machine.take_output()).await.is_err() {
         ExitCause::ClientGone
     } else {
+        let ctx = SessionContext {
+            session_id,
+            to_router: &to_router,
+            palette: &palette,
+            tier,
+        };
         connection_loop(
             &mut reader,
             &mut writer,
             &mut machine,
             &mut limiter,
-            session_id,
-            &to_router,
             &mut output_rx,
+            &ctx,
         )
         .await
     };
@@ -94,9 +113,8 @@ async fn connection_loop<S>(
     writer: &mut WriteHalf<S>,
     machine: &mut TelnetMachine,
     limiter: &mut RateLimiter,
-    session_id: SessionId,
-    to_router: &mpsc::Sender<ToRouter>,
     output_rx: &mut mpsc::Receiver<ToConnection>,
+    ctx: &SessionContext<'_>,
 ) -> ExitCause
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -116,7 +134,7 @@ where
                     }
                 };
                 for event in machine.receive(bytes) {
-                    if handle_event(event, limiter, session_id, to_router).await.is_err() {
+                    if handle_event(event, limiter, ctx.session_id, ctx.to_router).await.is_err() {
                         return ExitCause::WorldClosed; // router gone
                     }
                 }
@@ -128,7 +146,10 @@ where
             }
             output = output_rx.recv() => match output {
                 Some(ToConnection::Output(text)) => {
-                    let mut bytes = machine.encode_output(text.as_str());
+                    // The one place escapes are generated (§3.20.1.2): render the
+                    // styled payload for this session, then encode per its charset.
+                    let ansi = mud_net::render(text.styled(), ctx.palette, ctx.tier);
+                    let mut bytes = machine.encode_output(&ansi);
                     // One rendered block = one prompt frame (§2.8.2 EOR/GA).
                     bytes.extend_from_slice(&machine.prompt_frame());
                     if writer.write_all(&bytes).await.is_err() {
@@ -221,7 +242,14 @@ mod tests {
     ) {
         let (client, server) = tokio::io::duplex(4096);
         let (to_router, router_rx) = mpsc::channel(8);
-        let task = tokio::spawn(run_connection(server, session(), to_router, limiter));
+        let task = tokio::spawn(run_connection(
+            server,
+            session(),
+            to_router,
+            limiter,
+            Arc::new(mud_core::Palette::baseline()),
+            mud_net::Tier::Ansi16,
+        ));
         (client, router_rx, task)
     }
 

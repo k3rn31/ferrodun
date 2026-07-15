@@ -303,18 +303,19 @@ spine.
     direction unrepresentable; both `#[non_exhaustive]`. `SessionId` is a
     `NonZeroU64` newtype (niche-friendly); `SCHEMA_VERSION` is a build-time
     const (1), carried by the M1-11 resume handshake, not stamped per frame.
-    `mud-schema` is a **leaf crate** (no `mud-core` dep): **no M1 frame carries
-    an `EntityKey`** — `SessionInput`/`SessionOutput` carry text, connect/
-    disconnect carry only a `SessionId`; entity-bearing frames arrive in M3+.
-    Text payloads are **marker newtypes** (`InputLine`, `OutputText`, mirroring
-    `mud-core`'s `Description`) not raw `String`, per the newtype mandate — no
-    invariant enforced here since §3.6.4's cap/stripping is command-scoped and
-    downstream (M1-17); `OutputText` is `String`-backed for M1. (M1-13 builds the
-    styled-text model + per-session renderer as a self-contained library; the
-    `OutputText`→styled-text swap that pulls it across the IPC boundary is
-    **deferred to M1-21/M1-22**, where the renderer is wired into the session
-    pipeline.) `encode`/`decode` helpers wrap postcard (`SchemaError` via
-    `thiserror`); length-prefixing is M1-11.
+    `mud-schema` was a **leaf crate** until M1-26 pulled in `mud-core` for the
+    styled-text payload; **no M1 frame carries an `EntityKey`** —
+    `SessionInput`/`SessionOutput` carry text, connect/disconnect carry only a
+    `SessionId`; entity-bearing frames arrive in M3+. Text payloads are
+    **marker newtypes** (`InputLine`, `OutputText`, mirroring `mud-core`'s
+    `Description`) not raw `String`, per the newtype mandate — no invariant
+    enforced here since §3.6.4's cap/stripping is command-scoped and downstream
+    (M1-17); `OutputText` was `String`-backed as built in M1-10, swapped to
+    carry `StyledText` in M1-26. (M1-13 builds the styled-text model +
+    per-session renderer as a self-contained library; M1-26 pulled it across
+    the IPC boundary, wiring the renderer into the session pipeline.)
+    `encode`/`decode` helpers wrap postcard (`SchemaError` via `thiserror`);
+    length-prefixing is M1-11.
 - **M1-11 — IPC transport + resume handshake + single-process mode.** Split
   into two PRs so each touches one crate's public API (principle #3) and the
   wire/IPC change starts in `mud-schema` (§8 rule 4): **M1-11a** defines the
@@ -424,7 +425,7 @@ spine.
   leaves the tree green: **M1-13a** (authoring) and **M1-13b** (renderer).
   - *Spec:* §3.20.1–3.20.5. *Verify:* snapshot tests for ansi16 + mono
     rendering of a styled fixture. *Out of scope (deferred to their steps):*
-    the IPC `OutputText`→styled-text swap (M1-21/M1-22, where the renderer is
+    the IPC `OutputText`→styled-text swap (M1-26, where the renderer is
     wired into the session pipeline); player-input markup escaping (§3.20.7 →
     M1-17); palette hot-reload (§3.20.3.3 → M2-H); truecolor/xterm256 beyond the
     downsample tables and TTYPE/`Core.Hello` tier detection (§3.20.5.2 step 3 →
@@ -680,6 +681,23 @@ spine.
     `docs/superpowers/specs/2026-07-11-password-echo-suppression-design.md`.
     *Verify:* telnet e2e asserts WILL/WONT ECHO framing around the password
     prompt; workspace tests and clippy green.
+- **M1-26 — ANSI renderer wiring.** Styled text now crosses the IPC boundary
+  instead of being flattened: `mud-core`'s text model gains serde so
+  `WorldFrame::Output`'s `OutputText` wraps `StyledText` directly
+  (`SCHEMA_VERSION` 2→3); the engine pipeline passes replies and broadcasts
+  through unflattened. The gateway's per-connection task renders each
+  session's output via `mud_net::render` against the tenant `Palette`,
+  fixed at the M1 tier (`resolve_tier(false, DEFAULT_TENANT_TIER)` →
+  `ansi16`; TTYPE/MTTS tier negotiation is not implemented yet, deferred to
+  M3). The ASCII-transliteration path for non-UTF-8 legacy-charset clients
+  is updated to shield ANSI escape sequences, transliterating only the text
+  between them.
+  - *Spec:* §3.20.1.2, §3.20.5; design doc
+    `docs/superpowers/specs/2026-07-14-ansi-renderer-wiring-design.md`.
+    *Verify:* gateway loopback test asserts ansi16 SGR sequences reach the
+    client; `mudd` telnet e2e asserts ANSI escapes in a `look` reply
+    (closing the M1-23 acceptance test's deferred "assert ANSI" clause);
+    workspace tests and clippy green.
 
 ---
 

@@ -80,16 +80,17 @@ unknown styling, and logs a warning so you can spot the typo. Malformed markup
     *players* is a separate, locked-down path (it is escaped by default), so
     players cannot inject styling into other players' output.
 
-!!! note "Color is not delivered to players yet"
+!!! note "Color renders at 16-color ANSI for now"
 
     Everything above — palette roles, named colors, and markup — is parsed,
-    validated, and compiled today, exactly as described. But the current
-    build's live output path flattens every reply to plain text before it
-    reaches a session, so **players see correct words with no color or
-    attributes**, regardless of `NO_COLOR` or the tenant's configured tier.
+    validated, and compiled, and the live output path renders it: every
+    session's output is delivered as ANSI escape sequences, so **players see
+    color and attributes**, at the tenant's default tier.
 
     Per-tier color delivery (mono / ansi16 / xterm256 / truecolor, with
-    deterministic downsampling from the truecolor you author) is already
-    implemented in the engine, but is not yet wired into the live output
-    path. See [Rendering & color](../architecture/rendering.md) for the
-    mechanism and exactly what is and isn't connected.
+    deterministic downsampling from the truecolor you author) is implemented
+    in the engine, but every session currently renders at the fixed tenant
+    default tier (`ansi16`) — per-client tier negotiation (256-color and
+    truecolor detection) is not implemented yet. See [Rendering &
+    color](../architecture/rendering.md) for the mechanism and exactly what
+    is and isn't connected.

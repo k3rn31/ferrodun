@@ -417,7 +417,7 @@ mod tests {
     fn text_of(outputs: &[mud_schema::SessionOutput]) -> String {
         outputs
             .iter()
-            .map(|o| o.text.as_str())
+            .map(|o| o.text.to_plain_string())
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -426,7 +426,7 @@ mod tests {
         outputs
             .iter()
             .filter_map(|output| match output {
-                LoginOutput::Text(text) => Some(text.text.as_str()),
+                LoginOutput::Text(text) => Some(text.text.to_plain_string()),
                 LoginOutput::Echo(_) => None,
             })
             .collect::<Vec<_>>()
@@ -648,9 +648,31 @@ mod tests {
 
         assert!(
             outcome.outputs.iter().any(|o| o.session_id == sid(2)
-                && o.text.as_str().contains("arden")
-                && o.text.as_str().contains("hi")),
+                && o.text.to_plain_string().contains("arden")
+                && o.text.to_plain_string().contains("hi")),
             "the second session must receive the broadcast",
+        );
+
+        // styled payload survive frame: renderer (gateway side) resolves SAY
+        // role against palette (§3.20.4.2).
+        let has_say_role = |o: &mud_schema::SessionOutput| {
+            o.text.styled().spans().iter().any(
+                |s| matches!(s.style(), mud_core::SpanStyle::Role(r) if *r == mud_core::RoleName::SAY),
+            )
+        };
+        assert!(
+            outcome
+                .outputs
+                .iter()
+                .any(|o| o.session_id == sid(2) && has_say_role(o)),
+            "the broadcast must carry say role span",
+        );
+        assert!(
+            outcome
+                .outputs
+                .iter()
+                .any(|o| o.session_id == sid(1) && has_say_role(o)),
+            "the caller reply must carry say role span",
         );
     }
 }

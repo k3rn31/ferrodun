@@ -12,7 +12,9 @@
 /// Flags are combined with [`union`](Attributes::union) and tested with
 /// [`contains`](Attributes::contains); the bit order of the constants is the
 /// canonical SGR emission order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 #[must_use]
 pub struct Attributes(u8);
 

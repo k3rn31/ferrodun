@@ -183,9 +183,9 @@ fn fixture(access: LockContext) -> (World, FakeResolver) {
 }
 
 /// The single text line of a one-element output, for terse assertions.
-fn only_line(outputs: &[mud_schema::SessionOutput]) -> &str {
+fn only_line(outputs: &[mud_schema::SessionOutput]) -> String {
     assert_eq!(outputs.len(), 1, "expected exactly one output");
-    outputs.first().expect("one output").text.as_str()
+    outputs.first().expect("one output").text.to_plain_string()
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn a_bound_command_runs_and_renders_its_reply() {
     assert_eq!(outputs.len(), 1);
     let reply = outputs.first().expect("one output");
     assert_eq!(reply.session_id, session(1));
-    assert_eq!(reply.text.as_str(), "You look around.");
+    assert_eq!(reply.text.to_plain_string(), "You look around.");
     assert_eq!(look.runs(), 1);
 }
 

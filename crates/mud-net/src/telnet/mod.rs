@@ -121,14 +121,9 @@ impl TelnetMachine {
         let encoded: std::borrow::Cow<'_, str> = match self.negotiator.charset() {
             CharsetMode::Utf8 => std::borrow::Cow::Borrowed(text),
             // deunicode maps control bytes to "" once it hits its
-            // transliteration path, so '\n' must be shielded from it by
-            // transliterating line-by-line rather than the whole string.
-            CharsetMode::Ascii => std::borrow::Cow::Owned(
-                text.split('\n')
-                    .map(deunicode::deunicode)
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            ),
+            // transliteration path, so ANSI CSI escapes (a later task renders
+            // color before this point) must be shielded from it.
+            CharsetMode::Ascii => std::borrow::Cow::Owned(transliterate_preserving_escapes(text)),
         };
         let mut out = Vec::with_capacity(encoded.len() + 8);
         for &byte in encoded.as_bytes() {
@@ -182,6 +177,54 @@ impl Default for TelnetMachine {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Transliterates text to ASCII for legacy clients while passing ANSI CSI
+/// escape sequences (SGR color codes, etc.) through untouched — deunicode
+/// would otherwise eat the ESC byte and leak the raw escape text, since a
+/// later task renders ANSI color at the gateway before this legacy-charset
+/// path runs.
+fn transliterate_preserving_escapes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find('\u{1b}') {
+        // INVARIANT: '\u{1b}' (ESC) is a one-byte ASCII char, so `start` and
+        // `start + escape_len(...)` both land on UTF-8 char boundaries and
+        // `split_at` cannot panic.
+        let (plain, from_esc) = rest.split_at(start);
+        out.push_str(&transliterate_plain(plain));
+        let (escape, remainder) = from_esc.split_at(escape_len(from_esc));
+        out.push_str(escape);
+        rest = remainder;
+    }
+    out.push_str(&transliterate_plain(rest));
+    out
+}
+
+/// Length in bytes of the escape sequence starting at `s` (which begins with
+/// ESC): a CSI sequence runs from ESC through its final byte
+/// (`0x40..=0x7e`); a lone ESC not opening a CSI sequence passes through one
+/// byte.
+fn escape_len(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    if bytes.get(1) != Some(&b'[') {
+        return 1;
+    }
+    bytes
+        .iter()
+        .skip(2)
+        .position(|byte| (0x40..=0x7e).contains(byte))
+        .map_or(bytes.len(), |i| i + 3)
+}
+
+/// deunicode maps control bytes to "" once it hits its transliteration path,
+/// so '\n' must be shielded from it by transliterating line-by-line rather
+/// than the whole string.
+fn transliterate_plain(text: &str) -> String {
+    text.split('\n')
+        .map(deunicode::deunicode)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -305,6 +348,15 @@ mod tests {
     fn legacy_client_gets_ascii_transliteration() {
         let machine = TelnetMachine::new(); // CHARSET never accepted
         assert_eq!(machine.encode_output("café\n"), b"cafe\r\n".to_vec());
+    }
+
+    #[test]
+    fn ascii_transliteration_preserves_ansi_escapes() {
+        let machine = TelnetMachine::new(); // CHARSET never accepted → ASCII mode
+        assert_eq!(
+            machine.encode_output("\u{1b}[97mcafé\u{1b}[0m\n"),
+            b"\x1b[97mcafe\x1b[0m\r\n".to_vec()
+        );
     }
 
     #[test]

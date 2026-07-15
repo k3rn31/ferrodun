@@ -93,7 +93,7 @@ fn text_for(outputs: &[SessionOutput], session: SessionId) -> String {
     outputs
         .iter()
         .filter(|o| o.session_id == session)
-        .map(|o| o.text.as_str())
+        .map(|o| o.text.to_plain_string())
         .collect::<Vec<_>>()
         .join("\n")
 }

@@ -4,11 +4,13 @@
 #![allow(clippy::expect_used, clippy::panic)] // integration-test crates are not compiled with cfg(test), so clippy.toml allow-{expect,panic}-in-tests do not cover their helpers; both are permitted in tests per policy
 
 use std::num::NonZeroU64;
+use std::sync::Arc;
 use std::time::Duration;
 
+use mud_core::{Palette, RoleName, StyledText};
 use mud_gateway::{GatewayConfig, GatewayError, serve};
 use mud_ipc::{Endpoint, InMemoryEndpoint, accept_resume, in_memory_pair};
-use mud_net::{Burst, SustainedRate};
+use mud_net::{Burst, SustainedRate, Tier};
 use mud_schema::{
     GatewayFrame, OutputText, SessionClose, SessionId, SessionOutput, WorldFrame, WorldId,
 };
@@ -27,6 +29,8 @@ fn config() -> GatewayConfig {
         world_id: world_id(),
         rate: SustainedRate::DEFAULT,
         burst: Burst::DEFAULT,
+        palette: Arc::new(Palette::baseline()),
+        tier: Tier::Ansi16,
     }
 }
 
@@ -135,6 +139,35 @@ async fn echo_round_trip_with_negotiation_and_prompt_frame() {
     );
 }
 
+/// The M1-26 wiring assertion: a styled World frame reaches the client as
+/// ansi16 SGR bytes — the piece M1-23's "assert ANSI" clause leans on.
+#[tokio::test]
+async fn styled_output_renders_ansi16_sgr_to_the_client() {
+    let (addr, mut world_end) = boot_gateway(config()).await;
+    let mut client = TcpStream::connect(addr).await.expect("client connects");
+    let session_id = expect_connect(&mut world_end).await;
+
+    let styled = StyledText::new()
+        .role("Alice", RoleName::SAY)
+        .plain(" waves\n");
+    world_end
+        .send(WorldFrame::Output(SessionOutput {
+            session_id,
+            text: OutputText::new(styled),
+        }))
+        .await
+        .expect("world sends styled output");
+
+    let bytes = read_until(&mut client, b"waves").await;
+    // Baseline SAY (#cdd6f4) downsamples to bright white (SGR 97) at ansi16 —
+    // pinned by mud-net's ansi16_render_is_stable snapshot test.
+    let sgr = b"\x1b[97mAlice\x1b[0m";
+    assert!(
+        bytes.windows(sgr.len()).any(|w| w == sgr),
+        "expected ansi16 SGR around the say span, got {bytes:?}"
+    );
+}
+
 #[tokio::test]
 async fn client_drop_reaches_the_world_as_disconnect() {
     let (addr, mut world_end) = boot_gateway(config()).await;
@@ -193,6 +226,8 @@ async fn throttled_commands_never_reach_the_world() {
         world_id: world_id(),
         rate: SustainedRate::new(one),
         burst: Burst::new(one),
+        palette: Arc::new(Palette::baseline()),
+        tier: Tier::Ansi16,
     };
     let (addr, mut world_end) = boot_gateway(tight).await;
 

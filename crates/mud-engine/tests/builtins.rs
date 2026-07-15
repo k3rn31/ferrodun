@@ -198,12 +198,7 @@ impl Harness {
     fn line(&mut self, command: &str) -> String {
         let outputs = self.run(command);
         assert_eq!(outputs.len(), 1, "expected exactly one output");
-        outputs
-            .first()
-            .expect("one output")
-            .text
-            .as_str()
-            .to_owned()
+        outputs.first().expect("one output").text.to_plain_string()
     }
 }
 

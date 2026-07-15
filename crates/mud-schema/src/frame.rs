@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use mud_core::StyledText;
+
 use crate::session::{SchemaVersion, SessionId, WorldId};
 
 /// A single line of raw player input, as decoded from telnet/IAC by the Gateway
@@ -32,26 +34,32 @@ impl InputLine {
     }
 }
 
-/// Text rendered by the World for presentation to a client.
+/// Styled text rendered by World presentation to one client.
 ///
-/// A marker newtype over the M1 text payload. The transport-neutral styled-text
-/// model and per-session ANSI renderer exist as a library (`mud_core::text`,
-/// `mud-net`, M1-13); swapping this payload to carry styled text across the IPC
-/// boundary — rendered to ANSI per session on the Gateway side — is deferred to
-/// the milestone that wires the renderer into the session pipeline (M1-21/M1-22).
+/// Carries transport-neutral styled-text model (§3.20.1.1) across IPC
+/// boundary; ANSI escape generation happens only in Gateway's per-session
+/// telnet renderer (§3.20.1.2, wired in M1-26).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
-pub struct OutputText(String);
+pub struct OutputText(StyledText);
 
 impl OutputText {
-    /// Wraps rendered output text.
-    pub fn new(text: impl Into<String>) -> Self {
+    /// Wraps styled output text. Plain strings convert via `StyledText`'s
+    /// `From<&str>`/`From<String>` impls.
+    pub fn new(text: impl Into<StyledText>) -> Self {
         Self(text.into())
     }
 
-    /// Returns the output text.
-    pub fn as_str(&self) -> &str {
+    /// Returns the underlying styled text.
+    pub fn styled(&self) -> &StyledText {
         &self.0
+    }
+
+    /// The concatenated text with all styling dropped — the plain-text
+    /// projection used where only the characters matter.
+    #[must_use]
+    pub fn to_plain_string(&self) -> String {
+        self.0.to_plain_string()
     }
 }
 
@@ -67,10 +75,10 @@ pub struct SessionInput {
 
 /// Rendered output destined for one client session.
 ///
-/// Carries plain [`OutputText`] for M1. The payload swap to styled text is
-/// deferred to M1-21/M1-22 (see [`OutputText`]); because the IPC schema is
-/// version-locked at build time (§2.8.5.7), Gateway and World rebuild together
-/// and the change is free when it lands.
+/// Carries [`OutputText`], styled text crossing the IPC boundary
+/// version-locked at build time (§2.8.5.7): Gateway and World rebuild
+/// together, so the World renders no ANSI itself — that happens only in
+/// Gateway's per-session telnet renderer (§3.20.1.2, M1-26).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[must_use]
 pub struct SessionOutput {
@@ -233,6 +241,17 @@ mod tests {
     }
 
     #[test]
+    fn world_output_round_trips_a_styled_payload() {
+        let styled = mud_core::StyledText::new().role("Alice", mud_core::RoleName::SAY);
+        let frame = WorldFrame::Output(SessionOutput {
+            session_id: session(9),
+            text: OutputText::new(styled),
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
     fn world_output_round_trips() {
         let frame = WorldFrame::Output(SessionOutput {
             session_id: session(4),
@@ -307,7 +326,7 @@ mod tests {
         assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x03]);
     }
 
-    // Resume = variant 3; world_id = 7; schema_version = 2; live_sessions =
+    // Resume = variant 3; world_id = 7; schema_version = 3; live_sessions =
     // [1, 2] (len 2 then the two ids). Pins the multi-field, vec-bearing frame.
     #[test]
     fn resume_frame_has_a_stable_encoding() {
@@ -318,11 +337,13 @@ mod tests {
         });
         assert_eq!(
             encode(&frame).expect("encode"),
-            vec![0x03, 0x07, 0x02, 0x02, 0x01, 0x02]
+            vec![0x03, 0x07, 0x03, 0x02, 0x01, 0x02]
         );
     }
 
-    // Output = variant 0; session_id = 4; text = "hi" (len 2, 0x68 0x69).
+    // Output = variant 0; session_id = 4; text = StyledText with one plain span:
+    // spans len 1, span.text "hi" (len 2, 0x68 0x69), span.style = SpanStyle::Plain
+    // (variant 0).
     #[test]
     fn output_frame_has_a_stable_encoding() {
         let frame = WorldFrame::Output(SessionOutput {
@@ -331,7 +352,7 @@ mod tests {
         });
         assert_eq!(
             encode(&frame).expect("encode"),
-            vec![0x00, 0x04, 0x02, 0x68, 0x69]
+            vec![0x00, 0x04, 0x01, 0x02, 0x68, 0x69, 0x00]
         );
     }
 
@@ -344,14 +365,14 @@ mod tests {
         assert_eq!(encode(&frame).expect("encode"), vec![0x01, 0x05]);
     }
 
-    // ResumeAck = variant 2; world_id = 7; schema_version = 2.
+    // ResumeAck = variant 2; world_id = 7; schema_version = 3.
     #[test]
     fn resume_ack_frame_has_a_stable_encoding() {
         let frame = WorldFrame::ResumeAck(HandshakeAck {
             world_id: world(7),
             schema_version: crate::SCHEMA_VERSION,
         });
-        assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x07, 0x02]);
+        assert_eq!(encode(&frame).expect("encode"), vec![0x02, 0x07, 0x03]);
     }
 
     #[test]

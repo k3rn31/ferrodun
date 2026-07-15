@@ -49,8 +49,8 @@ flowchart LR
 ```
 
 - **`mud-net`** — the sans-IO protocol edge: the telnet state machine, a
-  per-session output renderer (implemented but not yet wired into the live
-  path — see [Rendering & color](rendering.md)), and rate limiting. It owns
+  per-session output renderer that compiles styled text to ANSI for the
+  client (see [Rendering & color](rendering.md)), and rate limiting. It owns
   no socket; the gateway drives it.
 - **`mud-gateway`** — accepts telnet connections and routes each session to
   its tenant's world over an internal channel.

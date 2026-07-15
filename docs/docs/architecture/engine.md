@@ -47,9 +47,9 @@ command's rendered reply and its world mutation are decoupled by up to one
 tick — the pipeline runs once per input line, the scheduler runs once per
 tick, and the two are driven independently.
 
-Today's render step flattens styled output to plain text
-(`StyledText::to_plain_string()`) before it is emitted to the session — no
-color or styling is applied at this stage.
+Today's render step passes styled output through unflattened; the gateway
+renders it to ANSI per session (see [Rendering &
+color](rendering.md)).
 
 ```mermaid
 flowchart TD
