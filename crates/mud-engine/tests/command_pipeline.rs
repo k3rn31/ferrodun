@@ -156,6 +156,10 @@ impl Roster for FakeResolver {
     fn connected(&self) -> Vec<Presence> {
         Vec::new()
     }
+
+    fn name_of(&self, entity: EntityId) -> Option<mud_account::PuppetName> {
+        (entity == self.caller).then(|| mud_account::PuppetName::parse("hero").expect("name"))
+    }
 }
 
 /// A places registry with no rooms: the commands these tests bind never read a

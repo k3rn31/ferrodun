@@ -321,6 +321,10 @@ mod tests {
         fn connected(&self) -> Vec<crate::roster::Presence> {
             Vec::new()
         }
+
+        fn name_of(&self, entity: EntityId) -> Option<PuppetName> {
+            (entity == self.caller).then(|| PuppetName::parse("hero").expect("name"))
+        }
     }
 
     fn input(value: u64, line: &str) -> SessionInput {
@@ -417,6 +421,9 @@ mod tests {
         }
         fn connected(&self) -> Vec<crate::roster::Presence> {
             Vec::new()
+        }
+        fn name_of(&self, entity: EntityId) -> Option<PuppetName> {
+            (entity == self.speaker).then(|| PuppetName::parse("arden").expect("name"))
         }
     }
 

@@ -87,6 +87,12 @@ impl Roster for Players {
             .map(|(_, _, name)| Presence { name: name.clone() })
             .collect()
     }
+    fn name_of(&self, entity: EntityId) -> Option<PuppetName> {
+        self.players
+            .iter()
+            .find(|(_, e, _)| *e == entity)
+            .map(|(.., name)| name.clone())
+    }
 }
 
 fn text_for(outputs: &[SessionOutput], session: SessionId) -> String {
