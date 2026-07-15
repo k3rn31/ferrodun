@@ -1592,3 +1592,14 @@ truth when this log drifts.
   workspace tests + clippy green; `mkdocs --strict` green.
 - **Next:** M1-23's acceptance integration test now has the wiring its
   "assert ANSI" clause needs. Tier negotiation deferred to M3.
+
+## 2026-07-15 — Resolve review finding: emote/tell palette roles
+
+- **Spec:** §3.20.3.2 — baseline palette MUST define at minimum
+  `error`, `system`, `alert`, `prompt`, `say`, `emote`, `tell`.
+- **Done:** Finding "palette styles emote/tell but no such commands
+  exist" resolved as intentional: the roles are spec-mandated ahead of
+  the commands (`tell` §3.6.2, `emote` §3.6.3, later milestones).
+  Added a why-comment on the role list in `Palette::baseline()`.
+- **Verify:** `cargo clippy -p mud-core` clean; 172 mud-core tests pass.
+- **Next:** none — commands land per PLAN (no player emote/tell in M1).

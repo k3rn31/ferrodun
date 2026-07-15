@@ -53,6 +53,10 @@ impl Palette {
 
         // The §3.20.3.2 baseline roles. Values follow the §3.20.3.1 normative
         // shape where it gives them and pick readable defaults otherwise.
+        // The full mandated set is defined even where the command that emits a
+        // role (`emote` §3.6.3, `tell` §3.6.2) lands in a later milestone:
+        // the spec requires the roles "at minimum", and tenant palettes may
+        // already override them.
         let roles = [
             (
                 RoleName::ERROR,
