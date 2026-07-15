@@ -154,7 +154,13 @@ async fn a_full_register_create_enter_flow_over_telnet() {
     login_and_enter_world(&mut client).await;
 
     client.write_line("look").await;
-    client.read_until(b"Town Square").await;
+    let look_reply = client.read_until(b"Town Square").await;
+    // M1-26: the reply must carry ANSI escapes — the room title/exits are
+    // styled, and the gateway now renders at ansi16.
+    assert!(
+        look_reply.windows(2).any(|w| w == b"\x1b["),
+        "look reply must contain ANSI escapes, got {look_reply:?}"
+    );
 }
 
 #[tokio::test]
