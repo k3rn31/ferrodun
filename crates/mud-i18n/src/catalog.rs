@@ -61,6 +61,8 @@ const ENTRIES: &[(&str, &str)] = &[
     // look (§3.2)
     ("look.exits", "Exits: { $exits }"),
     ("look.also-here", "Also here: { $names }"),
+    ("look.player-here", "{ $name } is here."),
+    ("look.players-here", "{ $names } are here."),
     ("look.void", "You are nowhere in particular."),
     // movement (§3.2.2)
     ("move.no-exit", "You can't go that way."),
