@@ -1146,9 +1146,9 @@ back to its caller (<code>mudd</code>'s world loop), which submits them to the
 command's rendered reply and its world mutation are decoupled by up to one
 tick — the pipeline runs once per input line, the scheduler runs once per
 tick, and the two are driven independently.</p>
-<p>Today's render step flattens styled output to plain text
-(<code>StyledText::to_plain_string()</code>) before it is emitted to the session — no
-color or styling is applied at this stage.</p>
+<p>Today's render step passes styled output through unflattened; the gateway
+renders it to ANSI per session (see <a href="../rendering/">Rendering &amp;
+color</a>).</p>
 <pre class="mermaid"><code>flowchart TD
     In[Player line] --&gt; P["Parse &amp; prefix-match&lt;br/&gt;mud-cmd"]
     P --&gt; D["Dispatch to handler&lt;br/&gt;mud-engine"]

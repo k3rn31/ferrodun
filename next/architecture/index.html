@@ -1095,8 +1095,8 @@ possibly-inconsistent state. Operators run <code>mudd</code> under a supervisor
     E --&gt; DB[("mud-db&lt;br/&gt;accounts · puppets · state")]</code></pre>
 <ul>
 <li><strong><code>mud-net</code></strong> — the sans-IO protocol edge: the telnet state machine, a
-  per-session output renderer (implemented but not yet wired into the live
-  path — see <a href="rendering/">Rendering &amp; color</a>), and rate limiting. It owns
+  per-session output renderer that compiles styled text to ANSI for the
+  client (see <a href="rendering/">Rendering &amp; color</a>), and rate limiting. It owns
   no socket; the gateway drives it.</li>
 <li><strong><code>mud-gateway</code></strong> — accepts telnet connections and routes each session to
   its tenant's world over an internal channel.</li>

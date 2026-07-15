@@ -960,10 +960,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#delivery-to-the-terminal-implemented-but-not-yet-wired" class="md-nav__link">
+  <a href="#delivery-to-the-terminal-live" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Delivery to the terminal — implemented but not yet wired
+        Delivery to the terminal — live
       
     </span>
   </a>
@@ -1063,10 +1063,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#delivery-to-the-terminal-implemented-but-not-yet-wired" class="md-nav__link">
+  <a href="#delivery-to-the-terminal-live" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Delivery to the terminal — implemented but not yet wired
+        Delivery to the terminal — live
       
     </span>
   </a>
@@ -1120,14 +1120,17 @@ diagnostic is recorded.</p>
 assembled as <code>StyledText</code>, tagging spans with semantic roles (<code>error</code>,
 <code>say</code>, <code>emote</code>, …) rather than concrete colors, so a palette override
 restyles a whole category of output without touching any handler code.</p>
-<h2 id="delivery-to-the-terminal-implemented-but-not-yet-wired">Delivery to the terminal — implemented but not yet wired<a class="headerlink" href="#delivery-to-the-terminal-implemented-but-not-yet-wired" title="Permanent link">&para;</a></h2>
+<h2 id="delivery-to-the-terminal-live">Delivery to the terminal — live<a class="headerlink" href="#delivery-to-the-terminal-live" title="Permanent link">&para;</a></h2>
 <p><code>mud-net</code> has a complete, unit-tested renderer for turning <code>StyledText</code> into
-ANSI escapes for a session's color tier:</p>
+ANSI escapes for a session's color tier, and it is wired into the live
+output path end-to-end:</p>
 <ul>
 <li><strong><code>crates/mud-net/src/tier.rs</code></strong> defines <code>Tier</code> (<code>Mono</code> / <code>Ansi16</code> /
   <code>Xterm256</code> / <code>Truecolor</code>) and <code>resolve_tier</code>, which forces <code>Mono</code> when
   <code>NO_COLOR</code> is set and otherwise falls back to the tenant default
-  (<code>DEFAULT_TENANT_TIER = Tier::Ansi16</code>).</li>
+  (<code>DEFAULT_TENANT_TIER = Tier::Ansi16</code>). The <code>NO_COLOR</code> input is not yet
+  wired to any client signal, so every live session currently calls it with
+  <code>false</code>.</li>
 <li><strong><code>crates/mud-net/src/convert.rs</code></strong> downsamples a resolved <code>Style</code> to the
   target tier's representation.</li>
 <li><strong><code>crates/mud-net/src/render.rs</code></strong>'s <code>render()</code> walks a <code>StyledText</code>'s
@@ -1136,27 +1139,25 @@ ANSI escapes for a session's color tier:</p>
   attributes (bold/italic/underline) are preserved even under <code>Mono</code>, where
   only color is dropped.</li>
 </ul>
-<p>None of this is wired into the live output path. The engine's only route to
-a session — <code>crates/mud-engine/src/pipeline.rs</code>'s <code>Pipeline::dispatch</code> —
-flattens every reply and broadcast through <code>StyledText::to_plain_string()</code>
-before sending, discarding all style information. <code>mud_net::render</code> and
-<code>resolve_tier</code> currently have no
-non-test caller anywhere in the workspace. As a result, <strong>players today
-receive plain text</strong>: correct words, no color, no attributes — regardless
-of their client's <code>NO_COLOR</code> setting or the tenant's configured tier.</p>
+<p>The engine's route to a session — <code>crates/mud-engine/src/pipeline.rs</code>'s
+<code>Pipeline::dispatch</code> — passes every reply and broadcast through as
+<code>StyledText</code>, unflattened. It crosses the IPC boundary inside
+<code>WorldFrame::Output</code> (<code>OutputText</code> now wraps <code>StyledText</code>). The gateway's
+per-connection task — the one place where escape sequences are generated —
+renders it via <code>mud_net::render</code> against the tenant's <code>Palette</code> before
+telnet encoding. Every session currently renders at the tenant default tier
+(<code>ansi16</code>): per-session tier negotiation (TTYPE / terminal identification)
+is not implemented yet, so <code>resolve_tier</code> runs with no client signal. ANSI
+escapes survive the legacy-charset path too: the ASCII transliteration
+applied for non-UTF-8 clients shields escape sequences and transliterates
+only the text between them.</p>
 <pre class="mermaid"><code>flowchart TD
-    subgraph Live["Live path"]
-        M["Builder markup&lt;br/&gt;+ palette roles"] --&gt; C["Compile at world load&lt;br/&gt;mud-core::text::markup"]
-        C --&gt; ST[StyledText]
-        ST --&gt; P["Pipeline::dispatch&lt;br/&gt;mud-engine/src/pipeline.rs"]
-        P --&gt; Flat["to_plain_string()&lt;br/&gt;discards all style"]
-        Flat --&gt; Out[Plain text to session]
-    end
-
-    subgraph NotWired["Not yet wired"]
-        ST -.-&gt; R["mud_net::render()&lt;br/&gt;tier.rs · convert.rs · render.rs"]
-        R -.-&gt; Ansi[ANSI-escaped text]
-    end</code></pre>
+    M["Builder markup&lt;br/&gt;+ palette roles"] --&gt; C["Compile at world load&lt;br/&gt;mud-core::text::markup"]
+    C --&gt; ST[StyledText]
+    ST --&gt; P["Pipeline::dispatch&lt;br/&gt;mud-engine/src/pipeline.rs"]
+    P --&gt; F["WorldFrame::Output&lt;br/&gt;styled text over IPC"]
+    F --&gt; R["Gateway connection&lt;br/&gt;mud_net::render · palette · tier"]
+    R --&gt; A["ANSI-escaped text&lt;br/&gt;to telnet client"]</code></pre>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../">Architecture overview</a></li>
