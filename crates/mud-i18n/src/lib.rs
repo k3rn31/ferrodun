@@ -7,8 +7,8 @@
 //! ([`MessageKey`], [`Locale`]) at the call site (§3.14.4.4); a missing key falls
 //! back to `en` then to the literal key, warning on the way (§3.14.4.3).
 //!
-//! For M1 the backing [`Catalog`] is a static, empty `en` table: this ships the
-//! stable call-site contract so M2-I can swap the internals for Fluent
+//! For M1 the backing [`Catalog`] is a static, hand-built `en` table: this ships
+//! the stable call-site contract so M2-I can swap the internals for Fluent
 //! (hot-reload, per-tenant overrides, locale resolution) **without changing a
 //! single call site**.
 
