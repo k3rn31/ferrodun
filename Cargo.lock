@@ -1067,6 +1067,7 @@ dependencies = [
 name = "mud-gateway"
 version = "0.1.0"
 dependencies = [
+ "mud-core",
  "mud-ipc",
  "mud-net",
  "mud-schema",

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+mud-core = { version = "0.1.0", path = "../mud-core" }
 mud-ipc = { version = "0.1.0", path = "../mud-ipc" }
 mud-net = { version = "0.1.0", path = "../mud-net" }
 mud-schema = { version = "0.1.0", path = "../mud-schema" }

@@ -84,7 +84,17 @@ where
                 // correlation — never at info, never repeated per-frame, and in
                 // the same span as the matching "connection closed" (design §6).
                 span.in_scope(|| tracing::debug!(peer = %addr, "connection accepted"));
-                tokio::spawn(run_connection(socket, session_id, to_router.clone(), limiter).instrument(span));
+                tokio::spawn(
+                    run_connection(
+                        socket,
+                        session_id,
+                        to_router.clone(),
+                        limiter,
+                        config.palette.clone(),
+                        config.tier,
+                    )
+                    .instrument(span),
+                );
             }
         }
     }

@@ -10,6 +10,7 @@ use mud_db::{PersistentWorld, PlaceMap, TenantDb};
 use mud_engine::{Dispatcher, Pipeline};
 use mud_gateway::GatewayConfig;
 use mud_ipc::in_memory_pair;
+use mud_net::{DEFAULT_TENANT_TIER, resolve_tier};
 use mud_world::{TenantConfig, load_world};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -77,6 +78,8 @@ pub async fn boot(
             world_id,
             rate: config.rate,
             burst: config.burst,
+            palette: Arc::new(loaded.palette().clone()),
+            tier: resolve_tier(false, DEFAULT_TENANT_TIER),
         };
         // One span per tenant wraps both tasks: every event below — tick
         // events, dispatch warnings, i18n misses — inherits tenant identity
