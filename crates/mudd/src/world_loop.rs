@@ -128,7 +128,11 @@ async fn handle_input(
         .on_input(session_id, input.line.as_str(), &rt.backend)
         .await
     {
-        Routing::Login { outputs, close } => {
+        Routing::Login {
+            outputs,
+            close,
+            bound: _,
+        } => {
             for output in outputs {
                 endpoint
                     .send(frame_of(output))
