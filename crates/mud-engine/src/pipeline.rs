@@ -215,18 +215,13 @@ impl Pipeline {
         // gateway renders it per session (§3.20.1.2).
         let mut outputs = message(session_id, reply.output().clone());
         for broadcast in reply.broadcasts() {
-            let styled = broadcast.message().clone();
-            for occupant in world.occupants_of(broadcast.place()) {
-                if occupant == broadcast.except() {
-                    continue;
-                }
-                if let Some(recipient) = roster.session_of(occupant) {
-                    outputs.push(SessionOutput {
-                        session_id: recipient,
-                        text: OutputText::new(styled.clone()),
-                    });
-                }
-            }
+            outputs.extend(crate::presence::announce(
+                world,
+                roster,
+                broadcast.place(),
+                broadcast.except(),
+                broadcast.message(),
+            ));
         }
 
         DispatchOutcome {

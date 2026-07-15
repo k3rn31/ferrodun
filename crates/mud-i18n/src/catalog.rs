@@ -67,6 +67,9 @@ const ENTRIES: &[(&str, &str)] = &[
     ("move.depart", "{ $name } leaves { $direction }."),
     ("move.arrive-from", "{ $name } arrives from { $direction }."),
     ("move.arrive", "{ $name } arrives."),
+    // presence lifecycle (§2.7 step 8): spawn/quit/disconnect
+    ("presence.enter", "{ $name } appears from nowhere."),
+    ("presence.leave", "{ $name } disappears."),
     // say (§3.6.3)
     ("say.speech", "You say, \"{ $message }\""),
     ("say.broadcast", "{ $name } says, \"{ $message }\""),
