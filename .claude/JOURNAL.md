@@ -1620,3 +1620,17 @@ truth when this log drifts.
 - **Next:** M2-F archetypes must gate room listings/object resolution on
   session presence too, or disconnected bodies resurface (design "hidden
   body" note). English and-join is absorbed by the M2-I i18n rework.
+
+## 2026-07-16 — Telnet line discipline (M1-28)
+
+- **Spec:** §2.8.2 (EOR/GA line discipline, made normative this PR) — blocks
+  blank-line-prefixed; messages CRLF-terminated; prompts unterminated.
+- **Done:** `OutputKind` (`Line`/`Prompt`) on `SessionOutput`; engine
+  classifies + coalesces one input's outputs into one block; gateway owns
+  framing; `SessionMessage::Prompt` → `LoginInstructions`; bold-title e2e
+  assertion added (behavior already worked, now pinned).
+- **Verify:** gateway framing unit tests; `mudd` e2e transcript-shape +
+  bold-title assertions; `cargo test --workspace` + clippy green;
+  `uv run mkdocs build --strict` green.
+- **Next:** in-world command prompt (`> `) has no emitter yet; `OutputKind::
+  Prompt` is ready for it. Tier negotiation (TTYPE) still M3.

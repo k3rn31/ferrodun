@@ -984,7 +984,11 @@ The Gateway MUST support:
     sizing.
   - **CHARSET** — UTF-8 negotiation, with fallback transliteration
     for legacy clients.
-  - **EOR / GA** — prompt framing.
+  - **EOR / GA** — prompt framing. Every output block MUST be followed
+    by one EOR/GA prompt frame. The Gateway MUST precede every output
+    block with a blank line, MUST terminate a completed message block
+    with CRLF, and MUST leave an input-prompt block (e.g. `Password:`)
+    unterminated so the cursor rests on the prompt line.
   - **ECHO** (RFC 857) — server-claimed around password entry to suppress
     the client's local echo; released as soon as the secret line is
     consumed. The server never echoes normal input.
