@@ -151,576 +151,46 @@ Locks parse and evaluate. A tenant-isolation smoke test asserts an
 `EntityId` minted in tenant A cannot be resolved/mutated/observed via
 tenant B (§2.3.1, §3.11.4).
 
-PRs are grouped by area; rough order is top-to-bottom, but core →
-persistence → schema → world → net → cmd → integration is the dependency
-spine.
+M1 is implemented and merged — PRs **M1-01 → M1-28**, plus the interleaved
+review, crate-audit, and logging-instrumentation batches. The per-PR
+breadcrumbs live in `.claude/JOURNAL.md`; the code is the source of truth.
+What shipped, by area:
 
-### Core runtime (`mud-core`)
+- **Core (`mud-core`):** `EntityId`/`TenantTag` + per-tenant generational
+  arena; durable `EntityKey`; `Place` (Room) surface; `LocationOf`/`Inventory`
+  hot tables; 20 Hz scheduler + `MutationCommand`; locks DSL; styled-text
+  model + palette + builder markup; `PlaceKey`/`RegionKey` durable slugs;
+  canonical `Direction` contract.
+- **Persistence (`mud-db`):** per-tenant SQLite file; write-through
+  `PersistentWorld` (arena-as-cache keyed by `EntityKey`); accounts/puppets
+  repository; persisted `world_id`.
+- **Wire/IPC (`mud-schema`, `mud-ipc`):** directional postcard frames; resume
+  handshake; unix-socket + in-memory transports.
+- **World (`mud-world`):** KDL room loader; tenant `config.toml`; mandatory
+  `region.kdl` manifests; optional `palette.kdl`.
+- **Rendering & i18n (`mud-net`, `mud-i18n`):** per-session ANSI renderer
+  (ansi16/mono, `NO_COLOR`); `t!` lookup seam over a static `en` catalog.
+- **Commands (`mud-cmd`, `mud-engine`):** CmdSet merge + trie parser; command
+  pipeline; built-ins (`look`, movement, `say`, `get`/`drop`, `inventory`,
+  `who`, `quit`); room presence.
+- **Accounts & sessions (`mud-account`, `mud-session`):** argon2id
+  credentials; login/register/puppet-select FSM; password echo suppression.
+- **Net & runtime (`mud-net`, `mud-gateway`, `mudd`):** telnet core + rate
+  limit; gateway library; multi-tenant single-process wiring; tenant catalogue
+  + `mudd serve`/`tenant` subcommands; telnet line discipline.
 
-- **M1-01 — `EntityId` + `TenantTag`.** 8-byte id with the normative bit
-  layout: 12 bits tenant tag, 32 bits slot index, 20 bits generation
-  (§2.3.1.3). Encode/decode, generational-index semantics, and the
-  "generation wraparound burns the slot rather than recycling" rule.
-  - *Spec:* §2.3.1. *Verify:* unit tests on packing, round-trip, wraparound.
-- **M1-02 — Generational arena (per tenant).** A `slotmap`-style arena that
-  allocates `EntityId`s with the current tenant tag, resolves live handles,
-  and invalidates stale handles on slot reuse (§2.3.7.3). `EntityId` is the
-  **ephemeral** arena handle; durable identity (`EntityKey`), the
-  `EntityKey`↔`EntityId` mapping, and LRU eviction live in the write-through
-  cache layer (M1-09, §2.3.1.4–2.3.1.6). Cross-tenant resolution returns an
-  error, never another tenant's entity (§3.11.4).
-  - *Spec:* §2.3.1–2.3.2, §3.11.4. *Verify:* alloc/free/stale-handle tests;
-    **the tenant-isolation unit test** (A's id not resolvable via B).
-- **M1-03 — `EntityKey` (durable entity identity).** The durable, per-tenant
-  monotonic 64-bit identity and DB primary key (§2.3.1.5); the only entity
-  reference that crosses the disk/wire/IPC boundary (§2.3.1.4). A newtype
-  distinct from the ephemeral `EntityId` (§2.3.1.1) so the two cannot be
-  confused at compile time (§1.7). Per-tenant monotonic minting and the
-  `EntityKey`↔`EntityId` mapping live in M1-08/M1-09; this PR adds only the
-  type. Per YAGNI, the other ids the foundation once bundled here move to their
-  first consumer: `PlaceId`/`RegionId` to M1-04, `ArchetypeId`/`ComponentId` to
-  the M2 archetype/component-bag work.
-  - *Spec:* §1.7, §2.3.1.4–2.3.1.5. *Verify:* compile-level; `EntityKey`
-    (durable) and `EntityId` (ephemeral) are distinct types — misuse is a type
-    error; `Option<EntityKey>` is niche-optimized to 8 bytes.
-- **M1-04 — `Place` enum (Room only) + spatial surface.** Static-dispatch enum
-  with the single `Room` variant for M1 (Tile deferred to M4, §2.2.1).
-  Introduces the `PlaceId`/`RegionId`/`Direction` newtypes (moved from M1-03)
-  the surface uses (`Direction` = n/e/s/w + up/down). `Place` exposes the
-  §2.2.2 surface — `id`, `region`, `describe(viewer)`, `neighbor`,
-  `visible_places` — as **inherent methods** that `match` on the variant, so
-  dispatch is static by construction (§2.2.5, no trait object). The `PlaceView`
-  *trait* is **deferred to M4**: with one variant it would be single-impl
-  (YAGNI); `Tile` gives it a genuine second implementor. `occupants()` is
-  **deferred to M1-05**: occupancy's authoritative home is the dense
-  `LocationOf` side-table (§2.3.2.2), so adding it to the static `Place` now
-  would duplicate that index (build-then-rip).
-  - *Spec:* §2.2. *Verify:* describe/neighbor/visible-places unit tests against
-    a fixture room graph. *Out of scope:* Tile + the `PlaceView` trait (M4),
-    `occupants` (M1-05), viewer-conditional invisibility beyond a trivial hook.
-- **M1-05 — Hot side-tables (M1 subset).** Dense `LocationOf` and
-  `Inventory` tables only — the two M1 needs. `Position`, `Health`,
-  `Initiative` are **not** added until their milestone (§2.3.2.2 lists all
-  five as hot, but YAGNI: add each dense table when first used). Adds
-  `occupants()` to the `Place` surface (deferred from M1-04), resolving a
-  Place's occupants through the `LocationOf` reverse index.
-  - *Spec:* §2.3.2.2–2.3.2.4. *Verify:* occupants-of-place (via the `Place`
-    surface) and inventory-of-entity round-trips.
-- **M1-06 — Scheduler tick + `MutationCommand` (M1 subset).** 20 Hz fixed
-  tick (§3.16.2). `MutationCommand` enum with only the variants M1 needs
-  (move entity between Places, inventory add/remove, create/teardown
-  entity). Per-entity serialization, arrival-order application, precondition
-  carrying (§2.5.3.5).
-  - *Spec:* §2.5.3.3, §2.5.3.5, §3.16.2. *Verify:* serialization +
-    last-writer-wins + precondition-failed tests.
-  - *Out of scope:* the **wall-clock driver loop** — this PR ships a
-    deterministic logical `tick()` plus the `TICK_HZ`/`TICK_PERIOD` cadence
-    constants only. The 50 ms timed loop that calls `tick()` is deferred to
-    M1-22 (no async runtime is wired before then).
-- **M1-07 — Locks DSL.** `chumsky` parser → typed AST; static-dispatch
-  evaluation table (no string matching at eval time). Lock functions for
-  M1: `perm`, `attr`, `tag`, `self`, **`status`** (§2.6.1.2). `status` is
-  included so all three normative example strings (one uses `status(drunk)`)
-  fully evaluate. Two-phase pipeline: a `chumsky` grammar produces a purely
-  syntactic AST (functions = name + string args), then a separate **resolve**
-  pass lowers known functions into the typed `LockFn` enum — keeping parse
-  pure-syntax and giving M2's `mud check` a clean seam for unknown-function /
-  arity / tag-lint diagnostics (§2.6.2.3–2.6.2.4). Inline typed builder seam
-  may be deferred to when scripts need it (M2).
-  - *Spec:* §2.6.1–2.6.2. *Verify:* parse + eval table tests over the three
-    normative example strings. *Out of scope:* `mud check` CLI validation
-    (M2 with `mud-cli`), LSP (§2.6.3, post-1.0).
+Deferred refinements and known limitations that outlived M1 are tracked as
+GitHub issues (milestone **0.1** and later) and are no longer inlined here.
 
-### Persistence (`mud-db`)
+### Remaining M1 work — the acceptance gate
 
-- **M1-08 — SQLx + SQLite backend.** `mud-db` crate; SQLx with compile-time
-  checked queries; `sqlx migrate` setup; initial migration for accounts,
-  puppets, entities (keyed by a per-tenant monotonic `EntityKey`, §2.3.1.5),
-  location, inventory. **Per-tenant connection pool over
-  a distinct SQLite file** (§2.5.1.4) — no shared DB, no tenant column.
-  - *Spec:* §2.5.1. *Verify:* migration applies; per-tenant file isolation
-    test. *Out of scope:* Postgres backend (added when prod is exercised,
-    M7-ish), `sqlite-vec` (M6).
-  - *As built:* layout is **namespaced by backend** to anticipate Postgres
-    without a premature trait (single-impl rule): SQLite migrations under
-    `migrations/sqlite/`, code under `src/sqlite/`; a backend-agnostic `DbError`
-    at the crate root; Postgres will land as sibling `migrations/postgres/` +
-    `src/postgres/`, and the unifying seam emerges with that second implementor.
-    The §2.5.1.2 **compile-time-checked `query!` macros** (and the `.sqlx`
-    offline cache + `SQLX_OFFLINE` CI step they require) are deferred to **M1-09**
-    with the first real write-through query — M1-08 has no app queries, so its
-    tests use runtime `sqlx::query` and need no CI change.
-  - *SQL tooling:* migrations are linted by **sqruff** (pinned in `mise.toml`),
-    gated in CI (`sqruff lint crates/mud-db/migrations`) and wired into Zed via
-    the sqruff LSP. Dialect is per-directory through sqruff's hierarchical
-    `.sqruff` discovery: the root `.sqruff` sets `dialect = sqlite`; the Postgres
-    backend PR adds `migrations/postgres/.sqruff` (`dialect = postgres`).
-- **M1-09 — Write-through + boot load (cache keyed by `EntityKey`).** Every
-  mutation flows through `MutationCommand` and applies to arena + DB in one
-  transaction (§2.5.3.3). The arena is a cache keyed by `EntityKey`: loading an
-  entity mints a fresh `EntityId` for its durable `EntityKey` and installs the
-  `EntityKey`↔`EntityId` mapping (§2.3.1.6). World state loads from DB on boot
-  so a clean restart restores accounts, location, and inventory.
-  - *Spec:* §1.2, §2.3.1.4–2.3.1.6, §2.5.3. *Verify:* restart integration test
-    (write → drop process → reload → state intact), asserting a persisted
-    `EntityKey` resolves to the same entity after restart; `EntityId` values are
-    **not** expected to survive restart (re-minted on load). *Out of scope:*
-    LRU eviction + cache-miss reload beyond what boot-load exercises (deferred
-    until working sets exceed the cache, M7-ish); background snapshot (§2.5.3.4
-    — crash recovery, deferred until M7 hardening; clean restart needs only
-    write-through).
-  - *As built:* the `EntityKey`↔`EntityId` mapping and write-through live in a
-    `PersistentWorld` in **`mud-db`** (`src/sqlite/write_through.rs`), wrapping an
-    untouched `mud-core` `World`; the arena-as-cache (§2.3.1.6) is the map →
-    `EntityId` → arena slot. `mud-core` gained only two read accessors
-    (`MutationCommand::effect`/`precondition`) so `mud-db` can inspect a command.
-    Since an in-memory arena cannot enlist in a SQL transaction, "one
-    transaction" (§2.5.3.3) is realized as **apply-in-memory-then-commit**:
-    `Create` is DB-first (key from `AUTOINCREMENT`), all other effects apply to
-    the arena first (preserving the precise `ArenaError` classification) then
-    write the DB. **Teardown deletes the entity's `entities` row** (destruction,
-    not eviction — a destroyed entity must not resurrect; key non-reuse still
-    holds via `AUTOINCREMENT`); every entity-referencing FK is `ON DELETE
-    CASCADE`, so its dependent rows go with it and the destroy path stays
-    table-agnostic. First compile-time `query!` macros land here with the
-    committed `crates/mud-db/.sqlx` offline cache and `SQLX_OFFLINE: "true"` in
-    CI; `Effect`/`Precondition` being `#[non_exhaustive]` forces a defensive
-    wildcard arm (`DbError::UnsupportedEffect`).
-
-### Wire/IPC seam (`mud-schema` types, `mud-ipc` transport) and Gateway/World split
-
-- **M1-10 — `mud-schema` IPC frames.** `mud-schema` crate; postcard IPC
-  frame types for M1: `SessionInput`, `SessionOutput`, connect/disconnect,
-  schema version (§2.1.3.1). Ships **hand-written `serde`-derived postcard
-  frame types — no codegen**: §2.8.5.7 version-locks IPC frames at build time
-  and excludes them from the code-generated wire protocol, and the wire
-  protocol that §2.8.3.1 actually generates (map/vitals/NPC actions → Rust +
-  TS + GMCP docs) does not exist until M3. The **codegen mechanism is deferred
-  to M3** (see M3-D).
-  - *Spec:* §2.1.3, §2.8.3. *Verify:* frame round-trip encode/decode tests.
-  - *As built:* two **directional enums** `GatewayFrame` (Connect/Input/
-    Disconnect, G→W) and `WorldFrame` (Output/Close, W→G) make an illegal
-    direction unrepresentable; both `#[non_exhaustive]`. `SessionId` is a
-    `NonZeroU64` newtype (niche-friendly); `SCHEMA_VERSION` is a build-time
-    const (1), carried by the M1-11 resume handshake, not stamped per frame.
-    `mud-schema` was a **leaf crate** until M1-26 pulled in `mud-core` for the
-    styled-text payload; **no M1 frame carries an `EntityKey`** —
-    `SessionInput`/`SessionOutput` carry text, connect/disconnect carry only a
-    `SessionId`; entity-bearing frames arrive in M3+. Text payloads are
-    **marker newtypes** (`InputLine`, `OutputText`, mirroring `mud-core`'s
-    `Description`) not raw `String`, per the newtype mandate — no invariant
-    enforced here since §3.6.4's cap/stripping is command-scoped and downstream
-    (M1-17); `OutputText` was `String`-backed as built in M1-10, swapped to
-    carry `StyledText` in M1-26. (M1-13 builds the styled-text model +
-    per-session renderer as a self-contained library; M1-26 pulled it across
-    the IPC boundary, wiring the renderer into the session pipeline.)
-    `encode`/`decode` helpers wrap postcard (`SchemaError` via `thiserror`);
-    length-prefixing is M1-11.
-- **M1-11 — IPC transport + resume handshake + single-process mode.** Split
-  into two PRs so each touches one crate's public API (principle #3) and the
-  wire/IPC change starts in `mud-schema` (§8 rule 4): **M1-11a** defines the
-  handshake frame *types*, **M1-11b** builds the transport that carries them in
-  the new `mud-ipc` crate.
-  - **M1-11a — `mud-schema` resume-handshake vocabulary.** Add `WorldId` (a
-    `NonZeroU64` newtype mirroring `SessionId`, the §2.1.3.1 per-World address);
-    the `ResumeHandshake { world_id, schema_version, live_sessions }` and
-    `HandshakeAck { world_id, schema_version }` payloads; and the directional
-    variants `GatewayFrame::Resume` (G→W announce) / `WorldFrame::ResumeAck`
-    (W→G). Both enums are `#[non_exhaustive]`, so appending is wire-additive and
-    the M1-10 golden-bytes pin is unperturbed.
-    - *Spec:* §2.1.3.1–2.1.3.2, §2.8.5.7. *Verify:* `WorldId` niche/round-trip;
-      handshake-frame round-trips; golden pin unchanged.
-  - **M1-11b — `mud-ipc` transport + single-process mode.** New `mud-ipc` crate
-    (the IPC transport's home — kept out of the tokio-free, codegen-source
-    `mud-schema` leaf, §5.1). Length-prefixed postcard over a unix socket,
-    multiplexed by `session_id` (`SocketEndpoint` over `tokio-util`'s
-    `LengthDelimitedCodec` with a `MAX_FRAME_BYTES` cap); **single-process mode**
-    via an in-memory channel (`InMemoryEndpoint` over `tokio::mpsc`) with the same
-    frame contract (§2.1.3.3). A duplex `Endpoint` trait (two impls = the
-    legitimate single-vs-split seam) lets the resume-handshake exchange
-    (`announce_sessions`/`accept_resume`, carrying `world_id` + `SCHEMA_VERSION` +
-    the live session set, §2.1.3.2) be written once over both transports.
-    Feature-flag/config selection of split vs. single (§2.1.3.4) is the `mudd`
-    binary's call (M1-22); M1-11b ships both transports.
-    - *Spec:* §2.1.3. *Verify:* in-proc and unix-socket transports pass the same
-      frame round-trip; resume-handshake replays a live session set;
-      schema/world-id mismatch and frame-size cap rejected.
-    - *Out of scope:* admin RPC sibling socket (§2.1.3.5 — M7); World-restart
-      "reconnecting" banner (M7); per-session demultiplexing (M1-21/22).
-
-### World loading (`mud-world`) and config
-
-- **M1-12 — `mud-world` KDL room loader + tenant config.** `mud-world`
-  crate; parse hand-authored rooms from KDL; load the tenant `config.toml` via
-  `figment`; load the welcome banner (§3.19.1). Minimal archetype handling: a
-  built-in `player` puppet shape (full KDL archetype + `extends` + hooks land in
-  M2).
-  - *Spec:* §2.2.6, §2.3.5 (minimal), §2.5.1.5, §4.1, §3.19.1. *Verify:* loads
-    the M1 fixture world; malformed KDL yields a structured load error.
-  - **As built.** Parser: the **`kdl` crate** (added to the §6 tech-stack table;
-    SPEC §6 locked no KDL crate). Rooms are keyed by a **durable slug**
-    (`PlaceKey`, §2.2.6) — builders author no numeric ids; `PlaceId` became the
-    *ephemeral* in-process handle, mirroring `EntityKey`/`EntityId`. This rippled
-    into `mud-core` (new `PlaceKey`, optional room `title`) and `mud-db` (the
-    `location` table now stores `place_key TEXT`; `PersistentWorld` translates via
-    an injected `PlaceMap`; §2.5.1.5). One folder per tenant (SPEC §5):
-    `config.toml` carries only content fields (`start_room`, optional `banner`);
-    `world/` is scanned recursively for `*.kdl`. `mud-world` builds no `World` and
-    holds no `world_id`/`tenant_tag` (runtime/handshake concerns, M1-22).
-    `figment` layers TOML + `FERRODUN_`-prefixed env. **`clap` flag overrides
-    moved to M1-22** (where the `mudd` binary/CLI lives).
-
-- **M1-12a — `RegionKey` (durable region identity).** The durable authored
-  slug naming a `Region` (§2.2.7.1), mirroring `PlaceKey`: a non-empty
-  `[a-z0-9_-]` slug whose only constructor is a fallible `parse`. A newtype
-  distinct from the ephemeral `RegionId` (§2.2.7.1) so the two cannot be
-  confused at compile time (§1.7). `RoomData` already carries a `RegionId`;
-  this PR adds only the durable key type that M1-12b authors against.
-  - *Spec:* §2.2.6–2.2.7. *Verify:* slug validation (empty / bad char), `parse`↔
-    `Display` round-trip; `RegionKey` and `RegionId` are distinct types.
-- **M1-12b — Region manifest loader + room binding.** Parse `region.kdl`
-  manifests (§2.2.7.3) during the existing recursive `world/` scan; build a
-  `RegionKey`↔`RegionId` registry; bind each room to the Region whose manifest
-  folder is its nearest ancestor (folder-confined, **not** folder-named), or to
-  an implicit per-tenant default Region when no manifest governs it. Replaces
-  the M1-12 placeholder `default_region()`. Region *behaviours* (name rendering,
-  PvP, token budget, ambient/spawn) are deferred to their milestones; M1 binds
-  identity only (an optional authored display name is parsed and exposed).
-  - *Spec:* §2.2.7, §4.1. *Verify:* a room under a `region.kdl` binds to that
-    Region's `RegionId`; a room under no manifest binds to the default; a
-    duplicate / reserved / nested region slug and an unknown manifest node each
-    yield a structured `WorldError`; no room is left on a magic default.
-  - *Out of scope:* nested sub-regions (rejected in 1.0, §2.2.7.3); region
-    policy/ambient/spawn/tile-grid (their milestones); persistence — a Region is
-    re-derived authored content, an entity's stored location stays a `PlaceKey`,
-    so **no `mud-db` change**.
-
-- **M1-12c — Regions mandatory (drop the implicit default).** Reverses M1-12b's
-  implicit per-tenant default Region: every `Place` MUST be covered by an
-  authored `region.kdl` (§2.2.7.3), so a room under no manifest is rejected, and
-  a `region.kdl` at the `world/` **root** is rejected (reserved for the future
-  world defaults manifest, see below). Region config is coming (name, PvP,
-  budget, ambient/spawn); a configurable region needs a manifest, so the
-  unconfigurable default is removed rather than special-cased (§2.2.7 forbids
-  special-casing).
-  - *Spec:* §2.2.7.3. *Verify:* a room outside every region yields
-    `RoomOutsideRegion`; a root `region.kdl` yields `RegionManifestAtWorldRoot`;
-    a single-region world loads when its one region is a subfolder; an empty
-    world loads with zero regions.
-  - *Out of scope:* the world-root **defaults** manifest itself (deferred).
-
-- **M-later — World-wide Region defaults manifest.** A `region.kdl` at the
-  `world/` root holds default Region properties (everything *except* the region
-  name) that each per-region manifest inherits unless it overrides them. Lands
-  with the first region config properties that have a sensible tenant-wide
-  default; until then the root slot stays reserved (rejected) by M1-12c.
-
-### Styled output and engine strings (minimal seams)
-
-- **M1-13 — Styled text + ANSI renderer (minimal).** Transport-neutral
-  styled-text spans in `mud-core` (§3.20.1); a KDL palette with the baseline
-  roles (§3.20.3.2); per-session ANSI renderer in `mud-net` defaulting to
-  `ansi16` with `NO_COLOR` → `mono` and fixed downsample tables (§3.20.5).
-  No raw escapes in internal pipelines (§3.20.1.2). Split into two PRs so each
-  leaves the tree green: **M1-13a** (authoring) and **M1-13b** (renderer).
-  - *Spec:* §3.20.1–3.20.5. *Verify:* snapshot tests for ansi16 + mono
-    rendering of a styled fixture. *Out of scope (deferred to their steps):*
-    the IPC `OutputText`→styled-text swap (M1-26, where the renderer is
-    wired into the session pipeline); player-input markup escaping (§3.20.7 →
-    M1-17); palette hot-reload (§3.20.3.3 → M2-H); truecolor/xterm256 beyond the
-    downsample tables and TTYPE/`Core.Hello` tier detection (§3.20.5.2 step 3 →
-    M3); webclient semantic spans (§3.20.5.3 → M3); per-account color prefs
-    (§3.20.6.1 → M7); colorblind palette (§3.20.6.3 → 1.0).
-  - **M1-13a — Styled authored content (`mud-core` + `mud-world`).** The
-    styling domain model — `Color`/`Attributes`/`Style`/`RoleName`/`SpanStyle`/
-    `Span`/`StyledText` — plus a `Palette` (roles + named colors) with a Rust
-    `baseline()` (§3.20.3.2), a per-field `FieldStyle` policy, and a tolerant
-    `{tag}…{/}` markup compiler (`compile_markup`). `Description`/`Title` now
-    carry `StyledText`; the `mud-world` room loader compiles their markup under
-    the field policy (title bold-by-default; description = palette colors +
-    bold/italic/underline; **palette named colors only, no raw hex**), and a new
-    `load_palette` layers an optional tenant `palette.kdl` over the baseline
-    (mirroring `config.rs` two-source discovery). Unknown/disallowed/malformed
-    tags degrade to literal text + a `tracing` warning (§3.20.2.2), never
-    aborting the load. *As built:* the markup compiler is a hand-written
-    single-pass scanner with a style stack (not `chumsky`) — the right shape for
-    "degrade every error in place and emit spans," and dependency-free. Builder
-    markup carries direct styling only; semantic roles are applied at engine
-    emission sites (M1-17), so `FieldStyle` gates colors/attributes, not roles.
-  - **M1-13b — Per-session ANSI renderer (`mud-net`, new crate).** Reuses
-    `anstyle` + `anstyle-lossy` (official rust-cli crates) for SGR emission and
-    deterministic truecolor→xterm256→ansi16 downsampling — no hand-written
-    nearest-color tables; pinned for reproducible snapshots. `Tier`
-    (mono/ansi16/xterm256/truecolor) + a resolver doing §3.20.5.2 steps 2+4
-    (`NO_COLOR`→mono else tenant default `ansi16`); `render(&StyledText,
-    &Palette, Tier) -> String` resolving roles against the session palette
-    (unknown role → unstyled + `tracing` warning). `mud-net` depends only on
-    `mud-core` (the IPC swap is deferred, so no `mud-schema` dep yet).
-- **M1-14 — Engine-string lookup seam.** Route engine-emitted player strings
-  through a minimal `t!`-style lookup backed by a static `en` table. This
-  establishes the §3.14.4 boundary (typed keys, `en` fallback, missing-key
-  `tracing` warning) **without** Fluent. M2 swaps the backing store to
-  `fluent-rs` + hot-reload + per-tenant overrides; **call sites do not
-  change.**
-  - *Spec:* §3.14.4 (boundary only). *Verify:* missing key emits a warning
-    and falls back to the literal key. *Out of scope:* `.ftl` bundles,
-    hot-reload, locale resolution (all M2).
-
-### Command pipeline (`mud-cmd`) and built-ins
-
-- **M1-15 — `mud-cmd` CmdSet + parser.** CmdSet model; trie parser with
-  prefix matching, aliases, switches (§2.7 step 5); merge semantics
-  Union/Replace/Remove with the fixed precedence order (§2.7 step 4). Commands must be translatable, default is `en` as usual.
-  - *Spec:* §2.7 steps 4–5. *Verify:* merge precedence + prefix-match tests.
-  - *Out of scope:* full object disambiguation prompt/ordinals (add when
-    multiple matching items exist — minimal `name`/single-match for M1).
-- **M1-16 — Command pipeline in World.** Resolve `session → account →
-  puppet → location stack`, merge CmdSets, lock-check the caller, dispatch
-  to a Rust-native `run`, render output per session (§2.7 steps 3–8). Every
-  run carries a `command_id` for trace correlation (§2.7.1).
-  - *Spec:* §2.7. *Verify:* end-to-end command dispatch unit/integration
-    test with a fake session.
-  - **Reply/effect ordering (CONTRACT, see `dispatch.rs`):** a handler returns
-    a read-only `CommandReply`; the pipeline renders it, then applies its
-    `Effect`s against `&mut World`. So an effect cannot reject and rewrite the
-    reply (fine while no M1 command fails on the happy path — see the M1-17
-    limitation). When that changes, reshape `CommandReply` rather than hand
-    handlers `&mut World`.
-- **M1-17 — Built-in commands (M1 set).** Rust-native: `look`, movement
-  (`north/east/south/west/up/down` + aliases), `say`, `get`/`drop`,
-  `inventory`. `say` honors the 4 KiB content cap and control-char/ANSI
-  stripping (§3.6.4) and renders through palette roles (§3.20.4) by building
-  role-styled spans (`Span::role`, M1-13a) at the emission site.
-  **Player-input markup escaping (§3.20.7)** lands here: raw ANSI is stripped
-  and color *markup* in player text is escaped (rendered literally) by default
-  — sanitized player text is emitted as plain spans, never compiled through
-  the markup path, so players cannot inject styling into others' output. Full
-  §2.7-step-5 object disambiguation (`name.N` / `all` / one-shot numbered
-  prompt) lands here. Built in two PRs: a substrate PR (`mud-core` entity
-  keywords + `World` read surface + `Effect::ClearLocation`; `mud-engine`
-  `CommandReply` world-effects, `Places` seam, `builtins` command layer,
-  object resolver, input-safety helper; `mud-i18n` `en` builtin catalog) and
-  the command-handler PR.
-  - **Deferred to M1-19a** (depend on the session→entity map that M1-18/19
-    own): `who` (connected-player index), `quit` (session close via the FSM +
-    gateway), and cross-player broadcast for `say` and movement
-    arrival/departure. `say` is caller-echo-only until then.
-  - **Known limitations carried out of M1-17 (deferred refinements).** These
-    are acceptable in M1 (only items carry keywords today, and no command can
-    reject on the happy path) but are tracked at the milestone that resolves
-    each:
-    - **No item/actor distinction.** Object resolution scopes by location only,
-      so `get <actor>` could pocket a co-located actor and `look` lists every
-      occupant under "also here". Gating resolution by entity kind lands when
-      archetypes exist (**M2-F**, §2.3.5: "item"/"actor" are archetypes), and is
-      fully exercised once NPCs do (**M5**).
-    - **Display name = first match keyword.** Entities have no authored display
-      name distinct from their match keywords, so `look`/`inventory`/`get`
-      render the lowercased first keyword. The same gap means an entity with no
-      keyword is silently skipped from those listings. An authored display-name
-      component/archetype default lands with **M2-D**/**M2-F**.
-    - **Reply renders before effects apply.** A handler's `CommandReply` is
-      rendered before the pipeline applies its `Effect`s, so an effect cannot
-      reject and rewrite the reply. Harmless while no M1 command can fail on the
-      happy path; the escape hatch (reshaping `CommandReply`, not handing
-      handlers `&mut World`) is the documented `dispatch.rs` CONTRACT — see the
-      M1-16 note. Revisit when a happy-path command can reject (e.g. container
-      capacity).
-    - **Content cap is measured after normalization, before stripping** — this
-      is **correct**: §3.6.4 caps "4 KiB of UTF-8 after normalization"; control/
-      ANSI stripping is a separate "before delivery" step. Recorded here so the
-      ordering is not re-flagged.
-  - *Spec:* §2.7, §3.6.3–3.6.4, §3.20.4, §3.20.7. *Verify:* per-command behavior
-    tests; content-cap rejection test; player-markup-escaped test;
-    disambiguation tests.
-
-### Accounts and sessions (`mud-core` domain + `mud-db` storage + FSM)
-
-- **M1-18 — Accounts + login.** Account domain types (tenant-scoped,
-  §3.15.1.1); `argon2id` credential hashing with per-account salt
-  (§3.15.1.2); **open-registration** mode only for M1 (invite-only deferred
-  to M7); explicit puppet-selection step (§3.15.1.4); account states with
-  suspended/banned rejected at login (§3.15.1.5, enforcement minimal).
-  - *Spec:* §3.15.1. *Verify:* register → login → wrong-password reject →
-    restart → login-again tests. *Out of scope:* recovery flow, invite
-    tokens, moderation states machinery (M7).
-- **M1-19 — Session FSM (login states).** A pure, sans-IO `mud-session` crate
-  (the login state machine) driven World-side by `mud-engine`: pre-login banner
-  → register/login → puppet select → in-world. Placed here, not in `mud-net`,
-  because accounts, the session→puppet map, and all input lines are World-side;
-  the driver reaches persistence through an injected `LoginBackend` port so
-  `mud-engine` stays free of `mud-db`. Pre-login `help` listing the small
-  command set (§3.19.1, §3.19.3). Linkdead/idle handling minimal (full linkdead
-  reattach is M7-grade; M1 just needs clean connect/quit). Entering a
-  **newly-created** puppet needs live-world hydration, deferred to M1-22.
-  - *Spec:* §3.19.1, §3.19.3, §2.7 step 1/3. *Verify:* FSM transition tests +
-    existing-puppet login integration test.
-- **M1-19a — Session-dependent built-in commands.** The slice of M1-17
-  deferred until the session→entity map exists: `who` (list connected players),
-  `quit` (clean session close through the FSM + gateway), and cross-player
-  **broadcast** — `say` reaching co-located players and movement emitting
-  arrival/departure to the rooms left and entered. Adds the broadcast slot to
-  `CommandReply` and the entity→session fan-out in `Pipeline` (the seam left
-  open in M1-17). Present NPCs hearing `say`/`emote` (§3.6.3) is wired here too.
-  - *Spec:* §2.7 step 8, §3.6.3. *Verify:* two-session broadcast test;
-    `who` lists connected sessions; `quit` closes the session.
-
-### Networking and integration (`mud-net`, `mud-gateway`, `mudd`)
-
-- **M1-20 — `mud-net` telnet core.** Telnet/IAC negotiation for the M1
-  subset: NAWS (drives width/pagination), CHARSET/UTF-8 with legacy
-  transliteration fallback, EOR/GA prompt framing, TTYPE (§2.8.2). Line
-  decoder; per-session command **rate limit** leaky bucket (10/s sustained,
-  burst 20) at the gateway boundary (§2.1.1).
-  - *Spec:* §2.8.2 (subset), §2.1.1. *Verify:* IAC negotiation unit tests;
-    rate-limit drop test. *Out of scope:* MCCP2/GMCP/MSDP/MXP/MSSP (M3),
-    TLS/SSH/WebSocket (M3).
-- **M1-21 — `mud-gateway` library.** Owns the telnet listener; decodes input,
-  forwards `SessionInput` over IPC; renders `SessionOutput` back to the
-  client (§2.1.1). Shipped as a **library generic over `Endpoint`** — `mudd`
-  is the sole binary (§5.2) and embeds it in-proc (M1-22) or drives it over
-  the unix socket in split mode (later milestone). M1 assumes the World is
-  up in single-process mode; on IPC loss the gateway shuts down cleanly
-  (hold-connections-open + reconnect banner is M7). Rate-limited commands
-  are dropped **silently** in M1 — the §2.1.1 structured `rate_limited`
-  event needs a structured channel and is annotated at the M3 GMCP item.
-  - *Spec:* §2.1.1. *Verify:* gateway↔World loopback test in single-process
-    mode.
-- **M1-22 — `mudd` single-process wiring.** Boot a tenant: load world
-  (M1-12), open DB pool (M1-08), start the scheduler (M1-06), run the
-  command pipeline (M1-16), embed the gateway (M1-21) via the in-proc IPC
-  channel (M1-11). **Starting the scheduler = owning a `mud_core::World` plus
-  a `mud_core::Scheduler` and running the driver loop M1-06 deferred:** every
-  `mud_core::TICK_PERIOD` (50 ms / `TICK_HZ`), call `scheduler.tick(&mut
-  world)` and consume the returned `Vec<TickEvent>` (`Created` reports minted
-  handles; `PreconditionFailed`/`Rejected` are surfaced to the caller). The
-  async **runtime** first appears at M1-11b (the `mud-ipc` unix-socket
-  transport); M1-22 adds the scheduler **timer / driver loop** on top of it.
-  M1-06 ships only the logical `tick()` and the cadence constants.
-  - *Spec:* §2.1.3.3, §5.2. *Verify:* `cargo run -p mudd` serves a telnet
-    login locally; a registry with two tenants serves both concurrently.
-  - **CLI (moved here from M1-12):** `mudd` parses arguments with **`clap`**;
-    flags MUST override the `figment`-loaded server config (layer a clap-derived
-    provider on top of TOML + env). `--tenant-dir` boots a single tenant,
-    replacing the configured registry.
-  - **Deferred identity decisions (resolve here):**
-    - **`world_id`** — must be stable across restarts (the resume handshake
-      §2.1.3.2 re-presents it). Decide its source: recommended is generate-once-
-      and-persist in the tenant DB, or derive deterministically from tenant
-      identity — not a hand-authored magic number.
-    - **`tenant_tag`** — the 12-bit isolation handle (§2.3.1.1) the `World` is
-      constructed with. Read it from the tenant's `config.toml` (default `0`);
-      it needs no cross-restart stability, but must be unique across the
-      tenants configured in one process (validated at boot).
-    - **Tenant selection / server config** — server-wide config lives at
-      `$XDG_CONFIG_HOME/ferrodun/config.toml` (`--config` overrides) and
-      carries the tenant registry (`[[tenants]]`: `dir` + `listen`); M1-22
-      boots every registered tenant concurrently, each an isolated
-      world+gateway stack on its own listen address. Shared-listener /
-      host-based routing stays a later milestone.
-    - Wiring `mud-world`'s `LoadedWorld` into boot: open the DB (M1-08), build a
-      `PlaceMap` from `LoadedWorld::rooms().place_keys()`, and `PersistentWorld::
-      load(db, tenant, place_map)` (§2.5.1.5).
-  - **Open design decision (resolve in this PR):** how the `mud-core`
-    `Scheduler` (ordering/serialization) and the `mud-db` `PersistentWorld`
-    (durability) compose into a **single** write path. Today they are two apply
-    paths: `Scheduler::tick(&mut World)` mutates without persisting, and
-    `PersistentWorld::apply` persists without the scheduler. The shared
-    `World::apply_effect` / `World::satisfies` (single source of dispatch +
-    precondition semantics, added at the M1-11b checkpoint) is the seam both must
-    route through. Candidate: `PersistentWorld` owns the `Scheduler` and its
-    drain calls `World::apply_effect` then the durable write; a `MutationSink`
-    output port in `mud-core` is the textbook-clean alternative but is
-    trait-for-one-impl under current YAGNI rules — revisit when a second sink
-    exists. If §2.5.3.3's "same transaction" framing is what forces apply logic
-    into `mud-db`, refine the spec wording rather than working around it.
-  - **Newly-created-puppet hydration into the live world (from M1-19).**
-    `PersistentWorld::load` (§2.5.1.5) hydrates puppets into the arena only at
-    boot, so a puppet created **mid-session** by the M1-19 session FSM's
-    `create_puppet` effect is persisted in the DB but **not resident** in the
-    running `World` — its `Enter` effect's `resolve_puppet(EntityKey)` finds no
-    live `EntityId`. This PR owns the live `World`, so it wires the missing step:
-    after `create_puppet` writes the DB rows, hydrate that single `EntityKey`
-    into the arena (mint an `EntityId`, apply its start-room location) so the
-    subsequent `Enter` binds a resident puppet — the brand-new-player
-    register → create → play path (§3.19). M1-19 unit-tests the create → enter
-    FSM path with a fake backend; this is where it works end-to-end against a
-    real `PersistentWorld`. Likely shape: a `PersistentWorld::hydrate(key)`
-    method reusing `load`'s per-entity logic, called by the `LoginBackend` impl.
 - **M1-23 — M1 acceptance integration test.** Drive two scripted telnet
   sessions through login, movement, mutual visibility, and chat; assert ANSI
   + NAWS; kill and restart the process and assert credentials, location, and
   inventory persisted; run the **cross-tenant handle test** through the full
-  World API (not just the arena). Locks parse + evaluate in at least one
-  gated command.
+  World API (not just the arena). Locks parse + evaluate in at least one gated
+  command.
   - *Spec:* §7.4 M1. *Verify:* this is the M1 gate — it must pass to claim M1.
-- **M1-24 — Tenant catalogue + `mudd` subcommand CLI.** Remove `tenant_tag`
-  from tenant `config.toml` (restoring M1-12's "content fields only"
-  contract); introduce the operator-side tenant catalogue (`catalog.toml`,
-  sibling of the server config) that assigns each tenant its port (lowest
-  free ≥ `base_port`, reused after removal) and its runtime tag (lowest
-  free ≥ 1; 0 stays the `--tenant-dir` dev tag); restructure `mudd` into
-  subcommands — `serve`, `tenant add/remove/list` — with bare `mudd`
-  printing help and `--config` global. `[[tenants]]` leaves the server
-  config in favor of the catalogue; new server keys `tenants_dir`, `bind`,
-  `base_port`. The duplicate-tag and duplicate-listen boot errors disappear
-  (uniqueness is the catalogue's invariant, by construction).
-  - *Spec:* §3.11.3; design doc
-    `docs/superpowers/specs/2026-07-11-tenant-catalog-cli-design.md`.
-    *Verify:* `mudd tenant add` scaffolds a tenant that `mudd serve` boots;
-    workspace tests and clippy green.
-- **M1-25 — Password echo suppression.** The session FSM signals secret
-  entry (`Transition.echo`, derived from password-state membership so a
-  future secret-collecting state is masked automatically); a new
-  `WorldFrame::Echo` carries it to the gateway (SCHEMA_VERSION 2); the
-  telnet negotiator claims ECHO (RFC 857): IAC WILL ECHO before the
-  password prompt, IAC WONT ECHO once the secret line is consumed, plus a
-  CRLF echo for masked lines. Clients that refuse keep visible passwords
-  (documented limitation, no warning message).
-  - *Spec:* §2.8.2; design doc
-    `docs/superpowers/specs/2026-07-11-password-echo-suppression-design.md`.
-    *Verify:* telnet e2e asserts WILL/WONT ECHO framing around the password
-    prompt; workspace tests and clippy green.
-- **M1-26 — ANSI renderer wiring.** Styled text now crosses the IPC boundary
-  instead of being flattened: `mud-core`'s text model gains serde so
-  `WorldFrame::Output`'s `OutputText` wraps `StyledText` directly
-  (`SCHEMA_VERSION` 2→3); the engine pipeline passes replies and broadcasts
-  through unflattened. The gateway's per-connection task renders each
-  session's output via `mud_net::render` against the tenant `Palette`,
-  fixed at the M1 tier (`resolve_tier(false, DEFAULT_TENANT_TIER)` →
-  `ansi16`; TTYPE/MTTS tier negotiation is not implemented yet, deferred to
-  M3). The ASCII-transliteration path for non-UTF-8 legacy-charset clients
-  is updated to shield ANSI escape sequences, transliterating only the text
-  between them.
-  - *Spec:* §3.20.1.2, §3.20.5; design doc
-    `docs/superpowers/specs/2026-07-14-ansi-renderer-wiring-design.md`.
-    *Verify:* gateway loopback test asserts ansi16 SGR sequences reach the
-    client; `mudd` telnet e2e asserts ANSI escapes in a `look` reply
-    (closing the M1-23 acceptance test's deferred "assert ANSI" clause);
-    workspace tests and clippy green.
-- **M1-27 — Room presence: spawn/leave announcements, players in `look`.**
-  `Roster::name_of`; `presence` module owning the single audience fan-out
-  (pipeline refactored onto it); spawn (`Routing::Login.bound`), quit-Close
-  and gateway-Disconnect announce `presence.enter`/`presence.leave` from
-  `world_loop`; `look` renders connected players as a Diku-voice sentence
-  (`look.player-here`/`look.players-here`) separate from the keyword
-  "also here" list. Disconnect leaves the body in place but hidden
-  (presence is session-based; linkdead proper is M7).
-  - *Spec:* §2.7 step 8, §3.6.3; design
-    `docs/superpowers/specs/2026-07-15-room-presence-design.md`. *Verify:*
-    two-session e2e (`crates/mudd/tests/presence.rs`); look-partition and
-    `presence::announce` unit tests.
-- **M1-28 — Telnet line discipline: block termination and prompt framing.**
-  Typed `OutputKind` (`Line`/`Prompt`) on `SessionOutput`; the engine
-  classifies (only `PasswordPrompt`/`ConfirmPrompt` are prompts) and
-  coalesces one input line's outputs into one block; the gateway owns
-  framing — blank line before every block, CRLF termination for lines,
-  prompts left unterminated before EOR/GA. `SessionMessage::Prompt`
-  renamed `LoginInstructions`.
-  - *Spec:* §2.8.2 (EOR/GA line discipline); design
-    `docs/superpowers/specs/2026-07-16-telnet-line-discipline-design.md`.
-    *Verify:* gateway framing unit tests; `mudd` e2e transcript-shape and
-    bold-title assertions; workspace tests and clippy green.
 
 ---
 
@@ -757,14 +227,65 @@ Depends on M1 core (§7.5.2). Epics → PRs:
   pipeline (§2.7 step 7); hook tables keyed by archetype with **static
   surface checking** of hook signatures, lock functions, component accesses,
   and engine-API calls at load time (§2.3.6, §2.4.4).
+- **M2-Ea — Full help system (§3.8.2).** Replaces the minimal M1 in-game `help`
+  (issue #67) with the full content model: DB-backed help entries plus
+  file-loaded entries plus auto-generation from command docstrings, merged across
+  engine *and* script-defined commands. `help` with no arguments lists
+  categories; `?` stays an alias (§3.19.3); the listing is **lock-aware** so a
+  viewer sees only commands they can use — hiding building commands (§3.8.1) and
+  script commands gated by locks they lack. Depends on **M2-E** (so script
+  commands are enumerable) and on the building/DB surfaces that back the entries.
+  *Spec:* §3.8.2, §3.19.3. *Verify:* categories listed; a lock-gated command is
+  hidden from a viewer who lacks the lock; DB + file entries merge with
+  docstring-generated ones.
 - **M2-F — Full archetype loader.** KDL archetype declaration with component
   defaults, hook table, and single-inheritance `extends` (§2.3.5); hook
   resolution statically validated at world load (§2.3.6.2). Introduces the
   item/actor archetype distinction that lets object resolution gate by entity
   kind (resolves the M1-17 "no item/actor distinction" limitation: `get`
   targets items, `look` separates actors from items).
+- **M2-Fa — Targeted `look`.** Introduces an authored entity **description**
+  (a component on the M2-D tagged-blob mechanism, distinct from the display-name
+  and match keywords). `look <target>` resolves an entity present in the
+  caller's Place via the object resolver (§2.7 step 5) and renders that entity's
+  viewer-conditional description (§2.2.8); an entity without an authored
+  description renders a generic fallback, and an unresolved target yields a
+  structured "you don't see that here" reply — never a silent room re-render.
+  Depends on **M2-D** (component mechanism) and **M2-F** (item/actor
+  distinction). Resolves the M1 gap where `look` ignores its argument and always
+  renders the caller's room. *Spec:* §2.2.8, §2.7. *Verify:* look-at-present-
+  entity renders its description; look-at-absent-target errors; no-arg `look`
+  still renders the room.
 - **M2-G — Prototypes.** Prototype scripts that return a table; `spawn(...)`
   as a core engine call (§3.7).
+- **M2-Ga — Line editor (§3.8.4).** A session-scoped multi-line text editor for
+  composing room descriptions, mail bodies, help entries, and prototype
+  descriptions. Entry is explicit: a command opens the editor on a target
+  buffer, the session FSM enters editor mode, subsequent input lines append
+  until a terminator, and the buffer commits to its target through a
+  `MutationCommand` (§2.5.3.3). Minimum operations: append, replace line N,
+  delete line N, insert before line N, show buffer with line numbers, abort,
+  commit. Honors the §3.6.4 content cap. Depends on the session FSM (M1-19) and
+  the mutation pipeline (M1). *Deferred:* the identical contract exposed to the
+  webclient via GMCP (same `MutationCommand` path, textarea instead of
+  line-by-line) lands with the webclient in **M3**. *Spec:* §3.8.4, §3.6.4.
+  *Verify:* per-operation editor tests; commit routes through `MutationCommand`;
+  over-cap entry rejected.
+- **M2-Gb — Building commands (§3.8.1).** The in-world builder toolkit, each
+  **lock-gated to builder permissions** (§2.6): `dig`, `create`, `set`,
+  `examine`, `link`, `tunnel`, `typeclass`, `copy`, `delete`. Mutations flow
+  through the `MutationCommand` pipeline (§2.5.3.3); multi-line description
+  fields use the M2-Ga line editor. Depends on the archetype loader (M2-F) for
+  `typeclass`/`copy`/`create`, prototypes (M2-G) for `create`/`spawn`, and locks
+  (M1) for gating. *Spec:* §3.8.1, §2.6. *Verify:* each command's mutation
+  applied and persisted; a non-builder is refused by the lock; round-trip
+  `dig`→`link`→`examine`.
+- **M2-Gc — Batch processors (§3.8.3).** Offline world construction from
+  `.mud` files (sequences of builder commands) and `.lua` files (scripts),
+  replaying through the command and script paths. Depends on the building
+  commands (M2-Gb) and the Lua host (M2-A). *Spec:* §3.8.3. *Verify:* a `.mud`
+  file builds a room graph; a `.lua` file runs under the sandbox; a failing line
+  reports its location and halts.
 - **M2-H — Hot-reload (drain-before-swap).** File watcher; new calls hit the
   new version while the old drains; atomic per-file reload; failed load keeps
   the previous version live; epoch-versioned userdata handles raise typed
