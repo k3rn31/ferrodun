@@ -12,7 +12,7 @@ use mud_session::SessionMessage;
 pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) -> String {
     match message {
         SessionMessage::Banner => banner.to_owned(),
-        SessionMessage::Prompt => t!(*locale, "session.prompt"),
+        SessionMessage::LoginInstructions => t!(*locale, "session.prompt"),
         SessionMessage::PreLoginHelp => t!(*locale, "session.help"),
         SessionMessage::WhoStub => t!(*locale, "session.who-stub"),
         SessionMessage::UnknownCommand => t!(*locale, "session.unknown"),
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn prompt_renders_from_the_catalog() {
-        let text = render(&SessionMessage::Prompt, "", &Locale::EN);
+        let text = render(&SessionMessage::LoginInstructions, "", &Locale::EN);
         assert!(text.contains("login"), "unexpected prompt: {text}");
     }
 

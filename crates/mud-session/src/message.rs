@@ -6,8 +6,8 @@
 pub enum SessionMessage {
     /// The tenant-authored welcome banner (§3.19.1).
     Banner,
-    /// The pre-login prompt: how to register and how to log in.
-    Prompt,
+    /// The pre-login instruction line: how to register and how to log in.
+    LoginInstructions,
     /// The pre-login help listing (`help` / `?`, §3.19.1).
     PreLoginHelp,
     /// The pre-login `who` stub (real listing lands in M1-19a).

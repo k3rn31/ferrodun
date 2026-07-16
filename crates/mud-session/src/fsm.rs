@@ -165,7 +165,10 @@ impl SessionFsm {
 
     /// The banner and prompt to present the moment a session connects (§3.19.1).
     pub fn on_connect(&self) -> Transition {
-        Transition::messages(vec![SessionMessage::Banner, SessionMessage::Prompt])
+        Transition::messages(vec![
+            SessionMessage::Banner,
+            SessionMessage::LoginInstructions,
+        ])
     }
 
     /// Feeds one input line to the machine.
@@ -598,7 +601,7 @@ mod tests {
         let t = fsm.on_connect();
         assert_eq!(
             t.messages,
-            vec![SessionMessage::Banner, SessionMessage::Prompt]
+            vec![SessionMessage::Banner, SessionMessage::LoginInstructions]
         );
         assert!(t.effect.is_none());
         assert!(t.terminal.is_none());
