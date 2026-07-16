@@ -6,7 +6,35 @@
 //! plain text at the IPC boundary, §3.20 note); this returns `String`.
 
 use mud_i18n::{Locale, t};
+use mud_schema::OutputKind;
 use mud_session::SessionMessage;
+
+/// Classifies a message's output block (§2.8.2 line discipline): the two
+/// password prompts leave the cursor on their line; every other message is a
+/// completed line the gateway terminates. Exhaustive so a new variant forces
+/// a classification decision here.
+pub(crate) fn kind(message: &SessionMessage) -> OutputKind {
+    match message {
+        SessionMessage::PasswordPrompt | SessionMessage::ConfirmPrompt => OutputKind::Prompt,
+        SessionMessage::Banner
+        | SessionMessage::LoginInstructions
+        | SessionMessage::PreLoginHelp
+        | SessionMessage::WhoStub
+        | SessionMessage::UnknownCommand
+        | SessionMessage::Goodbye
+        | SessionMessage::LoginFailed
+        | SessionMessage::AccountSuspended
+        | SessionMessage::AccountBanned
+        | SessionMessage::ServerError
+        | SessionMessage::PuppetList(_)
+        | SessionMessage::NoPuppetsYet
+        | SessionMessage::PasswordMismatch
+        | SessionMessage::NameInvalid
+        | SessionMessage::UsernameTaken
+        | SessionMessage::PuppetCreated(_)
+        | SessionMessage::EnteredWorld => OutputKind::Line,
+    }
+}
 
 /// Renders `message` to plain text at `locale`, using `banner` for the welcome.
 pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) -> String {
@@ -46,6 +74,25 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
 mod tests {
     use super::*;
     use mud_account::PuppetName;
+    use mud_schema::OutputKind;
+
+    #[test]
+    fn password_prompts_classify_as_prompt_blocks() {
+        assert_eq!(kind(&SessionMessage::PasswordPrompt), OutputKind::Prompt);
+        assert_eq!(kind(&SessionMessage::ConfirmPrompt), OutputKind::Prompt);
+    }
+
+    #[test]
+    fn ordinary_messages_classify_as_line_blocks() {
+        for message in [
+            SessionMessage::Banner,
+            SessionMessage::LoginInstructions,
+            SessionMessage::LoginFailed,
+            SessionMessage::EnteredWorld,
+        ] {
+            assert_eq!(kind(&message), OutputKind::Line, "for {message:?}");
+        }
+    }
 
     #[test]
     fn banner_message_renders_the_supplied_banner() {

@@ -130,7 +130,10 @@ Changes span `mud-schema`, `mud-engine`, `mud-session` (rename only), and
      the **last** message in the batch. A batch ending in `PasswordPrompt` /
      `ConfirmPrompt` is a `Prompt` block (e.g. a hypothetical
      `[LoginFailed, PasswordPrompt]` becomes `"Login failed.\nPassword:"`,
-     unterminated); every other batch is a `Line` block.
+     unterminated); every other batch is a `Line` block. Batches produced by
+     one input line's effect chain (e.g. puppet creation then world entry)
+     coalesce further in the session driver, flushing at echo-change
+     boundaries, so one input yields one block.
    - The command pipeline and `presence::announce` already emit one block
      per recipient per step; they state `kind: OutputKind::Line`.
 
