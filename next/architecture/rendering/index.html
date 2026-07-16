@@ -971,6 +971,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#line-discipline-live" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Line discipline — live
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1074,6 +1085,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#line-discipline-live" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Line discipline — live
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1151,6 +1173,15 @@ is not implemented yet, so <code>resolve_tier</code> runs with no client signal.
 escapes survive the legacy-charset path too: the ASCII transliteration
 applied for non-UTF-8 clients shields escape sequences and transliterates
 only the text between them.</p>
+<h2 id="line-discipline-live">Line discipline — live<a class="headerlink" href="#line-discipline-live" title="Permanent link">&para;</a></h2>
+<p>The gateway owns how a block meets the socket: every output block is
+preceded by a blank line, a completed message block is terminated with
+CRLF, and a prompt block (<code>Password:</code>) is left unterminated so the cursor
+rests on the prompt line. Every block is followed by one EOR/GA prompt
+frame. Which treatment a block gets rides the wire as <code>OutputKind</code>
+(<code>Line</code> / <code>Prompt</code>) on <code>SessionOutput</code> in <code>mud-schema</code>; the engine
+classifies at the source (only the password and confirm prompts are
+prompts) and coalesces the output of one input line into a single block.</p>
 <pre class="mermaid"><code>flowchart TD
     M["Builder markup&lt;br/&gt;+ palette roles"] --&gt; C["Compile at world load&lt;br/&gt;mud-core::text::markup"]
     C --&gt; ST[StyledText]
