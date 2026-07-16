@@ -37,7 +37,7 @@ impl CommandHandler for Move {
         };
         // Show the destination room as the caller arrives; the MoveTo effect is
         // applied by the pipeline after this handler returns.
-        let arrival = render_room(place, ctx.world(), ctx.caller(), &locale);
+        let arrival = render_room(place, ctx.world(), ctx.roster(), ctx.caller(), &locale);
         let name = ctx.caller_name().as_str().to_owned();
         // Both broadcasts are resolved against the pre-effect world: the room
         // left still has the caller present, and the destination room doesn't

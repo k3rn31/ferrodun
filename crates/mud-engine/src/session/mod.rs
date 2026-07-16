@@ -114,11 +114,21 @@ pub enum Routing {
     Login {
         outputs: Vec<LoginOutput>,
         close: bool,
+        /// The puppet entity this line just bound in-world, when it completed
+        /// a login — the driver's cue to announce the spawn (§2.7 step 8).
+        bound: Option<EntityId>,
     },
     /// The session is in-world; the caller must run the command pipeline.
     InWorld,
     /// No such session.
     Unknown,
+}
+
+/// What applying a terminal produced: whether to close the connection, and
+/// the puppet entity bound when the terminal moved the session in-world.
+struct TerminalOutcome {
+    close: bool,
+    bound: Option<EntityId>,
 }
 
 impl SessionService {
@@ -155,6 +165,15 @@ impl SessionService {
     /// Drops a session (M1 minimal: no linkdead grace; §3.15.2 is M7).
     pub fn disconnect(&mut self, session: SessionId) {
         self.sessions.remove(&session);
+    }
+
+    /// The in-world binding of `session`, or `None` for a pre-login or
+    /// unknown session.
+    pub fn binding_of(&self, session: SessionId) -> Option<&InWorldBinding> {
+        match self.sessions.get(&session)? {
+            SessionState::InWorld(binding) => Some(binding),
+            SessionState::Login(_) => None,
+        }
     }
 
     /// Feeds one input line, routing it to the FSM or signaling the pipeline.
@@ -198,14 +217,19 @@ impl SessionService {
             );
 
             if let Some(terminal) = transition.terminal {
-                let close = self.apply_terminal(session, terminal, backend).await;
-                return Routing::Login { outputs, close };
+                let outcome = self.apply_terminal(session, terminal, backend).await;
+                return Routing::Login {
+                    outputs,
+                    close: outcome.close,
+                    bound: outcome.bound,
+                };
             }
 
             let Some(effect) = transition.effect.take() else {
                 return Routing::Login {
                     outputs,
                     close: false,
+                    bound: None,
                 };
             };
 
@@ -214,6 +238,7 @@ impl SessionService {
                 return Routing::Login {
                     outputs,
                     close: false,
+                    bound: None,
                 };
             };
             transition = fsm.on_effect(result);
@@ -274,13 +299,14 @@ impl SessionService {
     }
 
     /// Applies a terminal transition. `Bound` moves the session in-world;
-    /// `Closed` drops it. Returns whether the connection should close.
+    /// `Closed` drops it. Returns whether the connection should close and, on a
+    /// successful bind, the puppet entity now in-world (the spawn-announcement cue).
     async fn apply_terminal(
         &mut self,
         session: SessionId,
         terminal: Terminal,
         backend: &impl LoginBackend,
-    ) -> bool {
+    ) -> TerminalOutcome {
         match terminal {
             Terminal::Bound {
                 account,
@@ -302,18 +328,27 @@ impl SessionService {
                                 name,
                             }),
                         );
-                        false
+                        TerminalOutcome {
+                            close: false,
+                            bound: Some(entity),
+                        }
                     }
                     None => {
                         self.sessions.remove(&session);
-                        true
+                        TerminalOutcome {
+                            close: true,
+                            bound: None,
+                        }
                     }
                 }
             }
             Terminal::Closed => {
                 tracing::debug!(session_id = %session, "session closed at login");
                 self.sessions.remove(&session);
-                true
+                TerminalOutcome {
+                    close: true,
+                    bound: None,
+                }
             }
         }
     }
@@ -674,5 +709,45 @@ mod tests {
                 .any(|o| o.session_id == sid(1) && has_say_role(o)),
             "the caller reply must carry say role span",
         );
+    }
+
+    /// The `bound` field of a Login routing (`None` for the other variants),
+    /// so assertions need no `panic!` (denied outside documented invariants).
+    fn bound_of(routing: &Routing) -> Option<EntityId> {
+        match routing {
+            Routing::Login { bound, .. } => *bound,
+            Routing::InWorld | Routing::Unknown => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn binding_a_puppet_reports_the_bound_entity() {
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let pre = svc.on_input(sid(1), "login alice", &FakeBackend).await;
+        assert!(
+            matches!(pre, Routing::Login { .. }) && bound_of(&pre).is_none(),
+            "a pre-bind line must not report a binding, got {pre:?}"
+        );
+        let _ = svc.on_input(sid(1), "hunter2", &FakeBackend).await;
+        let routing = svc.on_input(sid(1), "play arden", &FakeBackend).await;
+        assert!(
+            matches!(routing, Routing::Login { close: false, .. }),
+            "expected an open Login routing, got {routing:?}"
+        );
+        let entity = bound_of(&routing).expect("binding must report the puppet entity");
+        assert_eq!(
+            svc.binding_of(sid(1)).map(|binding| binding.puppet),
+            Some(entity),
+            "binding_of must expose the same entity"
+        );
+    }
+
+    #[tokio::test]
+    async fn binding_of_is_none_pre_login() {
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        assert!(svc.binding_of(sid(1)).is_none());
+        assert!(svc.binding_of(sid(2)).is_none());
     }
 }

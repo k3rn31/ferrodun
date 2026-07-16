@@ -127,6 +127,10 @@ impl Roster for FakeResolver {
             name: PuppetName::parse("hero").expect("name"),
         }]
     }
+
+    fn name_of(&self, entity: EntityId) -> Option<PuppetName> {
+        (entity == self.caller).then(|| PuppetName::parse("hero").expect("name"))
+    }
 }
 
 /// A pipeline with all built-ins bound, a two-room map, a caller placed in HALL,

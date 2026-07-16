@@ -8,7 +8,18 @@ prompt and press enter. Commands match on a **prefix**, so `n` is enough for
 
 | Command | Aliases | What it does |
 |---|---|---|
-| `look` | `l` | Show your current room: its title, description, the obvious exits, and anyone else here. |
+| `look` | `l` | Show the current room: title, description, obvious exits, the players here, and anything else here. |
+
+## Seeing other players
+
+Players in your room appear in `look` on their own line — `Alice is here.`,
+or `Alice, Bob and Carol are here.` when several are present. Objects are
+listed separately under "Also here:".
+
+When a player logs in you'll see `Alice appears from nowhere.`; when they
+quit or lose their connection you'll see `Alice disappears.`. Walking
+between rooms is announced too (`Alice leaves north.` / `Alice arrives from
+south.`).
 
 ## Moving
 

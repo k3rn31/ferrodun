@@ -107,6 +107,7 @@ pub async fn boot(
             pipeline,
             builtins,
             places,
+            locale: tenant_config.locale(),
         };
         tasks.spawn(world_loop::run(world_end, world_id, runtime).instrument(tenant_span));
 

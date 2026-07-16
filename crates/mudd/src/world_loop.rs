@@ -5,13 +5,14 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use mud_cmd::Command;
-use mud_core::{MutationCommand, TICK_PERIOD, TickEvent};
+use mud_core::{MutationCommand, StyledText, TICK_PERIOD, TickEvent, World};
 use mud_db::PersistentWorld;
 use mud_engine::{
     LoginOutput, Pipeline, PipelineError, Routing, SessionDisposition, SessionService,
 };
+use mud_i18n::Locale;
 use mud_ipc::{Endpoint, InMemoryEndpoint, accept_resume};
-use mud_schema::{GatewayFrame, SessionClose, SessionInput, WorldFrame, WorldId};
+use mud_schema::{GatewayFrame, SessionClose, SessionId, SessionInput, WorldFrame, WorldId};
 use tokio::sync::Mutex;
 use tokio::time::MissedTickBehavior;
 
@@ -28,6 +29,8 @@ pub struct TenantRuntime {
     pub pipeline: Pipeline,
     pub builtins: Vec<Command>,
     pub places: WorldPlaces,
+    /// Tenant locale presence announcements render in (§3.14.6).
+    pub locale: Locale,
 }
 
 /// Drives one tenant's World: ticks the durable scheduler and routes gateway
@@ -71,7 +74,9 @@ pub async fn run(
                         endpoint.send(WorldFrame::Output(output)).await.context("send output")?;
                     }
                 }
-                Some(GatewayFrame::Disconnect(disconnect)) => rt.sessions.disconnect(disconnect.session_id),
+                Some(GatewayFrame::Disconnect(disconnect)) => {
+                    handle_disconnect(&mut endpoint, &mut rt, disconnect.session_id).await?;
+                }
                 Some(GatewayFrame::Input(input)) => {
                     handle_input(&mut endpoint, &mut rt, input).await?;
                 }
@@ -128,12 +133,32 @@ async fn handle_input(
         .on_input(session_id, input.line.as_str(), &rt.backend)
         .await
     {
-        Routing::Login { outputs, close } => {
+        Routing::Login {
+            outputs,
+            close,
+            bound,
+        } => {
             for output in outputs {
                 endpoint
                     .send(frame_of(output))
                     .await
                     .context("send output")?;
+            }
+            if bound.is_some() {
+                let guard = rt.world.lock().await;
+                let announcements = presence_announcement(
+                    rt,
+                    guard.world(),
+                    session_id,
+                    mud_engine::presence::entered,
+                );
+                drop(guard);
+                for output in announcements {
+                    endpoint
+                        .send(WorldFrame::Output(output))
+                        .await
+                        .context("send output")?;
+                }
             }
             if close {
                 endpoint
@@ -156,8 +181,27 @@ async fn handle_input(
                     for effect in outcome.effects {
                         guard.submit(MutationCommand::new(effect));
                     }
+                    // Resolved before unbind below so the roster still maps
+                    // this session; the quitter is excluded by entity, not
+                    // by session presence.
+                    let farewells = if matches!(outcome.disposition, SessionDisposition::Close) {
+                        presence_announcement(
+                            rt,
+                            guard.world(),
+                            session_id,
+                            mud_engine::presence::left,
+                        )
+                    } else {
+                        Vec::new()
+                    };
                     drop(guard);
                     for output in outcome.outputs {
+                        endpoint
+                            .send(WorldFrame::Output(output))
+                            .await
+                            .context("send output")?;
+                    }
+                    for output in farewells {
                         endpoint
                             .send(WorldFrame::Output(output))
                             .await
@@ -189,6 +233,60 @@ async fn handle_input(
         }
         Routing::Unknown => tracing::debug!(%session_id, "input for unknown session dropped"),
     }
+    Ok(())
+}
+
+/// The outputs announcing `session_id`'s puppet entering or leaving its
+/// room. Empty when the session has no in-world binding (pre-login) or its
+/// puppet has no location — both mean no room audience to tell.
+///
+/// Resolves the binding and the audience while the caller still holds the
+/// world lock: the binding is about to be dropped (spawn's `bound` is
+/// transient; quit/disconnect unbind right after), so the roster lookup
+/// must happen before that unbind, not after.
+fn presence_announcement(
+    rt: &TenantRuntime,
+    world: &World,
+    session_id: SessionId,
+    message: fn(Locale, &str) -> StyledText,
+) -> Vec<mud_schema::SessionOutput> {
+    let Some(binding) = rt.sessions.binding_of(session_id) else {
+        return Vec::new();
+    };
+    let Some(place) = world.location_of(binding.puppet) else {
+        return Vec::new();
+    };
+    let text = message(rt.locale.clone(), binding.name.as_str());
+    mud_engine::presence::announce(
+        world,
+        &rt.sessions.resolver(&rt.builtins),
+        place,
+        binding.puppet,
+        &text,
+    )
+}
+
+/// Handles a gateway-reported socket drop: announces the departure to the
+/// puppet's room, then unbinds the session. Order matters — the roster must
+/// still hold the binding while the audience is resolved, so the
+/// announcement is computed (and the world guard dropped) before
+/// `sessions.disconnect` removes it.
+async fn handle_disconnect(
+    endpoint: &mut InMemoryEndpoint<WorldFrame, GatewayFrame>,
+    rt: &mut TenantRuntime,
+    session_id: SessionId,
+) -> anyhow::Result<()> {
+    let guard = rt.world.lock().await;
+    let farewells =
+        presence_announcement(rt, guard.world(), session_id, mud_engine::presence::left);
+    drop(guard);
+    for output in farewells {
+        endpoint
+            .send(WorldFrame::Output(output))
+            .await
+            .context("send output")?;
+    }
+    rt.sessions.disconnect(session_id);
     Ok(())
 }
 

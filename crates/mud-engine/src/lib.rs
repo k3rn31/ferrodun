@@ -22,6 +22,7 @@ mod layers;
 mod objects;
 mod pipeline;
 mod places;
+pub mod presence;
 mod roster;
 pub mod session;
 mod text;

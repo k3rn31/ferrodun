@@ -1603,3 +1603,20 @@ truth when this log drifts.
   Added a why-comment on the role list in `Palette::baseline()`.
 - **Verify:** `cargo clippy -p mud-core` clean; 172 mud-core tests pass.
 - **Next:** none — commands land per PLAN (no player emote/tell in M1).
+
+## 2026-07-16 — M1-27 room presence (spawn/leave announcements, players in look)
+
+- **Spec:** §2.7 step 8, §3.6.3; docs/superpowers/specs/2026-07-15-room-presence-design.md
+- **Done:** `Roster::name_of`; `mud-engine::presence` (shared `announce` fan-out
+  + `entered`/`left` messages; pipeline refactored onto it); `Routing::Login`
+  gained `bound`; `SessionService::binding_of`; `world_loop` announces
+  spawn/quit/drop (`TenantRuntime.locale`); `look` partitions players
+  (sorted, and-joined sentence) from keyword things; i18n keys
+  `presence.enter`/`presence.leave`/`look.player-here`/`look.players-here`;
+  mudd test harness extracted to `tests/common`; playing docs updated.
+- **Verify:** `cargo test --workspace`, `cargo clippy --workspace
+  --all-targets`, `cargo fmt --all --check`, `uv run mkdocs build --strict`;
+  e2e `crates/mudd/tests/presence.rs`.
+- **Next:** M2-F archetypes must gate room listings/object resolution on
+  session presence too, or disconnected bodies resurface (design "hidden
+  body" note). English and-join is absorbed by the M2-I i18n rework.

@@ -61,12 +61,17 @@ const ENTRIES: &[(&str, &str)] = &[
     // look (§3.2)
     ("look.exits", "Exits: { $exits }"),
     ("look.also-here", "Also here: { $names }"),
+    ("look.player-here", "{ $name } is here."),
+    ("look.players-here", "{ $names } are here."),
     ("look.void", "You are nowhere in particular."),
     // movement (§3.2.2)
     ("move.no-exit", "You can't go that way."),
     ("move.depart", "{ $name } leaves { $direction }."),
     ("move.arrive-from", "{ $name } arrives from { $direction }."),
     ("move.arrive", "{ $name } arrives."),
+    // presence lifecycle (§2.7 step 8): spawn/quit/disconnect
+    ("presence.enter", "{ $name } appears from nowhere."),
+    ("presence.leave", "{ $name } disappears."),
     // say (§3.6.3)
     ("say.speech", "You say, \"{ $message }\""),
     ("say.broadcast", "{ $name } says, \"{ $message }\""),

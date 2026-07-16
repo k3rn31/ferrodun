@@ -26,4 +26,9 @@ pub trait Roster {
 
     /// Every connected in-world player, in no guaranteed order.
     fn connected(&self) -> Vec<Presence>;
+
+    /// The display name of `entity` when a connected in-world session puppets
+    /// it, or `None` for anything session-less (an item, an NPC, a
+    /// disconnected puppet's body).
+    fn name_of(&self, entity: EntityId) -> Option<PuppetName>;
 }

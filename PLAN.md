@@ -698,6 +698,18 @@ spine.
     client; `mudd` telnet e2e asserts ANSI escapes in a `look` reply
     (closing the M1-23 acceptance test's deferred "assert ANSI" clause);
     workspace tests and clippy green.
+- **M1-27 — Room presence: spawn/leave announcements, players in `look`.**
+  `Roster::name_of`; `presence` module owning the single audience fan-out
+  (pipeline refactored onto it); spawn (`Routing::Login.bound`), quit-Close
+  and gateway-Disconnect announce `presence.enter`/`presence.leave` from
+  `world_loop`; `look` renders connected players as a Diku-voice sentence
+  (`look.player-here`/`look.players-here`) separate from the keyword
+  "also here" list. Disconnect leaves the body in place but hidden
+  (presence is session-based; linkdead proper is M7).
+  - *Spec:* §2.7 step 8, §3.6.3; design
+    `docs/superpowers/specs/2026-07-15-room-presence-design.md`. *Verify:*
+    two-session e2e (`crates/mudd/tests/presence.rs`); look-partition and
+    `presence::announce` unit tests.
 
 ---
 

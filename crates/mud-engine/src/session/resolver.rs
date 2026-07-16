@@ -1,6 +1,7 @@
 //! The real §2.7 step-3 resolver: it reads the session registry, so a session
 //! only resolves once it is in-world (bound to a puppet).
 
+use mud_account::PuppetName;
 use mud_cmd::Command;
 use mud_core::{EntityId, LockContext, World};
 use mud_schema::SessionId;
@@ -71,6 +72,15 @@ impl Roster for RegistryResolver<'_> {
                 SessionState::Login(_) => None,
             })
             .collect()
+    }
+
+    fn name_of(&self, entity: EntityId) -> Option<PuppetName> {
+        self.sessions.values().find_map(|state| match state {
+            SessionState::InWorld(binding) if binding.puppet == entity => {
+                Some(binding.name.clone())
+            }
+            SessionState::InWorld(_) | SessionState::Login(_) => None,
+        })
     }
 }
 
@@ -155,5 +165,37 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, vec!["arden".to_owned(), "borel".to_owned()]);
+    }
+
+    #[test]
+    fn name_of_names_connected_puppets_only() {
+        use crate::roster::Roster;
+        let mut world = World::new(TenantTag::new(1).expect("tenant"));
+        let arden = world.create().expect("create arden");
+        let stray = world.create().expect("create stray");
+        world.move_to(arden, place(10)).expect("seat arden");
+        world.move_to(stray, place(10)).expect("seat stray");
+
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.bind_for_test(
+            sid(1),
+            InWorldBinding {
+                account: mud_account::AccountId::new(NonZeroU64::new(1).expect("nonzero")),
+                puppet: arden,
+                name: mud_account::PuppetName::parse("arden").expect("name"),
+            },
+        );
+
+        let builtins = Vec::new();
+        let resolver = svc.resolver(&builtins);
+
+        assert_eq!(
+            resolver.name_of(arden).map(|n| n.as_str().to_owned()),
+            Some("arden".to_owned())
+        );
+        assert!(
+            resolver.name_of(stray).is_none(),
+            "a session-less entity has no roster name"
+        );
     }
 }
