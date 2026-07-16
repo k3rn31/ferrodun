@@ -222,6 +222,12 @@ impl SessionService {
             }
             if let Some((text, kind)) = self.render_batch(&std::mem::take(&mut transition.messages))
             {
+                // INVARIANT: a coalesced block inherits the latest batch's kind.
+                // Safe because a `Prompt` message is always the terminal message
+                // of an input cycle (it coincides with the echo-suppress boundary,
+                // which flushes first). An FSM that emitted `Prompt` followed by
+                // `Line` messages in one cycle without an echo change would bury
+                // the prompt's unterminated framing under the trailing `Line` kind.
                 pending = Some(match pending.take() {
                     Some((previous, _)) => (format!("{previous}\n{text}"), kind),
                     None => (text, kind),
