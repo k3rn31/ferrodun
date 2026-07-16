@@ -11,7 +11,7 @@
 use mud_cmd::ParseOutcome;
 use mud_core::{Effect, World};
 use mud_i18n::{Locale, t};
-use mud_schema::{OutputText, SessionInput, SessionOutput};
+use mud_schema::{OutputKind, OutputText, SessionInput, SessionOutput};
 
 use crate::CommandId;
 use crate::caller::{CallerContext, SessionResolver};
@@ -248,6 +248,7 @@ fn message(
     vec![SessionOutput {
         session_id,
         text: OutputText::new(text),
+        kind: OutputKind::Line,
     }]
 }
 

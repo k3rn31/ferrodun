@@ -7,7 +7,7 @@
 
 use mud_core::{EntityId, PlaceId, RoleName, StyledText, World};
 use mud_i18n::{Locale, t};
-use mud_schema::{OutputText, SessionOutput};
+use mud_schema::{OutputKind, OutputText, SessionOutput};
 
 use crate::roster::Roster;
 
@@ -31,6 +31,7 @@ pub fn announce(
         .map(|session_id| SessionOutput {
             session_id,
             text: OutputText::new(message.clone()),
+            kind: OutputKind::Line,
         })
         .collect()
 }

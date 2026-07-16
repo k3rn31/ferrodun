@@ -11,7 +11,9 @@ use std::time::Instant;
 
 use mud_core::Palette;
 use mud_net::{Decision, LocalEcho, RateLimiter, TelnetEvent, TelnetMachine, Tier};
-use mud_schema::{EchoMode, GatewayFrame, InputLine, SessionDisconnect, SessionId, SessionInput};
+use mud_schema::{
+    EchoMode, GatewayFrame, InputLine, OutputKind, SessionDisconnect, SessionId, SessionInput,
+};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
 
@@ -145,11 +147,21 @@ where
                 }
             }
             output = output_rx.recv() => match output {
-                Some(ToConnection::Output(text)) => {
+                Some(ToConnection::Output { text, kind }) => {
                     // The one place escapes are generated (§3.20.1.2): render the
                     // styled payload for this session, then encode per its charset.
                     let ansi = mud_net::render(text.styled(), ctx.palette, ctx.tier);
-                    let mut bytes = machine.encode_output(&ansi);
+                    // Blank line up front gives every block breathing room from
+                    // whatever the client already has on screen (§2.8.2).
+                    let mut bytes = b"\r\n".to_vec();
+                    bytes.extend_from_slice(&machine.encode_output(&ansi));
+                    match kind {
+                        // A `Line` block is a complete unit of output and gets a
+                        // terminator; a `Prompt` stays open on the same visual
+                        // line, so only the GA/EOR frame below marks its end.
+                        OutputKind::Line => bytes.extend_from_slice(b"\r\n"),
+                        OutputKind::Prompt => {}
+                    }
                     // One rendered block = one prompt frame (§2.8.2 EOR/GA).
                     bytes.extend_from_slice(&machine.prompt_frame());
                     if writer.write_all(&bytes).await.is_err() {
@@ -212,7 +224,7 @@ mod tests {
     use std::time::Instant;
 
     use mud_net::{Burst, RateLimiter, SustainedRate};
-    use mud_schema::{EchoMode, GatewayFrame, OutputText, SessionId};
+    use mud_schema::{EchoMode, GatewayFrame, OutputKind, OutputText, SessionId};
     use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
     use tokio::sync::mpsc;
     use tracing_test::traced_test;
@@ -313,7 +325,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn output_is_encoded_and_prompt_framed() {
+    async fn a_line_block_is_framed_with_blank_line_and_terminator() {
         let (mut client, mut router_rx, _task) = spawn_connection(default_limiter());
 
         let tx = expect_register(&mut router_rx).await;
@@ -325,17 +337,50 @@ mod tests {
             .await
             .expect("opening offers");
 
-        tx.send(ToConnection::Output(OutputText::new("hello\n")))
-            .await
-            .expect("connection must accept output");
+        tx.send(ToConnection::Output {
+            text: OutputText::new("hello"),
+            kind: OutputKind::Line,
+        })
+        .await
+        .expect("connection must accept output");
 
-        // "hello\n" -> "hello\r\n"; no EOR negotiated -> IAC GA prompt frame.
-        let mut buf = [0u8; 9];
+        // Blank line + body + CRLF terminator; no EOR negotiated -> IAC GA.
+        let mut buf = [0u8; 11];
         client
             .read_exact(&mut buf)
             .await
             .expect("output must be written");
-        assert_eq!(&buf, b"hello\r\n\xff\xf9");
+        assert_eq!(&buf, b"\r\nhello\r\n\xff\xf9");
+    }
+
+    #[tokio::test]
+    async fn a_prompt_block_stays_unterminated_before_the_prompt_frame() {
+        let (mut client, mut router_rx, _task) = spawn_connection(default_limiter());
+
+        let tx = expect_register(&mut router_rx).await;
+        let _connect = router_rx.recv().await.expect("connect frame");
+
+        let mut offers = [0u8; 12];
+        client
+            .read_exact(&mut offers)
+            .await
+            .expect("opening offers");
+
+        tx.send(ToConnection::Output {
+            text: OutputText::new("Password:"),
+            kind: OutputKind::Prompt,
+        })
+        .await
+        .expect("connection must accept output");
+
+        // Blank line + body, no CRLF terminator on a prompt line — the trailing
+        // IAC GA marks the prompt's end instead.
+        let mut buf = [0u8; 13];
+        client
+            .read_exact(&mut buf)
+            .await
+            .expect("output must be written");
+        assert_eq!(&buf, b"\r\nPassword:\xff\xf9");
     }
 
     #[tokio::test]

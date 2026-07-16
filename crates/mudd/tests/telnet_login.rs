@@ -16,7 +16,16 @@ use common::{ClientReader, single_tenant_config, write_tenant};
 /// Drives one telnet session from a fresh connection all the way to a
 /// working in-world `look` command.
 async fn login_and_enter_world(client: &mut ClientReader) {
-    client.read_until(b"Welcome to Testville.").await;
+    let greeting = client.read_until(b"lists commands.").await;
+    // §2.8.2 line discipline: the banner and instructions arrive as one
+    // CRLF-terminated block, no longer glued into a single line.
+    let merged_greeting = b"Welcome to Testville.\r\nType 'login";
+    assert!(
+        greeting
+            .windows(merged_greeting.len())
+            .any(|w| w == merged_greeting),
+        "banner and instructions must share one CRLF-terminated block, got {greeting:?}"
+    );
 
     client.write_line("register alice").await;
     let to_password = client.read_until(b"Password:").await;
@@ -40,11 +49,18 @@ async fn login_and_enter_world(client: &mut ClientReader) {
     );
 
     client.write_line("new Hero").await;
-    client.read_until(b"Created Hero.").await;
-
-    client
-        .read_until(b"Welcome. You are now in the world.")
+    let entered = client
+        .read_until(b"Welcome. You are now in the world.\r\n")
         .await;
+    // One input line, one block: creation confirmation and world entry
+    // coalesce into a single CRLF-terminated block (design §Architecture 2).
+    let merged_entry = b"Created Hero.\r\nWelcome. You are now in the world.\r\n";
+    assert!(
+        entered
+            .windows(merged_entry.len())
+            .any(|w| w == merged_entry),
+        "creation confirmation and world entry must coalesce into one block, got {entered:?}"
+    );
 }
 
 #[tokio::test]
@@ -62,12 +78,15 @@ async fn a_full_register_create_enter_flow_over_telnet() {
     login_and_enter_world(&mut client).await;
 
     client.write_line("look").await;
-    let look_reply = client.read_until(b"Town Square").await;
-    // M1-26: the reply must carry ANSI escapes — the room title/exits are
-    // styled, and the gateway now renders at ansi16.
+    let look_reply = client.read_until(b"A test square.").await;
+    // M1-26: the look reply opens with a blank line, then the room title
+    // wrapped in bold SGR (the gateway renders at ansi16).
+    let framed_title = b"\r\n\x1b[1mTown Square\x1b[0m\r\nA test square.";
     assert!(
-        look_reply.windows(2).any(|w| w == b"\x1b["),
-        "look reply must contain ANSI escapes, got {look_reply:?}"
+        look_reply
+            .windows(framed_title.len())
+            .any(|w| w == framed_title),
+        "look reply must open with a blank line and a bold title, got {look_reply:?}"
     );
 }
 

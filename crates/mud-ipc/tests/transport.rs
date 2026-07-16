@@ -9,8 +9,8 @@ use mud_ipc::{
     connect, in_memory_pair,
 };
 use mud_schema::{
-    GatewayFrame, InputLine, OutputText, ResumeHandshake, SCHEMA_VERSION, SchemaVersion, SessionId,
-    SessionInput, SessionOutput, WorldFrame, WorldId,
+    GatewayFrame, InputLine, OutputKind, OutputText, ResumeHandshake, SCHEMA_VERSION,
+    SchemaVersion, SessionId, SessionInput, SessionOutput, WorldFrame, WorldId,
 };
 use tokio::net::UnixListener;
 
@@ -58,6 +58,7 @@ where
     let output = WorldFrame::Output(SessionOutput {
         session_id: session(1),
         text: OutputText::new("a quiet room"),
+        kind: OutputKind::Line,
     });
     world.send(output.clone()).await.expect("world sends");
     assert_eq!(
@@ -235,6 +236,7 @@ async fn announce_sessions_rejects_a_non_ack_reply() {
     let stray = WorldFrame::Output(SessionOutput {
         session_id: session(1),
         text: OutputText::new("not an ack"),
+        kind: OutputKind::Line,
     });
     let (announced, replied) = tokio::join!(
         announce_sessions(&mut gateway, world_id(1), vec![]),

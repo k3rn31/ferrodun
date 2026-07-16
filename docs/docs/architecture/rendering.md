@@ -52,6 +52,17 @@ escapes survive the legacy-charset path too: the ASCII transliteration
 applied for non-UTF-8 clients shields escape sequences and transliterates
 only the text between them.
 
+## Line discipline — live
+
+The gateway owns how a block meets the socket: every output block is
+preceded by a blank line, a completed message block is terminated with
+CRLF, and a prompt block (`Password:`) is left unterminated so the cursor
+rests on the prompt line. Every block is followed by one EOR/GA prompt
+frame. Which treatment a block gets rides the wire as `OutputKind`
+(`Line` / `Prompt`) on `SessionOutput` in `mud-schema`; the engine
+classifies at the source (only the password and confirm prompts are
+prompts) and coalesces the output of one input line into a single block.
+
 ```mermaid
 flowchart TD
     M["Builder markup<br/>+ palette roles"] --> C["Compile at world load<br/>mud-core::text::markup"]

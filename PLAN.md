@@ -710,6 +710,17 @@ spine.
     `docs/superpowers/specs/2026-07-15-room-presence-design.md`. *Verify:*
     two-session e2e (`crates/mudd/tests/presence.rs`); look-partition and
     `presence::announce` unit tests.
+- **M1-28 — Telnet line discipline: block termination and prompt framing.**
+  Typed `OutputKind` (`Line`/`Prompt`) on `SessionOutput`; the engine
+  classifies (only `PasswordPrompt`/`ConfirmPrompt` are prompts) and
+  coalesces one input line's outputs into one block; the gateway owns
+  framing — blank line before every block, CRLF termination for lines,
+  prompts left unterminated before EOR/GA. `SessionMessage::Prompt`
+  renamed `LoginInstructions`.
+  - *Spec:* §2.8.2 (EOR/GA line discipline); design
+    `docs/superpowers/specs/2026-07-16-telnet-line-discipline-design.md`.
+    *Verify:* gateway framing unit tests; `mudd` e2e transcript-shape and
+    bold-title assertions; workspace tests and clippy green.
 
 ---
 

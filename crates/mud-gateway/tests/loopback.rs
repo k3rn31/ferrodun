@@ -12,7 +12,8 @@ use mud_gateway::{GatewayConfig, GatewayError, serve};
 use mud_ipc::{Endpoint, InMemoryEndpoint, accept_resume, in_memory_pair};
 use mud_net::{Burst, SustainedRate, Tier};
 use mud_schema::{
-    GatewayFrame, OutputText, SessionClose, SessionId, SessionOutput, WorldFrame, WorldId,
+    GatewayFrame, OutputKind, OutputText, SessionClose, SessionId, SessionOutput, WorldFrame,
+    WorldId,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -125,17 +126,17 @@ async fn echo_round_trip_with_negotiation_and_prompt_frame() {
     world_end
         .send(WorldFrame::Output(SessionOutput {
             session_id,
-            text: OutputText::new("echo: look\n"),
+            text: OutputText::new("echo: look"),
+            kind: OutputKind::Line,
         }))
         .await
         .expect("world must send output");
     // IAC GA prompt frame follows the block (client offered no EOR).
     let output = read_until(&mut client, &[255, 249]).await;
+    let framed = b"\r\necho: look\r\n";
     assert!(
-        output
-            .windows(12)
-            .any(|w| w == b"echo: look\r\n".as_slice()),
-        "echoed text must arrive CRLF-normalized, got {output:?}"
+        output.windows(framed.len()).any(|w| w == framed.as_slice()),
+        "block must arrive blank-line-prefixed and CRLF-terminated, got {output:?}"
     );
 }
 
@@ -149,11 +150,12 @@ async fn styled_output_renders_ansi16_sgr_to_the_client() {
 
     let styled = StyledText::new()
         .role("Alice", RoleName::SAY)
-        .plain(" waves\n");
+        .plain(" waves");
     world_end
         .send(WorldFrame::Output(SessionOutput {
             session_id,
             text: OutputText::new(styled),
+            kind: OutputKind::Line,
         }))
         .await
         .expect("world sends styled output");

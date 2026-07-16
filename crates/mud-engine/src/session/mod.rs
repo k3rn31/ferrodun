@@ -14,7 +14,7 @@ use std::future::Future;
 use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterError, Username};
 use mud_core::{EntityId, EntityKey};
 use mud_i18n::Locale;
-use mud_schema::{EchoMode, OutputText, SessionEcho, SessionId, SessionOutput};
+use mud_schema::{EchoMode, OutputKind, OutputText, SessionEcho, SessionId, SessionOutput};
 use mud_session::{Effect, EffectResult, InputEcho, SessionFsm, Terminal, Transition};
 use secrecy::SecretString;
 
@@ -141,12 +141,16 @@ impl SessionService {
         }
     }
 
-    /// Registers a new session and returns its banner + prompt.
+    /// Registers a new session and returns its greeting: banner and login
+    /// instructions merged into one block (§2.8.2 line discipline).
     pub fn connect(&mut self, session: SessionId) -> Vec<SessionOutput> {
         let fsm = SessionFsm::new();
         let transition = fsm.on_connect();
         self.sessions.insert(session, SessionState::Login(fsm));
-        self.render_outputs(session, transition.messages)
+        self.render_batch(&transition.messages)
+            .map(|(text, kind)| block(session, text, kind))
+            .into_iter()
+            .collect()
     }
 
     /// A resolver over the current in-world bindings, contributing `builtins`.
@@ -195,6 +199,10 @@ impl SessionService {
 
     /// Runs a transition to completion: renders messages, performs effects, and
     /// feeds each result back until no effect remains, then applies any terminal.
+    ///
+    /// Consecutive message batches coalesce into one output block per input
+    /// line (§2.8.2 line discipline); an echo change flushes the pending block
+    /// first so masking still lands before the prompt it protects.
     async fn drive(
         &mut self,
         session: SessionId,
@@ -202,21 +210,32 @@ impl SessionService {
         backend: &impl LoginBackend,
     ) -> Routing {
         let mut outputs = Vec::new();
+        let mut pending: Option<(String, OutputKind)> = None;
         let mut transition = first;
         loop {
             if let Some(echo) = transition.echo {
+                flush_pending(session, &mut outputs, &mut pending);
                 outputs.push(LoginOutput::Echo(SessionEcho {
                     session_id: session,
                     mode: echo_mode(echo),
                 }));
             }
-            outputs.extend(
-                self.render_outputs(session, std::mem::take(&mut transition.messages))
-                    .into_iter()
-                    .map(LoginOutput::Text),
-            );
+            if let Some((text, kind)) = self.render_batch(&std::mem::take(&mut transition.messages))
+            {
+                // INVARIANT: a coalesced block inherits the latest batch's kind.
+                // Safe because a `Prompt` message is always the terminal message
+                // of an input cycle (it coincides with the echo-suppress boundary,
+                // which flushes first). An FSM that emitted `Prompt` followed by
+                // `Line` messages in one cycle without an echo change would bury
+                // the prompt's unterminated framing under the trailing `Line` kind.
+                pending = Some(match pending.take() {
+                    Some((previous, _)) => (format!("{previous}\n{text}"), kind),
+                    None => (text, kind),
+                });
+            }
 
             if let Some(terminal) = transition.terminal {
+                flush_pending(session, &mut outputs, &mut pending);
                 let outcome = self.apply_terminal(session, terminal, backend).await;
                 return Routing::Login {
                     outputs,
@@ -226,6 +245,7 @@ impl SessionService {
             }
 
             let Some(effect) = transition.effect.take() else {
+                flush_pending(session, &mut outputs, &mut pending);
                 return Routing::Login {
                     outputs,
                     close: false,
@@ -235,6 +255,7 @@ impl SessionService {
 
             let result = self.perform(effect, backend).await;
             let Some(SessionState::Login(fsm)) = self.sessions.get_mut(&session) else {
+                flush_pending(session, &mut outputs, &mut pending);
                 return Routing::Login {
                     outputs,
                     close: false,
@@ -353,18 +374,43 @@ impl SessionService {
         }
     }
 
-    fn render_outputs(
+    /// Renders one FSM message batch as block text plus its kind: messages
+    /// joined with `\n`, kind taken from the last message (a batch ending in
+    /// a password prompt is a prompt block). `None` for an empty batch.
+    fn render_batch(
         &self,
-        session: SessionId,
-        messages: Vec<mud_session::SessionMessage>,
-    ) -> Vec<SessionOutput> {
-        messages
-            .into_iter()
-            .map(|message| SessionOutput {
-                session_id: session,
-                text: OutputText::new(render(&message, &self.banner, &self.locale)),
-            })
-            .collect()
+        messages: &[mud_session::SessionMessage],
+    ) -> Option<(String, OutputKind)> {
+        let kind = messages.last().map(render::kind)?;
+        let text = messages
+            .iter()
+            .map(|message| render(message, &self.banner, &self.locale))
+            .collect::<Vec<_>>()
+            .join("\n");
+        Some((text, kind))
+    }
+}
+
+/// Wraps one coalesced block as the wire output for `session`.
+fn block(session: SessionId, text: String, kind: OutputKind) -> SessionOutput {
+    SessionOutput {
+        session_id: session,
+        text: OutputText::new(text),
+        kind,
+    }
+}
+
+/// Flushes the pending coalesced text, if any, onto `outputs`.
+///
+/// Called at every echo boundary and every return so text order relative to
+/// echo-mode changes is preserved exactly.
+fn flush_pending(
+    session: SessionId,
+    outputs: &mut Vec<LoginOutput>,
+    pending: &mut Option<(String, OutputKind)>,
+) {
+    if let Some((text, kind)) = pending.take() {
+        outputs.push(LoginOutput::Text(block(session, text, kind)));
     }
 }
 
@@ -476,6 +522,64 @@ mod tests {
         assert!(
             text.contains("WELCOME") && text.contains("login"),
             "got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_merges_banner_and_instructions_into_one_line_block() {
+        let mut svc = SessionService::new("WELCOME", Locale::EN);
+        let outputs = svc.connect(sid(1));
+        assert_eq!(outputs.len(), 1, "one connect step, one block");
+        let output = outputs.first().expect("one output");
+        assert_eq!(output.kind, mud_schema::OutputKind::Line);
+        assert_eq!(
+            output.text.to_plain_string(),
+            "WELCOME\nType 'login <name>' or 'register <name>'. 'help' lists commands."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_password_prompt_block_has_kind_prompt() {
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let routing = svc.on_input(sid(1), "login alice", &FakeBackend).await;
+        let Routing::Login { outputs, .. } = routing else {
+            panic!("expected Login routing");
+        };
+        let texts: Vec<_> = outputs
+            .iter()
+            .filter_map(|output| match output {
+                LoginOutput::Text(text) => Some(text),
+                LoginOutput::Echo(_) => None,
+            })
+            .collect();
+        assert_eq!(texts.len(), 1, "one input, one block");
+        let block = texts.first().expect("one text block");
+        assert_eq!(block.kind, mud_schema::OutputKind::Prompt);
+        assert_eq!(block.text.to_plain_string(), "Password:");
+    }
+
+    #[tokio::test]
+    async fn puppet_creation_coalesces_created_and_entered_into_one_block() {
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let _ = svc.on_input(sid(1), "login alice", &FakeBackend).await;
+        let _ = svc.on_input(sid(1), "hunter2", &FakeBackend).await;
+        let routing = svc.on_input(sid(1), "new Hero", &FakeBackend).await;
+        let Routing::Login { outputs, .. } = routing else {
+            panic!("expected Login routing");
+        };
+        let texts: Vec<_> = outputs
+            .iter()
+            .filter_map(|output| match output {
+                LoginOutput::Text(text) => Some(text.text.to_plain_string()),
+                LoginOutput::Echo(_) => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec!["Created Hero.\nWelcome. You are now in the world.".to_owned()],
+            "creation and entry must coalesce into one Line block"
         );
     }
 
