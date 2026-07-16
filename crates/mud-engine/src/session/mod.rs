@@ -299,7 +299,8 @@ impl SessionService {
     }
 
     /// Applies a terminal transition. `Bound` moves the session in-world;
-    /// `Closed` drops it. Returns whether the connection should close.
+    /// `Closed` drops it. Returns whether the connection should close and, on a
+    /// successful bind, the puppet entity now in-world (the spawn-announcement cue).
     async fn apply_terminal(
         &mut self,
         session: SessionId,
