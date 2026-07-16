@@ -56,7 +56,9 @@ async fn login_and_enter_world(client: &mut ClientReader) {
     // coalesce into a single CRLF-terminated block (design §Architecture 2).
     let merged_entry = b"Created Hero.\r\nWelcome. You are now in the world.\r\n";
     assert!(
-        entered.windows(merged_entry.len()).any(|w| w == merged_entry),
+        entered
+            .windows(merged_entry.len())
+            .any(|w| w == merged_entry),
         "creation confirmation and world entry must coalesce into one block, got {entered:?}"
     );
 }

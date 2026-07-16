@@ -121,8 +121,8 @@ mod tests {
 
     use mud_ipc::{Endpoint, in_memory_pair};
     use mud_schema::{
-        EchoMode, GatewayFrame, OutputKind, OutputText, SessionClose, SessionConnect,
-        SessionEcho, SessionId, SessionOutput, WorldFrame,
+        EchoMode, GatewayFrame, OutputKind, OutputText, SessionClose, SessionConnect, SessionEcho,
+        SessionId, SessionOutput, WorldFrame,
     };
     use tokio::sync::mpsc;
 
