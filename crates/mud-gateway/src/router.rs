@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use mud_ipc::Endpoint;
-use mud_schema::{EchoMode, GatewayFrame, OutputText, SessionId, WorldFrame};
+use mud_schema::{EchoMode, GatewayFrame, OutputKind, OutputText, SessionId, WorldFrame};
 use tokio::sync::mpsc;
 
 use crate::error::GatewayError;
@@ -22,8 +22,9 @@ pub(crate) const OUTPUT_CAPACITY: usize = 64;
 /// What the router tells one connection task.
 #[derive(Debug)]
 pub(crate) enum ToConnection {
-    /// Rendered text to write to the client, followed by a prompt frame.
-    Output(OutputText),
+    /// A rendered output block to terminate and write to the client (§2.8.2
+    /// line discipline), followed by a prompt frame.
+    Output { text: OutputText, kind: OutputKind },
     /// Ask the client to change its local echo (password masking, RFC 857).
     Echo(EchoMode),
     /// World-initiated close (§2.1.3): drop the connection, no `Disconnect` echo.
@@ -59,7 +60,14 @@ where
             frame = endpoint.recv() => match frame? {
                 None => return Ok(()),
                 Some(WorldFrame::Output(output)) => {
-                    route(&registry, output.session_id, ToConnection::Output(output.text));
+                    route(
+                        &registry,
+                        output.session_id,
+                        ToConnection::Output {
+                            text: output.text,
+                            kind: output.kind,
+                        },
+                    );
                 }
                 Some(WorldFrame::Close(close)) => {
                     route(&registry, close.session_id, ToConnection::Close);
@@ -176,7 +184,9 @@ mod tests {
             .expect("world endpoint must send");
 
         let routed = output_rx.recv().await.expect("output must be routed");
-        assert!(matches!(routed, ToConnection::Output(text) if text.to_plain_string() == "hello"));
+        assert!(
+            matches!(routed, ToConnection::Output { text, .. } if text.to_plain_string() == "hello")
+        );
 
         drop(world_end); // peer closes -> clean shutdown
         router
@@ -347,7 +357,9 @@ mod tests {
             .recv()
             .await
             .expect("B receives its output while A is flooded");
-        assert!(matches!(marker, ToConnection::Output(t) if t.to_plain_string() == "b-marker"));
+        assert!(
+            matches!(marker, ToConnection::Output { text, .. } if text.to_plain_string() == "b-marker")
+        );
 
         // A buffered exactly its capacity; the overflow hit the drop branch.
         let mut delivered = 0usize;
@@ -403,7 +415,9 @@ mod tests {
             .expect("world endpoint must send");
 
         let got = rx_a.recv().await.expect("A receives its output");
-        assert!(matches!(got, ToConnection::Output(t) if t.to_plain_string() == "for-a"));
+        assert!(
+            matches!(got, ToConnection::Output { text, .. } if text.to_plain_string() == "for-a")
+        );
         // Blocking on A's receiver means the frame is fully routed; B, never
         // addressed, has nothing waiting.
         assert!(
