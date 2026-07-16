@@ -440,6 +440,24 @@ control (a Region maps cleanly to one directory subtree, hence one
 ownership unit). The engine MUST NOT implement per-Region authoring
 permissions.
 
+#### 2.2.8 Looking
+
+2.2.8.1 The engine MUST provide a `look` command. With no argument it
+MUST render the caller's current `Place` to the caller: its title (if
+authored), the viewer-conditional description (§2.2.2), the available
+exits, and the other entities present.
+
+2.2.8.2 `look <target>` MUST resolve `<target>` among the entities
+present in the caller's `Place` using the standard object-resolution
+rules (§2.7 step 5, including `name.N` and disambiguation) and MUST
+render the resolved entity's description. An entity MUST expose a
+**viewer-conditional description** mirroring a `Place`'s (§2.2.2), with
+authored entity descriptions living in the component/archetype content
+home (§2.3.3); an entity without an authored description MUST render a
+generic fallback rather than an error. If `<target>` resolves to no
+entity present, the engine MUST emit a structured "you don't see that
+here" reply and MUST NOT fall back to rendering the room.
+
 ### 2.3 Entity / Component / Archetype model
 
 The engine is **not a classical ECS** and **not a Python-style
@@ -1942,12 +1960,23 @@ admin-mediated reset, not a self-service flow.
 3.15.1.4 An account MAY own multiple **puppets** (the in-world
 characters). Puppet selection at login MUST be an explicit step;
 auto-selecting the most-recent puppet MAY be offered as a
-preference.
+preference. A puppet's name MUST be **unique within its tenant**,
+compared **case-insensitively**, across all accounts — creating a
+puppet whose name collides with an existing one (in any account)
+MUST be rejected. Uniqueness is tenant-scoped (§3.11.4): the same
+puppet name in two tenants is unrelated.
 
 3.15.1.5 Account states MUST be one of: `active`, `suspended`
 (temporary, admin-issued, with reason and expiry), `banned`
 (permanent), `deleted` (see §3.17). Suspended and banned accounts
 MUST be rejected at login with a non-leaky message.
+
+3.15.1.6 At most **one session per account** MUST be active at a
+time. When an already-authenticated account logs in again on a new
+connection, the new session MUST take over and the prior session
+MUST be disconnected (displaced); the engine MUST NOT run two
+concurrent sessions for the same account. A displaced session's
+puppet is handled as on any disconnect (§3.15.2).
 
 #### 3.15.2 Linkdead handling
 
