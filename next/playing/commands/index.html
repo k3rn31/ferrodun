@@ -447,6 +447,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#seeing-other-players" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seeing other players
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#moving" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1102,6 +1113,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#seeing-other-players" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seeing other players
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#moving" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1199,10 +1221,18 @@ prompt and press enter. Commands match on a <strong>prefix</strong>, so <code>n<
 <tr>
 <td><code>look</code></td>
 <td><code>l</code></td>
-<td>Show your current room: its title, description, the obvious exits, and anyone else here.</td>
+<td>Show the current room: title, description, obvious exits, the players here, and anything else here.</td>
 </tr>
 </tbody>
 </table>
+<h2 id="seeing-other-players">Seeing other players<a class="headerlink" href="#seeing-other-players" title="Permanent link">&para;</a></h2>
+<p>Players in your room appear in <code>look</code> on their own line — <code>Alice is here.</code>,
+or <code>Alice, Bob and Carol are here.</code> when several are present. Objects are
+listed separately under "Also here:".</p>
+<p>When a player logs in you'll see <code>Alice appears from nowhere.</code>; when they
+quit or lose their connection you'll see <code>Alice disappears.</code>. Walking
+between rooms is announced too (<code>Alice leaves north.</code> / <code>Alice arrives from
+south.</code>).</p>
 <h2 id="moving">Moving<a class="headerlink" href="#moving" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
