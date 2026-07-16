@@ -12,7 +12,8 @@ use mud_gateway::{GatewayConfig, GatewayError, serve};
 use mud_ipc::{Endpoint, InMemoryEndpoint, accept_resume, in_memory_pair};
 use mud_net::{Burst, SustainedRate, Tier};
 use mud_schema::{
-    GatewayFrame, OutputText, SessionClose, SessionId, SessionOutput, WorldFrame, WorldId,
+    GatewayFrame, OutputKind, OutputText, SessionClose, SessionId, SessionOutput, WorldFrame,
+    WorldId,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -126,6 +127,7 @@ async fn echo_round_trip_with_negotiation_and_prompt_frame() {
         .send(WorldFrame::Output(SessionOutput {
             session_id,
             text: OutputText::new("echo: look\n"),
+            kind: OutputKind::Line,
         }))
         .await
         .expect("world must send output");
@@ -154,6 +156,7 @@ async fn styled_output_renders_ansi16_sgr_to_the_client() {
         .send(WorldFrame::Output(SessionOutput {
             session_id,
             text: OutputText::new(styled),
+            kind: OutputKind::Line,
         }))
         .await
         .expect("world sends styled output");

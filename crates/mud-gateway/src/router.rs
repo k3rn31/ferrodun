@@ -113,8 +113,8 @@ mod tests {
 
     use mud_ipc::{Endpoint, in_memory_pair};
     use mud_schema::{
-        EchoMode, GatewayFrame, OutputText, SessionClose, SessionConnect, SessionEcho, SessionId,
-        SessionOutput, WorldFrame,
+        EchoMode, GatewayFrame, OutputKind, OutputText, SessionClose, SessionConnect,
+        SessionEcho, SessionId, SessionOutput, WorldFrame,
     };
     use tokio::sync::mpsc;
 
@@ -170,6 +170,7 @@ mod tests {
             .send(WorldFrame::Output(SessionOutput {
                 session_id: id,
                 text: OutputText::new("hello"),
+                kind: OutputKind::Line,
             }))
             .await
             .expect("world endpoint must send");
@@ -195,6 +196,7 @@ mod tests {
             .send(WorldFrame::Output(SessionOutput {
                 session_id: session(99),
                 text: OutputText::new("ghost"),
+                kind: OutputKind::Line,
             }))
             .await
             .expect("world endpoint must send");
@@ -272,6 +274,7 @@ mod tests {
             .send(WorldFrame::Output(SessionOutput {
                 session_id: id,
                 text: OutputText::new("late"),
+                kind: OutputKind::Line,
             }))
             .await
             .expect("world endpoint must send");
@@ -323,6 +326,7 @@ mod tests {
                 .send(WorldFrame::Output(SessionOutput {
                     session_id: a,
                     text: OutputText::new("flood"),
+                    kind: OutputKind::Line,
                 }))
                 .await
                 .expect("world endpoint must send A's flood");
@@ -331,6 +335,7 @@ mod tests {
             .send(WorldFrame::Output(SessionOutput {
                 session_id: b,
                 text: OutputText::new("b-marker"),
+                kind: OutputKind::Line,
             }))
             .await
             .expect("world endpoint must send B's marker");
@@ -392,6 +397,7 @@ mod tests {
             .send(WorldFrame::Output(SessionOutput {
                 session_id: a,
                 text: OutputText::new("for-a"),
+                kind: OutputKind::Line,
             }))
             .await
             .expect("world endpoint must send");

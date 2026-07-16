@@ -14,7 +14,7 @@ use std::future::Future;
 use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterError, Username};
 use mud_core::{EntityId, EntityKey};
 use mud_i18n::Locale;
-use mud_schema::{EchoMode, OutputText, SessionEcho, SessionId, SessionOutput};
+use mud_schema::{EchoMode, OutputKind, OutputText, SessionEcho, SessionId, SessionOutput};
 use mud_session::{Effect, EffectResult, InputEcho, SessionFsm, Terminal, Transition};
 use secrecy::SecretString;
 
@@ -363,6 +363,7 @@ impl SessionService {
             .map(|message| SessionOutput {
                 session_id: session,
                 text: OutputText::new(render(&message, &self.banner, &self.locale)),
+                kind: OutputKind::Line,
             })
             .collect()
     }

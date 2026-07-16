@@ -73,6 +73,21 @@ pub struct SessionInput {
     pub line: InputLine,
 }
 
+/// How the Gateway terminates an output block (§2.8.2 line discipline).
+///
+/// A [`Line`](OutputKind::Line) is a completed message: the Gateway ends the
+/// line after it. A [`Prompt`](OutputKind::Prompt) awaits input on the same
+/// line: the Gateway leaves it unterminated and the EOR/GA prompt frame tells
+/// prompt-aware clients where the prompt ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
+pub enum OutputKind {
+    /// A completed message; the Gateway terminates it with a line ending.
+    Line,
+    /// An input prompt; left unterminated so the cursor rests on the line.
+    Prompt,
+}
+
 /// Rendered output destined for one client session.
 ///
 /// Carries [`OutputText`], styled text crossing the IPC boundary
@@ -86,6 +101,8 @@ pub struct SessionOutput {
     pub session_id: SessionId,
     /// The text to present to the client.
     pub text: OutputText,
+    /// How the Gateway terminates the block (§2.8.2 line discipline).
+    pub kind: OutputKind,
 }
 
 /// Announces that a client has connected and a new session exists.
@@ -246,6 +263,7 @@ mod tests {
         let frame = WorldFrame::Output(SessionOutput {
             session_id: session(9),
             text: OutputText::new(styled),
+            kind: OutputKind::Line,
         });
         let bytes = encode(&frame).expect("encode");
         assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
@@ -256,6 +274,18 @@ mod tests {
         let frame = WorldFrame::Output(SessionOutput {
             session_id: session(4),
             text: OutputText::new("You see a room."),
+            kind: OutputKind::Line,
+        });
+        let bytes = encode(&frame).expect("encode");
+        assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn world_output_round_trips_a_prompt_block() {
+        let frame = WorldFrame::Output(SessionOutput {
+            session_id: session(4),
+            text: OutputText::new("Password:"),
+            kind: OutputKind::Prompt,
         });
         let bytes = encode(&frame).expect("encode");
         assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
@@ -343,16 +373,17 @@ mod tests {
 
     // Output = variant 0; session_id = 4; text = StyledText with one plain span:
     // spans len 1, span.text "hi" (len 2, 0x68 0x69), span.style = SpanStyle::Plain
-    // (variant 0).
+    // (variant 0); kind = OutputKind::Line (variant 0).
     #[test]
     fn output_frame_has_a_stable_encoding() {
         let frame = WorldFrame::Output(SessionOutput {
             session_id: session(4),
             text: OutputText::new("hi"),
+            kind: OutputKind::Line,
         });
         assert_eq!(
             encode(&frame).expect("encode"),
-            vec![0x00, 0x04, 0x01, 0x02, 0x68, 0x69, 0x00]
+            vec![0x00, 0x04, 0x01, 0x02, 0x68, 0x69, 0x00, 0x00]
         );
     }
 
@@ -414,6 +445,7 @@ mod tests {
         let frame = WorldFrame::Output(SessionOutput {
             session_id: session(1),
             text: OutputText::new("こんにちは 👋"),
+            kind: OutputKind::Line,
         });
         let bytes = encode(&frame).expect("encode");
         assert_eq!(decode::<WorldFrame>(&bytes).expect("decode"), frame);
