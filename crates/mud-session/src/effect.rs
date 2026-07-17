@@ -1,7 +1,7 @@
 //! Effects the FSM emits for the driver to perform, and the results fed back.
 
 use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterError, Username};
-use mud_core::EntityKey;
+use mud_core::{EntityId, EntityKey};
 use secrecy::SecretString;
 
 /// I/O the driver must perform on the FSM's behalf. Password fields are
@@ -49,6 +49,8 @@ pub enum EffectResult {
     BackendError,
     /// A puppet was created for the account.
     PuppetCreated(Puppet),
-    /// The session was bound to its puppet; login is complete.
-    Entered,
+    /// The session was bound to its puppet; login is complete. Carries the
+    /// resolved entity so the driver's terminal bind can reuse it instead of
+    /// re-resolving the same puppet key.
+    Entered { entity: EntityId },
 }

@@ -236,7 +236,7 @@ impl SessionService {
 
             if let Some(terminal) = transition.terminal {
                 flush_pending(session, &mut outputs, &mut pending);
-                let outcome = self.apply_terminal(session, terminal, backend).await;
+                let outcome = self.apply_terminal(session, terminal);
                 return Routing::Login {
                     outputs,
                     close: outcome.close,
@@ -313,7 +313,7 @@ impl SessionService {
                 }
             }
             Effect::Enter { account: _, puppet } => match backend.resolve_puppet(puppet).await {
-                Some(_) => EffectResult::Entered,
+                Some(entity) => EffectResult::Entered { entity },
                 None => EffectResult::BackendError,
             },
         }
@@ -322,45 +322,27 @@ impl SessionService {
     /// Applies a terminal transition. `Bound` moves the session in-world;
     /// `Closed` drops it. Returns whether the connection should close and, on a
     /// successful bind, the puppet entity now in-world (the spawn-announcement cue).
-    async fn apply_terminal(
-        &mut self,
-        session: SessionId,
-        terminal: Terminal,
-        backend: &impl LoginBackend,
-    ) -> TerminalOutcome {
+    fn apply_terminal(&mut self, session: SessionId, terminal: Terminal) -> TerminalOutcome {
         match terminal {
             Terminal::Bound {
                 account,
-                puppet,
+                entity,
                 name,
             } => {
-                // The FSM already emitted Enter and saw it succeed, so the key
-                // resolves; on the vanishing chance it does not, drop cleanly.
-                match backend.resolve_puppet(puppet).await {
-                    Some(entity) => {
-                        // account_id and entity only — never `name`, a
-                        // player-authored PuppetName (design §6).
-                        tracing::debug!(session_id = %session, account_id = %account, ?entity, "session bound");
-                        self.sessions.insert(
-                            session,
-                            SessionState::InWorld(InWorldBinding {
-                                account,
-                                puppet: entity,
-                                name,
-                            }),
-                        );
-                        TerminalOutcome {
-                            close: false,
-                            bound: Some(entity),
-                        }
-                    }
-                    None => {
-                        self.sessions.remove(&session);
-                        TerminalOutcome {
-                            close: true,
-                            bound: None,
-                        }
-                    }
+                // account_id and entity only — never `name`, a
+                // player-authored PuppetName (design §6).
+                tracing::debug!(session_id = %session, account_id = %account, ?entity, "session bound");
+                self.sessions.insert(
+                    session,
+                    SessionState::InWorld(InWorldBinding {
+                        account,
+                        puppet: entity,
+                        name,
+                    }),
+                );
+                TerminalOutcome {
+                    close: false,
+                    bound: Some(entity),
                 }
             }
             Terminal::Closed => {

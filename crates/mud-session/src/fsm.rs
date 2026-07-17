@@ -3,7 +3,7 @@
 use crate::effect::{Effect, EffectResult};
 use crate::message::SessionMessage;
 use mud_account::{Account, AccountId, LoginError, Puppet, PuppetName, RegisterError, Username};
-use mud_core::EntityKey;
+use mud_core::{EntityId, EntityKey};
 use secrecy::{ExposeSecret, SecretString};
 
 /// Whether the client should locally echo the next input. Derived from
@@ -78,7 +78,7 @@ pub enum Terminal {
     /// input to the command pipeline.
     Bound {
         account: AccountId,
-        puppet: EntityKey,
+        entity: EntityId,
         name: PuppetName,
     },
 }
@@ -117,7 +117,6 @@ enum State {
     AwaitingEnter {
         account: Account,
         puppets: Vec<Puppet>,
-        chosen: EntityKey,
         chosen_name: PuppetName,
     },
 }
@@ -346,7 +345,6 @@ impl SessionFsm {
         self.state = State::AwaitingEnter {
             account,
             puppets,
-            chosen,
             chosen_name,
         };
         Transition {
@@ -408,17 +406,16 @@ impl SessionFsm {
             (
                 State::AwaitingEnter {
                     account,
-                    chosen,
                     chosen_name,
                     ..
                 },
-                EffectResult::Entered,
+                EffectResult::Entered { entity },
             ) => Transition {
                 messages: vec![SessionMessage::EnteredWorld],
                 effect: None,
                 terminal: Some(Terminal::Bound {
                     account: account.id,
-                    puppet: chosen,
+                    entity,
                     name: chosen_name,
                 }),
                 echo: None,
@@ -477,7 +474,7 @@ fn login_rejection_message(reason: LoginError) -> SessionMessage {
 mod tests {
     use super::*;
     use mud_account::{Account, AccountId, AccountState, LoginError, Puppet, PuppetName, Username};
-    use mud_core::EntityKey;
+    use mud_core::{EntityId, EntityKey, Generation, SlotIndex, TenantTag};
     use secrecy::ExposeSecret;
     use std::num::NonZeroU64;
 
@@ -491,6 +488,14 @@ mod tests {
 
     fn key(value: u64) -> EntityKey {
         EntityKey::new(NonZeroU64::new(value).expect("non-zero key"))
+    }
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId::new(
+            TenantTag::new(1).expect("valid tenant tag"),
+            SlotIndex::new(slot),
+            Generation::FIRST,
+        )
     }
 
     fn puppet(id: u64, name: &str) -> Puppet {
@@ -763,13 +768,13 @@ mod tests {
             puppets: vec![puppet(10, "arden")],
         });
         let _ = fsm.on_input("play arden");
-        let t = fsm.on_effect(EffectResult::Entered);
+        let t = fsm.on_effect(EffectResult::Entered { entity: entity(7) });
         assert_eq!(t.messages, vec![SessionMessage::EnteredWorld]);
         assert_eq!(
             t.terminal,
             Some(Terminal::Bound {
                 account: account().id,
-                puppet: key(10),
+                entity: entity(7),
                 name: PuppetName::parse("arden").expect("name"),
             })
         );
