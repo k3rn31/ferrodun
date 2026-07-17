@@ -1181,8 +1181,8 @@ type — be mindful of who can see your screen.</p>
 </div>
 <h2 id="registering">Registering<a class="headerlink" href="#registering" title="Permanent link">&para;</a></h2>
 <p>Type <code>register &lt;name&gt;</code> to create a new account. Names may use letters,
-digits, and <code>_ ' -</code>, and must be between 1 and 32 characters. You'll be
-prompted twice, to catch typos:</p>
+digits, and <code>_ ' -</code>, must be between 1 and 32 characters, and cannot
+consist entirely of digits. You'll be prompted twice, to catch typos:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>&gt; register aria
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Password:
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>Confirm password:
@@ -1194,6 +1194,11 @@ told so and can pick another the same way.</p>
 <p>Once you're logged in (whether you just registered or logged into an
 existing account), you move to <strong>character selection</strong> — picking which
 character you want to play:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Your characters:
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  1) aria
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  2) borin
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>Type &#39;play &lt;name or number&gt;&#39; or &#39;new &lt;name&gt;&#39;.
+</code></pre></div>
 <table>
 <thead>
 <tr>
@@ -1218,7 +1223,8 @@ character you want to play:</p>
 </table>
 <p>A brand-new account has no characters yet, so it's prompted straight to
 <code>new &lt;name&gt;</code> to create its first one. Character names follow the same rules
-as account names (letters, digits, <code>_ ' -</code>, 1–32 characters).</p>
+as account names (letters, digits, <code>_ ' -</code>, 1–32 characters, not all
+digits).</p>
 <p>Once you've entered the world, you're in-world play — see
 <a href="../commands/">Player commands</a> for what you can do from there.</p>
 
