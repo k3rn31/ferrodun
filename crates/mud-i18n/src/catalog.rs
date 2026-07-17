@@ -122,7 +122,7 @@ const ENTRIES: &[(&str, &str)] = &[
     ("session.mismatch", "The passwords did not match."),
     (
         "session.name-invalid",
-        "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars).",
+        "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars, not all digits).",
     ),
     ("session.username-taken", "That username is already taken."),
     ("session.entered", "Welcome. You are now in the world."),

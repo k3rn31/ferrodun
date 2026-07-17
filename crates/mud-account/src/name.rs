@@ -1,9 +1,10 @@
 //! Validated name newtypes for the account domain.
 //!
 //! A [`Username`] identifies an account within its tenant; a [`PuppetName`]
-//! names an in-world character. Both share one validation rule (length bounds +
-//! a restricted character set) so a name is parsed once, at the boundary, and
-//! never re-validated downstream.
+//! names an in-world character. Both share one validation rule (length bounds,
+//! a restricted character set, and never all digits — so a digit-only `play`
+//! argument is always an ordinal, cf. §3.15.1.4) so a name is parsed once, at
+//! the boundary, and never re-validated downstream.
 
 use std::fmt;
 
@@ -26,6 +27,12 @@ pub enum NameError {
         /// The first disallowed character encountered.
         ch: char,
     },
+    /// The name consisted entirely of ASCII digits.
+    ///
+    /// Forbidden so a pure-digit `play` argument can only ever be a list
+    /// ordinal, never a name (issue #32).
+    #[error("name cannot be all digits")]
+    AllDigits,
 }
 
 /// Returns the validated character count, or the first rule the input breaks.
@@ -36,6 +43,9 @@ fn validate(raw: &str) -> Result<(), NameError> {
     }
     if let Some(ch) = raw.chars().find(|ch| !is_allowed(*ch)) {
         return Err(NameError::InvalidChar { ch });
+    }
+    if raw.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(NameError::AllDigits);
     }
     Ok(())
 }
@@ -65,8 +75,9 @@ impl Username {
     ///
     /// # Errors
     ///
-    /// Returns [`NameError`] if `raw` is empty, longer than 32 characters, or
-    /// contains a character outside `[A-Za-z0-9_'-]`.
+    /// Returns [`NameError`] if `raw` is empty, longer than 32 characters,
+    /// contains a character outside `[A-Za-z0-9_'-]`, or consists entirely
+    /// of digits.
     pub fn parse(raw: impl Into<String>) -> Result<Self, NameError> {
         let raw = raw.into();
         validate(&raw)?;
@@ -174,5 +185,31 @@ mod tests {
     fn puppet_name_shares_the_rule() {
         assert!(PuppetName::parse("Gandalf").is_ok());
         assert_eq!(PuppetName::parse(""), Err(NameError::Length { got: 0 }));
+    }
+
+    #[test]
+    fn rejects_an_all_digit_name() {
+        // An all-digit name would be indistinguishable from a `play` ordinal
+        // (issue #32); `007` also covers the leading-zero parse (`007` → 7).
+        for raw in ["42", "007", "1"] {
+            assert_eq!(
+                Username::parse(raw),
+                Err(NameError::AllDigits),
+                "{raw:?} must be rejected"
+            );
+            assert_eq!(
+                PuppetName::parse(raw),
+                Err(NameError::AllDigits),
+                "{raw:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_a_name_containing_digits_but_not_only_digits() {
+        for raw in ["4rden", "42_", "x42"] {
+            assert!(Username::parse(raw).is_ok(), "{raw:?} should be valid");
+            assert!(PuppetName::parse(raw).is_ok(), "{raw:?} should be valid");
+        }
     }
 }
