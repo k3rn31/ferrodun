@@ -68,7 +68,7 @@ impl<'a> Accounts<'a> {
                 }))
             }
             Err(err) if is_unique_violation(&err) => Ok(Err(RegisterError::UsernameTaken)),
-            Err(err) => Err(err.into()),
+            Err(err) => Err(DbError::from_sqlx(err)),
         }
     }
 
@@ -94,7 +94,8 @@ impl<'a> Accounts<'a> {
             username_str
         )
         .fetch_optional(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
 
         let Some(row) = row else {
             return Ok(Err(LoginError::UnknownUser));
@@ -105,7 +106,9 @@ impl<'a> Accounts<'a> {
         let stored = row.password_hash;
         let attempt = password.to_owned();
         let verified =
-            tokio::task::spawn_blocking(move || Credential::verify_phc(&stored, &attempt)).await?;
+            tokio::task::spawn_blocking(move || Credential::verify_phc(&stored, &attempt))
+                .await
+                .map_err(DbError::from_join)?;
         if !verified {
             return Ok(Err(LoginError::BadPassword));
         }
@@ -144,12 +147,13 @@ impl<'a> Accounts<'a> {
         let name_str = name.as_str();
         let slug = start.as_str();
 
-        let mut tx = self.db.pool().begin().await?;
+        let mut tx = self.db.pool().begin().await.map_err(DbError::from_sqlx)?;
         let row = sqlx::query!(
             r#"INSERT INTO entities DEFAULT VALUES RETURNING entity_key AS "entity_key!""#
         )
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         sqlx::query!(
             "INSERT INTO puppets (entity_key, account_id, name) VALUES (?, ?, ?)",
             row.entity_key,
@@ -157,15 +161,17 @@ impl<'a> Accounts<'a> {
             name_str
         )
         .execute(&mut *tx)
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         sqlx::query!(
             "INSERT INTO location (entity_key, place_key) VALUES (?, ?)",
             row.entity_key,
             slug
         )
         .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
+        tx.commit().await.map_err(DbError::from_sqlx)?;
 
         let key = entity_key_from_db(row.entity_key)?;
         Ok(Puppet::new(key, name))
@@ -185,7 +191,8 @@ impl<'a> Accounts<'a> {
             account_db
         )
         .fetch_all(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
 
         rows.into_iter()
             .map(|row| {
