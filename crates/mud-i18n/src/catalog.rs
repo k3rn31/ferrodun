@@ -129,7 +129,7 @@ const ENTRIES: &[(&str, &str)] = &[
     ("session.goodbye", "Goodbye."),
     (
         "session.puppet-list",
-        "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
+        "Your characters:\n{ $names }\nType 'play <name or number>' or 'new <name>'.",
     ),
     ("session.puppet-created", "Created { $name }."),
     ("session.no-such-puppet", "No such character."),
