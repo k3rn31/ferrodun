@@ -122,16 +122,17 @@ const ENTRIES: &[(&str, &str)] = &[
     ("session.mismatch", "The passwords did not match."),
     (
         "session.name-invalid",
-        "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars).",
+        "That name isn't allowed. Use letters, digits, _ ' - (1-32 chars, not all digits).",
     ),
     ("session.username-taken", "That username is already taken."),
     ("session.entered", "Welcome. You are now in the world."),
     ("session.goodbye", "Goodbye."),
     (
         "session.puppet-list",
-        "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
+        "Your characters:\n{ $names }\nType 'play <name or number>' or 'new <name>'.",
     ),
     ("session.puppet-created", "Created { $name }."),
+    ("session.no-such-puppet", "No such character."),
     // quit (§3.19)
     ("quit.goodbye", "Goodbye!"),
 ];
@@ -211,6 +212,7 @@ mod tests {
             "session.goodbye",
             "session.puppet-list",
             "session.puppet-created",
+            "session.no-such-puppet",
         ] {
             assert!(
                 catalog

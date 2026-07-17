@@ -189,12 +189,12 @@ fn play_with_a_zero_or_out_of_range_ordinal_is_rejected() {
     let mut fsm = logged_in_with_one_puppet();
     assert_eq!(
         fsm.on_input("play 0").messages,
-        vec![SessionMessage::UnknownCommand]
+        vec![SessionMessage::NoSuchPuppet]
     );
 
     let mut fsm = logged_in_with_one_puppet();
     assert_eq!(
         fsm.on_input("play 99").messages,
-        vec![SessionMessage::UnknownCommand]
+        vec![SessionMessage::NoSuchPuppet]
     );
 }

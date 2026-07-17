@@ -299,7 +299,7 @@ impl SessionFsm {
             return Transition::messages(Vec::new());
         };
         let Some(chosen) = match_puppet(puppets, arg) else {
-            return Transition::message(SessionMessage::UnknownCommand);
+            return Transition::message(SessionMessage::NoSuchPuppet);
         };
         let key = chosen.key;
         let name = chosen.name.clone();
@@ -447,7 +447,12 @@ fn parse_name(raw: &str) -> Result<Username, mud_account::NameError> {
     Username::parse(raw)
 }
 
-/// Resolves a `play` argument to a puppet: a 1-based ordinal, or a name match.
+/// Resolves a `play` argument to a puppet: a 1-based ordinal into the list as
+/// displayed, or a case-insensitive name match.
+///
+/// Ordinal-first is safe: names can never be all digits ([`PuppetName`]
+/// rejects them, §3.15.1.4), so a pure-digit argument is always an ordinal
+/// and can never shadow a name (issue #32).
 fn match_puppet<'a>(puppets: &'a [Puppet], arg: &str) -> Option<&'a Puppet> {
     if let Ok(ordinal) = arg.parse::<usize>() {
         return ordinal.checked_sub(1).and_then(|index| puppets.get(index));
@@ -812,13 +817,43 @@ mod tests {
             puppets: vec![puppet(10, "arden")],
         });
         let t = fsm.on_input("play ghost");
-        assert_eq!(t.messages, vec![SessionMessage::UnknownCommand]);
+        assert_eq!(t.messages, vec![SessionMessage::NoSuchPuppet]);
         assert!(t.effect.is_none());
         // Still selectable.
         assert!(matches!(
             fsm.on_input("play arden").effect,
             Some(Effect::Enter { .. })
         ));
+    }
+
+    #[test]
+    fn play_with_an_out_of_range_ordinal_reports_no_such_puppet() {
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: vec![puppet(10, "arden")],
+        });
+        let t = fsm.on_input("play 9");
+        assert_eq!(t.messages, vec![SessionMessage::NoSuchPuppet]);
+        assert!(t.effect.is_none());
+    }
+
+    #[test]
+    fn an_all_digit_name_is_rejected_at_create() {
+        // Guards the Task 1 rule at the FSM boundary: `new 42` must fail as an
+        // invalid name, otherwise the puppet could never be selected by name.
+        let mut fsm = SessionFsm::new();
+        let _ = fsm.on_input("login alice");
+        let _ = fsm.on_input("pw");
+        let _ = fsm.on_effect(EffectResult::Authenticated {
+            account: account(),
+            puppets: Vec::new(),
+        });
+        let t = fsm.on_input("new 42");
+        assert_eq!(t.messages, vec![SessionMessage::NameInvalid]);
+        assert!(t.effect.is_none());
     }
 
     #[test]

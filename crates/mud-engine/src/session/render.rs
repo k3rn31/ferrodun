@@ -28,6 +28,7 @@ pub(crate) fn kind(message: &SessionMessage) -> OutputKind {
         | SessionMessage::ServerError
         | SessionMessage::PuppetList(_)
         | SessionMessage::NoPuppetsYet
+        | SessionMessage::NoSuchPuppet
         | SessionMessage::PasswordMismatch
         | SessionMessage::NameInvalid
         | SessionMessage::UsernameTaken
@@ -51,6 +52,7 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
         SessionMessage::AccountBanned => t!(*locale, "session.banned"),
         SessionMessage::ServerError => t!(*locale, "session.server-error"),
         SessionMessage::NoPuppetsYet => t!(*locale, "session.no-puppets"),
+        SessionMessage::NoSuchPuppet => t!(*locale, "session.no-such-puppet"),
         SessionMessage::PasswordMismatch => t!(*locale, "session.mismatch"),
         SessionMessage::NameInvalid => t!(*locale, "session.name-invalid"),
         SessionMessage::UsernameTaken => t!(*locale, "session.username-taken"),
@@ -59,9 +61,10 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
         SessionMessage::PuppetList(names) => {
             let names = names
                 .iter()
-                .map(|n| n.as_str())
+                .enumerate()
+                .map(|(i, n)| format!("  {}) {}", i + 1, n.as_str()))
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join("\n");
             t!(*locale, "session.puppet-list", names = names)
         }
         SessionMessage::PuppetCreated(name) => {
@@ -109,15 +112,24 @@ mod tests {
     }
 
     #[test]
-    fn puppet_list_names_every_character() {
+    fn puppet_list_renders_a_numbered_menu() {
         let names = vec![
             PuppetName::parse("arden").expect("name"),
             PuppetName::parse("borel").expect("name"),
         ];
         let text = render(&SessionMessage::PuppetList(names), "", &Locale::EN);
-        assert!(
-            text.contains("arden") && text.contains("borel"),
-            "got: {text}"
+        assert_eq!(
+            text,
+            "Your characters:\n  1) arden\n  2) borel\nType 'play <name or number>' or 'new <name>'."
+        );
+    }
+
+    #[test]
+    fn no_such_puppet_renders_from_the_catalog() {
+        assert_eq!(kind(&SessionMessage::NoSuchPuppet), OutputKind::Line);
+        assert_eq!(
+            render(&SessionMessage::NoSuchPuppet, "", &Locale::EN),
+            "No such character."
         );
     }
 }

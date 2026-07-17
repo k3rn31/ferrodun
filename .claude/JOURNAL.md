@@ -98,3 +98,10 @@ Cross-cutting (2026-07-07 → 07-11):
 - **Done:** removed public `From<sqlx::Error>`, `From<sqlx::migrate::MigrateError>`, `From<tokio::task::JoinError>` from `DbError`; added `pub(crate)` `from_sqlx`/`from_migrate`/`from_join`; rerouted 27 propagation sites in sqlite/{mod,accounts,persistent_world}.rs. Pure refactor, no behavior change. `JoinError` impl included beyond the issue text (same defect). TenantConfig Deserialize finding split off as #73.
 - **Verify:** `cargo test --workspace`, clippy `-D warnings`, `cargo fmt --all --check`, DoD greps for `impl From<sqlx|tokio`.
 - **Next:** #73 (mud-world TenantConfig raw-deserialization bypass).
+
+## 2026-07-17 — Unambiguous play resolution (#32)
+
+- **Spec:** §3.15.1.4 — names MUST NOT be all digits; play MUST accept name (case-insensitive) or displayed 1-based ordinal (amended this PR)
+- **Done:** `NameError::AllDigits` on the shared name rule; `SessionMessage::NoSuchPuppet` for a failed play; numbered multi-line character menu; SPEC + player docs updated
+- **Verify:** `cargo test --workspace`, `cargo clippy --workspace --all-targets`, `uv run mkdocs build --strict`
+- **Next:** none

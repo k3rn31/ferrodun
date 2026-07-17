@@ -40,8 +40,8 @@ valid account names.
 ## Registering
 
 Type `register <name>` to create a new account. Names may use letters,
-digits, and `_ ' -`, and must be between 1 and 32 characters. You'll be
-prompted twice, to catch typos:
+digits, and `_ ' -`, must be between 1 and 32 characters, and cannot
+consist entirely of digits. You'll be prompted twice, to catch typos:
 
 ```
 > register aria
@@ -59,6 +59,13 @@ Once you're logged in (whether you just registered or logged into an
 existing account), you move to **character selection** — picking which
 character you want to play:
 
+```
+Your characters:
+  1) aria
+  2) borin
+Type 'play <name or number>' or 'new <name>'.
+```
+
 | Command | What it does |
 |---|---|
 | `play <name>` | Enter the world as an existing character, by name. |
@@ -67,7 +74,8 @@ character you want to play:
 
 A brand-new account has no characters yet, so it's prompted straight to
 `new <name>` to create its first one. Character names follow the same rules
-as account names (letters, digits, `_ ' -`, 1–32 characters).
+as account names (letters, digits, `_ ' -`, 1–32 characters, not all
+digits).
 
 Once you've entered the world, you're in-world play — see
 [Player commands](commands.md) for what you can do from there.

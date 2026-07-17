@@ -29,6 +29,9 @@ pub enum SessionMessage {
     ServerError,
     /// The account's puppets, offered for selection.
     PuppetList(Vec<mud_account::PuppetName>),
+    /// The `play` argument matched no owned puppet (unknown name or
+    /// out-of-range ordinal).
+    NoSuchPuppet,
     /// The account owns no puppets yet; prompt to create the first.
     NoPuppetsYet,
     /// Prompt to re-enter the password during registration.
