@@ -123,9 +123,3 @@ impl DbError {
         Self::BlockingTask(Box::new(err))
     }
 }
-
-impl From<sqlx::Error> for DbError {
-    fn from(err: sqlx::Error) -> Self {
-        Self::Sqlx(Box::new(err))
-    }
-}

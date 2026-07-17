@@ -111,7 +111,8 @@ impl PersistentWorld {
         let keys =
             sqlx::query!(r#"SELECT entity_key AS "entity_key!" FROM entities ORDER BY entity_key"#)
                 .fetch_all(db.pool())
-                .await?;
+                .await
+                .map_err(DbError::from_sqlx)?;
         for row in keys {
             let key = entity_key_from_db(row.entity_key)?;
             let id = world
@@ -128,7 +129,8 @@ impl PersistentWorld {
             r#"SELECT entity_key AS "entity_key!", place_key AS "place_key!" FROM location"#
         )
         .fetch_all(db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         for row in locations {
             let id = resolve_loaded(&by_key, row.entity_key)?;
             let place = place_id_for_slug(&places, &row.place_key)?;
@@ -141,7 +143,8 @@ impl PersistentWorld {
             r#"SELECT item_key AS "item_key!", container_key AS "container_key!" FROM inventory"#
         )
         .fetch_all(db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         for row in inventory {
             let item = resolve_loaded(&by_key, row.item_key)?;
             let container = resolve_loaded(&by_key, row.container_key)?;
@@ -285,7 +288,8 @@ impl PersistentWorld {
             key_db
         )
         .fetch_optional(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         if exists.is_none() {
             return Err(DbError::DanglingReference(key_db));
         }
@@ -305,7 +309,8 @@ impl PersistentWorld {
             key_db
         )
         .fetch_optional(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         if let Some(row) = location {
             let place = place_id_for_slug(&self.places, &row.place_key)?;
             self.world
@@ -319,23 +324,24 @@ impl PersistentWorld {
     /// identity. Mint the arena handle only after the row exists; roll the row
     /// back if the arena is exhausted.
     async fn apply_create(&mut self, effect: Effect) -> Result<Option<TickEvent>, DbError> {
-        let mut tx = self.db.pool().begin().await?;
+        let mut tx = self.db.pool().begin().await.map_err(DbError::from_sqlx)?;
         let row = sqlx::query!(
             r#"INSERT INTO entities DEFAULT VALUES RETURNING entity_key AS "entity_key!""#
         )
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         let key = entity_key_from_db(row.entity_key)?;
 
         match self.world.create() {
             Ok(id) => {
-                tx.commit().await?;
+                tx.commit().await.map_err(DbError::from_sqlx)?;
                 self.by_key.insert(key, id);
                 self.by_id.insert(id, key);
                 Ok(Some(TickEvent::Created { entity: id }))
             }
             Err(error) => {
-                tx.rollback().await?;
+                tx.rollback().await.map_err(DbError::from_sqlx)?;
                 Ok(Some(TickEvent::Rejected { effect, error }))
             }
         }
@@ -362,7 +368,8 @@ impl PersistentWorld {
             place_key
         )
         .execute(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         Ok(None)
     }
 
@@ -376,7 +383,8 @@ impl PersistentWorld {
         let entity_key = entity_key_to_db(self.key_of(entity)?)?;
         sqlx::query!("DELETE FROM location WHERE entity_key = ?", entity_key)
             .execute(self.db.pool())
-            .await?;
+            .await
+            .map_err(DbError::from_sqlx)?;
         Ok(None)
     }
 
@@ -395,7 +403,8 @@ impl PersistentWorld {
             container_key
         )
         .execute(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         Ok(None)
     }
 
@@ -413,7 +422,8 @@ impl PersistentWorld {
             container_key
         )
         .execute(self.db.pool())
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         Ok(None)
     }
 
@@ -428,7 +438,8 @@ impl PersistentWorld {
 
         sqlx::query!("DELETE FROM entities WHERE entity_key = ?", entity_key)
             .execute(self.db.pool())
-            .await?;
+            .await
+            .map_err(DbError::from_sqlx)?;
 
         self.by_key.remove(&key);
         self.by_id.remove(&entity);
