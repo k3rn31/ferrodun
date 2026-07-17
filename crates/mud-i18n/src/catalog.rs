@@ -132,6 +132,7 @@ const ENTRIES: &[(&str, &str)] = &[
         "Your characters: { $names }. Type 'play <name>' or 'new <name>'.",
     ),
     ("session.puppet-created", "Created { $name }."),
+    ("session.no-such-puppet", "No such character."),
     // quit (§3.19)
     ("quit.goodbye", "Goodbye!"),
 ];
@@ -211,6 +212,7 @@ mod tests {
             "session.goodbye",
             "session.puppet-list",
             "session.puppet-created",
+            "session.no-such-puppet",
         ] {
             assert!(
                 catalog

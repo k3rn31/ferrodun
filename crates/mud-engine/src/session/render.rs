@@ -28,6 +28,7 @@ pub(crate) fn kind(message: &SessionMessage) -> OutputKind {
         | SessionMessage::ServerError
         | SessionMessage::PuppetList(_)
         | SessionMessage::NoPuppetsYet
+        | SessionMessage::NoSuchPuppet
         | SessionMessage::PasswordMismatch
         | SessionMessage::NameInvalid
         | SessionMessage::UsernameTaken
@@ -51,6 +52,7 @@ pub(crate) fn render(message: &SessionMessage, banner: &str, locale: &Locale) ->
         SessionMessage::AccountBanned => t!(*locale, "session.banned"),
         SessionMessage::ServerError => t!(*locale, "session.server-error"),
         SessionMessage::NoPuppetsYet => t!(*locale, "session.no-puppets"),
+        SessionMessage::NoSuchPuppet => t!(*locale, "session.no-such-puppet"),
         SessionMessage::PasswordMismatch => t!(*locale, "session.mismatch"),
         SessionMessage::NameInvalid => t!(*locale, "session.name-invalid"),
         SessionMessage::UsernameTaken => t!(*locale, "session.username-taken"),
@@ -118,6 +120,15 @@ mod tests {
         assert!(
             text.contains("arden") && text.contains("borel"),
             "got: {text}"
+        );
+    }
+
+    #[test]
+    fn no_such_puppet_renders_from_the_catalog() {
+        assert_eq!(kind(&SessionMessage::NoSuchPuppet), OutputKind::Line);
+        assert_eq!(
+            render(&SessionMessage::NoSuchPuppet, "", &Locale::EN),
+            "No such character."
         );
     }
 }
