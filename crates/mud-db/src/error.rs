@@ -103,20 +103,23 @@ pub enum DbError {
     UnsupportedEffect,
 }
 
-impl From<sqlx::Error> for DbError {
-    fn from(err: sqlx::Error) -> Self {
+impl DbError {
+    /// Wraps a driver failure. Crate-internal on purpose: the only sanctioned
+    /// path from a `sqlx` error into [`DbError`], so `sqlx` never appears in
+    /// the public API (no public `From` impl).
+    pub(crate) fn from_sqlx(err: sqlx::Error) -> Self {
         Self::Sqlx(Box::new(err))
     }
-}
 
-impl From<sqlx::migrate::MigrateError> for DbError {
-    fn from(err: sqlx::migrate::MigrateError) -> Self {
+    /// Wraps a migration failure. Crate-internal for the same reason as
+    /// [`DbError::from_sqlx`].
+    pub(crate) fn from_migrate(err: sqlx::migrate::MigrateError) -> Self {
         Self::Migrate(Box::new(err))
     }
-}
 
-impl From<tokio::task::JoinError> for DbError {
-    fn from(err: tokio::task::JoinError) -> Self {
+    /// Wraps a failed `spawn_blocking` join. Crate-internal for the same
+    /// reason as [`DbError::from_sqlx`].
+    pub(crate) fn from_join(err: tokio::task::JoinError) -> Self {
         Self::BlockingTask(Box::new(err))
     }
 }

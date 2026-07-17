@@ -91,3 +91,10 @@ Cross-cutting (2026-07-07 → 07-11):
 - **docs** — consistency sweep, nav reorder, strict build.
 
 ## --- current work ---
+
+## 2026-07-17 — mud-db crate-internal error conversions (#19)
+
+- **Spec:** §1.7 (no third-party errors across public APIs); design doc 2026-07-17-mud-db-internal-error-conversions-design.md
+- **Done:** removed public `From<sqlx::Error>`, `From<sqlx::migrate::MigrateError>`, `From<tokio::task::JoinError>` from `DbError`; added `pub(crate)` `from_sqlx`/`from_migrate`/`from_join`; rerouted 27 propagation sites in sqlite/{mod,accounts,persistent_world}.rs. Pure refactor, no behavior change. `JoinError` impl included beyond the issue text (same defect). TenantConfig Deserialize finding split off as #73.
+- **Verify:** `cargo test --workspace`, clippy `-D warnings`, `cargo fmt --all --check`, DoD greps for `impl From<sqlx|tokio`.
+- **Next:** #73 (mud-world TenantConfig raw-deserialization bypass).

@@ -56,8 +56,11 @@ impl TenantDb {
             .create_if_missing(true)
             .foreign_keys(true);
 
-        let pool = SqlitePoolOptions::new().connect_with(options).await?;
-        MIGRATOR.run(&pool).await?;
+        let pool = SqlitePoolOptions::new()
+            .connect_with(options)
+            .await
+            .map_err(DbError::from_sqlx)?;
+        MIGRATOR.run(&pool).await.map_err(DbError::from_migrate)?;
         // Once per tenant per boot: the design-§3 info heartbeat.
         tracing::info!(db = %path.display(), "tenant database ready");
 
@@ -90,10 +93,12 @@ impl TenantDb {
             fresh
         )
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(DbError::from_sqlx)?;
         let row = sqlx::query!(r#"SELECT world_id AS "world_id!" FROM server WHERE id = 1"#)
             .fetch_one(&self.pool)
-            .await?;
+            .await
+            .map_err(DbError::from_sqlx)?;
         let raw = u64::try_from(row.world_id).map_err(|_| DbError::InvalidId(row.world_id))?;
         let value = NonZeroU64::new(raw).ok_or(DbError::InvalidId(row.world_id))?;
         Ok(WorldId::new(value))
