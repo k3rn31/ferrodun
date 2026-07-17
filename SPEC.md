@@ -1964,7 +1964,12 @@ preference. A puppet's name MUST be **unique within its tenant**,
 compared **case-insensitively**, across all accounts — creating a
 puppet whose name collides with an existing one (in any account)
 MUST be rejected. Uniqueness is tenant-scoped (§3.11.4): the same
-puppet name in two tenants is unrelated.
+puppet name in two tenants is unrelated. Account and puppet names
+MUST NOT consist entirely of digits. Puppet selection MUST accept
+the puppet's name (compared case-insensitively) and MUST accept the
+1-based ordinal at which the puppet appears in the displayed
+character list; because no valid name is all digits, a digit-only
+argument always denotes an ordinal.
 
 3.15.1.5 Account states MUST be one of: `active`, `suspended`
 (temporary, admin-issued, with reason and expiry), `banned`

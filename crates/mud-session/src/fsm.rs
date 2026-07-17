@@ -447,7 +447,12 @@ fn parse_name(raw: &str) -> Result<Username, mud_account::NameError> {
     Username::parse(raw)
 }
 
-/// Resolves a `play` argument to a puppet: a 1-based ordinal, or a name match.
+/// Resolves a `play` argument to a puppet: a 1-based ordinal into the list as
+/// displayed, or a case-insensitive name match.
+///
+/// Ordinal-first is safe: names can never be all digits ([`PuppetName`]
+/// rejects them, §3.15.1.4), so a pure-digit argument is always an ordinal
+/// and can never shadow a name (issue #32).
 fn match_puppet<'a>(puppets: &'a [Puppet], arg: &str) -> Option<&'a Puppet> {
     if let Ok(ordinal) = arg.parse::<usize>() {
         return ordinal.checked_sub(1).and_then(|index| puppets.get(index));
