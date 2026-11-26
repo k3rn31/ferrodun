@@ -477,6 +477,48 @@ mod tests {
         }
     }
 
+    /// Delegates to `FakeBackend`, counting `resolve_puppet` calls — pins the
+    /// issue #33 property that a successful Enter resolves exactly once.
+    #[derive(Default)]
+    struct CountingBackend {
+        resolves: std::sync::atomic::AtomicUsize,
+    }
+
+    impl LoginBackend for CountingBackend {
+        async fn authenticate(
+            &self,
+            username: &Username,
+            password: &SecretString,
+        ) -> Result<Result<Account, LoginError>, BackendError> {
+            FakeBackend.authenticate(username, password).await
+        }
+        async fn register(
+            &self,
+            username: &Username,
+            password: &SecretString,
+        ) -> Result<Result<Account, RegisterError>, BackendError> {
+            FakeBackend.register(username, password).await
+        }
+        async fn puppets_of(&self, account: AccountId) -> Result<Vec<Puppet>, BackendError> {
+            FakeBackend.puppets_of(account).await
+        }
+        async fn create_puppet(
+            &self,
+            account: AccountId,
+            name: &PuppetName,
+        ) -> Result<Puppet, BackendError> {
+            FakeBackend.create_puppet(account, name).await
+        }
+        fn resolve_puppet(
+            &self,
+            key: EntityKey,
+        ) -> impl std::future::Future<Output = Option<EntityId>> + Send {
+            self.resolves
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            FakeBackend.resolve_puppet(key)
+        }
+    }
+
     fn text_of(outputs: &[mud_schema::SessionOutput]) -> String {
         outputs
             .iter()
@@ -826,6 +868,22 @@ mod tests {
             svc.binding_of(sid(1)).map(|binding| binding.puppet),
             Some(entity),
             "binding_of must expose the same entity"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_enter_resolves_the_puppet_exactly_once() {
+        let backend = CountingBackend::default();
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let _ = svc.on_input(sid(1), "login alice", &backend).await;
+        let _ = svc.on_input(sid(1), "hunter2", &backend).await;
+        let routing = svc.on_input(sid(1), "play arden", &backend).await;
+        assert!(bound_of(&routing).is_some(), "the enter must bind");
+        assert_eq!(
+            backend.resolves.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "a successful Enter must resolve the puppet exactly once"
         );
     }
 
