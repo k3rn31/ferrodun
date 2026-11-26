@@ -44,8 +44,10 @@ untouched.
   ```
 
   The `EntityKey` leaves `Bound` entirely — its only consumer was the
-  redundant re-resolution. `AwaitingEnter` keeps `chosen: EntityKey`
-  because it is still needed to emit `Effect::Enter`.
+  redundant re-resolution. The now write-only `chosen: EntityKey` field is
+  dropped from `AwaitingEnter`: `Effect::Enter` is emitted from the key at
+  transition time, and the resolved `EntityId` now arrives via `Entered`, so
+  the stored key was never read back.
 - The `(AwaitingEnter, Entered { entity })` arm copies `entity` straight
   into the terminal.
 
