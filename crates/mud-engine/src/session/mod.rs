@@ -236,7 +236,7 @@ impl SessionService {
 
             if let Some(terminal) = transition.terminal {
                 flush_pending(session, &mut outputs, &mut pending);
-                let outcome = self.apply_terminal(session, terminal, backend).await;
+                let outcome = self.apply_terminal(session, terminal);
                 return Routing::Login {
                     outputs,
                     close: outcome.close,
@@ -313,7 +313,7 @@ impl SessionService {
                 }
             }
             Effect::Enter { account: _, puppet } => match backend.resolve_puppet(puppet).await {
-                Some(_) => EffectResult::Entered,
+                Some(entity) => EffectResult::Entered { entity },
                 None => EffectResult::BackendError,
             },
         }
@@ -322,45 +322,27 @@ impl SessionService {
     /// Applies a terminal transition. `Bound` moves the session in-world;
     /// `Closed` drops it. Returns whether the connection should close and, on a
     /// successful bind, the puppet entity now in-world (the spawn-announcement cue).
-    async fn apply_terminal(
-        &mut self,
-        session: SessionId,
-        terminal: Terminal,
-        backend: &impl LoginBackend,
-    ) -> TerminalOutcome {
+    fn apply_terminal(&mut self, session: SessionId, terminal: Terminal) -> TerminalOutcome {
         match terminal {
             Terminal::Bound {
                 account,
-                puppet,
+                entity,
                 name,
             } => {
-                // The FSM already emitted Enter and saw it succeed, so the key
-                // resolves; on the vanishing chance it does not, drop cleanly.
-                match backend.resolve_puppet(puppet).await {
-                    Some(entity) => {
-                        // account_id and entity only — never `name`, a
-                        // player-authored PuppetName (design §6).
-                        tracing::debug!(session_id = %session, account_id = %account, ?entity, "session bound");
-                        self.sessions.insert(
-                            session,
-                            SessionState::InWorld(InWorldBinding {
-                                account,
-                                puppet: entity,
-                                name,
-                            }),
-                        );
-                        TerminalOutcome {
-                            close: false,
-                            bound: Some(entity),
-                        }
-                    }
-                    None => {
-                        self.sessions.remove(&session);
-                        TerminalOutcome {
-                            close: true,
-                            bound: None,
-                        }
-                    }
+                // account_id and entity only — never `name`, a
+                // player-authored PuppetName (design §6).
+                tracing::debug!(session_id = %session, account_id = %account, ?entity, "session bound");
+                self.sessions.insert(
+                    session,
+                    SessionState::InWorld(InWorldBinding {
+                        account,
+                        puppet: entity,
+                        name,
+                    }),
+                );
+                TerminalOutcome {
+                    close: false,
+                    bound: Some(entity),
                 }
             }
             Terminal::Closed => {
@@ -492,6 +474,48 @@ mod tests {
                 Generation::FIRST,
             ));
             async move { result }
+        }
+    }
+
+    /// Delegates to `FakeBackend`, counting `resolve_puppet` calls — pins the
+    /// issue #33 property that a successful Enter resolves exactly once.
+    #[derive(Default)]
+    struct CountingBackend {
+        resolves: std::sync::atomic::AtomicUsize,
+    }
+
+    impl LoginBackend for CountingBackend {
+        async fn authenticate(
+            &self,
+            username: &Username,
+            password: &SecretString,
+        ) -> Result<Result<Account, LoginError>, BackendError> {
+            FakeBackend.authenticate(username, password).await
+        }
+        async fn register(
+            &self,
+            username: &Username,
+            password: &SecretString,
+        ) -> Result<Result<Account, RegisterError>, BackendError> {
+            FakeBackend.register(username, password).await
+        }
+        async fn puppets_of(&self, account: AccountId) -> Result<Vec<Puppet>, BackendError> {
+            FakeBackend.puppets_of(account).await
+        }
+        async fn create_puppet(
+            &self,
+            account: AccountId,
+            name: &PuppetName,
+        ) -> Result<Puppet, BackendError> {
+            FakeBackend.create_puppet(account, name).await
+        }
+        fn resolve_puppet(
+            &self,
+            key: EntityKey,
+        ) -> impl std::future::Future<Output = Option<EntityId>> + Send {
+            self.resolves
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            FakeBackend.resolve_puppet(key)
         }
     }
 
@@ -844,6 +868,22 @@ mod tests {
             svc.binding_of(sid(1)).map(|binding| binding.puppet),
             Some(entity),
             "binding_of must expose the same entity"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_enter_resolves_the_puppet_exactly_once() {
+        let backend = CountingBackend::default();
+        let mut svc = SessionService::new("W", Locale::EN);
+        svc.connect(sid(1));
+        let _ = svc.on_input(sid(1), "login alice", &backend).await;
+        let _ = svc.on_input(sid(1), "hunter2", &backend).await;
+        let routing = svc.on_input(sid(1), "play arden", &backend).await;
+        assert!(bound_of(&routing).is_some(), "the enter must bind");
+        assert_eq!(
+            backend.resolves.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "a successful Enter must resolve the puppet exactly once"
         );
     }
 

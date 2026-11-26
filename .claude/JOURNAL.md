@@ -105,3 +105,10 @@ Cross-cutting (2026-07-07 → 07-11):
 - **Done:** `NameError::AllDigits` on the shared name rule; `SessionMessage::NoSuchPuppet` for a failed play; numbered multi-line character menu; SPEC + player docs updated
 - **Verify:** `cargo test --workspace`, `cargo clippy --workspace --all-targets`, `uv run mkdocs build --strict`
 - **Next:** none
+
+## 2026-07-17 — Single resolve_puppet per successful Enter (#33)
+
+- **Spec:** docs/superpowers/specs/2026-07-17-single-resolve-puppet-design.md — carry the resolved EntityId through the FSM instead of re-resolving at bind
+- **Done:** `EffectResult::Entered { entity }`; `Terminal::Bound` carries `entity: EntityId` (replacing `puppet: EntityKey`); engine `apply_terminal` binds directly, now sync, second resolve and its impossible-failure arm deleted
+- **Verify:** `cargo test --workspace`; new pin `a_successful_enter_resolves_the_puppet_exactly_once` (counting fake backend); `cargo clippy --workspace --all-targets` clean
+- **Next:** none — no observable behavior change, no docs-site impact

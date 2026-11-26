@@ -5,7 +5,7 @@
 use std::num::NonZeroU64;
 
 use mud_account::{Account, AccountId, AccountState, Puppet, PuppetName, Username};
-use mud_core::EntityKey;
+use mud_core::{EntityId, EntityKey, Generation, SlotIndex, TenantTag};
 use mud_session::{Effect, EffectResult, SessionFsm, SessionMessage, Terminal};
 
 fn account() -> Account {
@@ -20,6 +20,14 @@ fn puppet(id: u64, name: &str) -> Puppet {
     Puppet::new(
         EntityKey::new(NonZeroU64::new(id).expect("non-zero key")),
         PuppetName::parse(name).expect("valid puppet name"),
+    )
+}
+
+fn entity(slot: u32) -> EntityId {
+    EntityId::new(
+        TenantTag::new(1).expect("valid tenant tag"),
+        SlotIndex::new(slot),
+        Generation::FIRST,
     )
 }
 
@@ -56,10 +64,16 @@ fn a_full_login_journey_binds_the_session_in_world() {
         t.effect
     );
 
-    let t = fsm.on_effect(EffectResult::Entered);
+    let t = fsm.on_effect(EffectResult::Entered { entity: entity(7) });
     assert_eq!(t.messages, vec![SessionMessage::EnteredWorld]);
     assert!(matches!(&t.terminal, Some(Terminal::Bound { .. })));
-    if let Some(Terminal::Bound { name, .. }) = t.terminal {
+    if let Some(Terminal::Bound {
+        entity: bound,
+        name,
+        ..
+    }) = t.terminal
+    {
+        assert_eq!(bound, entity(7), "Bound carries resolved entity through");
         assert_eq!(name.as_str(), "hero");
     }
 }
@@ -95,7 +109,7 @@ fn a_full_register_journey_creates_a_puppet_and_binds() {
         t.effect
     );
 
-    let t = fsm.on_effect(EffectResult::Entered);
+    let t = fsm.on_effect(EffectResult::Entered { entity: entity(7) });
     assert!(matches!(t.terminal, Some(Terminal::Bound { .. })));
 }
 
@@ -146,7 +160,7 @@ fn a_backend_error_entering_returns_to_select() {
 fn an_effect_result_with_no_effect_outstanding_is_ignored() {
     let mut fsm = SessionFsm::new(); // Anon: nothing in flight
 
-    let t = fsm.on_effect(EffectResult::Entered);
+    let t = fsm.on_effect(EffectResult::Entered { entity: entity(1) });
     assert!(
         t.messages.is_empty(),
         "stray result is dropped: {:?}",
